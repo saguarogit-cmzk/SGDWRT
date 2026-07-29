@@ -1,0 +1,6 @@
+dist/
+*.db
+docs/facts/
+image/*.img.gz
+image/imagebuilder/
+node_modules/

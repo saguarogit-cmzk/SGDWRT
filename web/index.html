@@ -17,8 +17,8 @@
            placeholder="admin" required>
     <label for="pass-input">Lozinka</label>
     <input id="pass-input" type="password" autocomplete="current-password" required>
-    <p class="hint">Pri prvom pokretanju: korisnik <code>admin</code>, lozinka
-      jednaka API tokenu s uređaja.</p>
+    <p class="hint">Nakon svježe instalacije: korisnik <code>admin</code>,
+      lozinka <code>Sgs#2026</code> — promijeni je odmah nakon prijave.</p>
     <p id="login-error" class="login-error hidden">Neispravna prijava ili uređaj nedostupan.</p>
     <button type="submit">Prijava</button>
   </form>
@@ -935,8 +935,9 @@
         Na svježem OpenWrt 25.x uređaju pokreni:
         <code>wget -O - https://raw.githubusercontent.com/saguarogit-cmzk/SGDWRT/main/scripts/install.sh | sh</code>
         — skripta instalira pakete, preuzme zadnje izdanje i pokrene Saguaro.
-        Prva prijava: korisnik <code>admin</code>, lozinka = sadržaj
-        <code>/opt/saguaro/etc/token</code> na uređaju.
+        Prva prijava: korisnik <code>admin</code>, lozinka <code>Sgs#2026</code>.
+        Odmah je promijeni (Sustav → Postavke) i regeneriraj API token —
+        zadane vrijednosti su iste na svakoj novoj instalaciji.
       </div></details>
     </section>
   </div>

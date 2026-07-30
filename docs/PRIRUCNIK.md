@@ -24,8 +24,11 @@ Skripta instalira potrebne pakete, preuzme zadnje izdanje s GitHuba i pokrene
 servis. Bez objavljenih izdanja: `sh install.sh saguaro-vX.Y.Z-linux-amd64.tar.gz`
 (paket se gradi sa `scripts/release.sh`).
 
-Prva prijava na `https://<adresa>:8443/`: korisnik `admin`, lozinka = sadržaj
-`/opt/saguaro/etc/token` na uređaju. Odmah je promijeni u **Postavkama**.
+Prva prijava na `https://<adresa>:8443/`: korisnik `admin`, lozinka
+`Sgs#2026`. **Odmah je promijeni** (Sustav → Postavke) i regeneriraj API
+token — zadane vrijednosti su iste na svakoj novoj instalaciji, pa uređaj s
+njima ne smije ostati u produkciji. (Ako je Saguaro postavljen ručno bez
+instalacijske skripte, lozinka je sadržaj `/opt/saguaro/etc/token`.)
 
 ---
 

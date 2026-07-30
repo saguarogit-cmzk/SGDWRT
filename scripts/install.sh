@@ -65,6 +65,12 @@ fi
 chmod 755 /etc/init.d/saguaro-core
 rm -rf "$TMP"
 
+# zadana lozinka prve prijave (admin račun nastaje iz tokena pri prvom startu)
+if [ ! -s "$BASE/etc/token" ]; then
+    printf 'Sgs#2026\n' > "$BASE/etc/token"
+    chmod 600 "$BASE/etc/token"
+fi
+
 echo ">> pokrećem servis"
 /etc/init.d/saguaro-core enable
 /etc/init.d/saguaro-core start
@@ -74,7 +80,9 @@ IP=$(uci -q get network.lan.ipaddr || echo "<adresa-uređaja>")
 echo ""
 echo "=================================================================="
 echo " Saguaro je instaliran i radi:  https://$IP:8443/"
-echo " Prva prijava: korisnik 'admin', lozinka = sadržaj datoteke:"
-echo "   $BASE/etc/token"
-echo " (nakon prijave promijeni lozinku u Postavkama)"
+echo " Prva prijava:  korisnik 'admin'   lozinka 'Sgs#2026'"
+echo ""
+echo " VAŽNO: odmah promijeni lozinku (Sustav -> Postavke) i"
+echo " regeneriraj API token (ista stranica) — zadane vrijednosti"
+echo " su iste na svakoj novoj instalaciji."
 echo "=================================================================="

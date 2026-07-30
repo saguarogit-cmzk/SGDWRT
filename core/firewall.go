@@ -46,28 +46,31 @@ func validAddr(s string) bool {
 /* ---------- modeli ---------- */
 
 type FWForward struct {
-	UUID      string `json:"uuid"`
-	Name      string `json:"name"`
-	Proto     string `json:"proto"`
-	SrcZone   string `json:"src_zone"`
-	SrcDport  string `json:"src_dport"`
-	DestZone  string `json:"dest_zone"`
-	DestIP    string `json:"dest_ip"`
-	DestPort  string `json:"dest_port"`
-	Enabled   bool   `json:"enabled"`
-	Notes     string `json:"notes"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	UUID       string `json:"uuid"`
+	Name       string `json:"name"`
+	Proto      string `json:"proto"`
+	SrcZone    string `json:"src_zone"`
+	SrcDport   string `json:"src_dport"`
+	DestZone   string `json:"dest_zone"`
+	DestIP     string `json:"dest_ip"`
+	DestPort   string `json:"dest_port"`
+	SrcDIP     string `json:"src_dip"`
+	Reflection bool   `json:"reflection"`
+	Enabled    bool   `json:"enabled"`
+	Notes      string `json:"notes"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
 }
 
 const fwdCols = `uuid, name, proto, src_zone, src_dport, dest_zone, dest_ip,
-	COALESCE(dest_port,''), enabled, COALESCE(notes,''), created_at, updated_at`
+	COALESCE(dest_port,''), COALESCE(src_dip,''), reflection, enabled,
+	COALESCE(notes,''), created_at, updated_at`
 
 func scanForward(row interface{ Scan(...any) error }) (FWForward, error) {
 	var f FWForward
 	err := row.Scan(&f.UUID, &f.Name, &f.Proto, &f.SrcZone, &f.SrcDport,
-		&f.DestZone, &f.DestIP, &f.DestPort, &f.Enabled, &f.Notes,
-		&f.CreatedAt, &f.UpdatedAt)
+		&f.DestZone, &f.DestIP, &f.DestPort, &f.SrcDIP, &f.Reflection, &f.Enabled,
+		&f.Notes, &f.CreatedAt, &f.UpdatedAt)
 	return f, err
 }
 
@@ -108,6 +111,7 @@ func validateForward(w http.ResponseWriter, f *FWForward) bool {
 	f.DestZone = strings.TrimSpace(f.DestZone)
 	f.DestIP = strings.TrimSpace(f.DestIP)
 	f.DestPort = strings.TrimSpace(f.DestPort)
+	f.SrcDIP = strings.TrimSpace(f.SrcDIP)
 	if f.Proto == "" {
 		f.Proto = "tcp udp"
 	}
@@ -130,6 +134,8 @@ func validateForward(w http.ResponseWriter, f *FWForward) bool {
 		writeErr(w, http.StatusBadRequest, "neispravna odredišna IP adresa")
 	case f.DestPort != "" && !validPortSpec(f.DestPort):
 		writeErr(w, http.StatusBadRequest, "neispravan odredišni port")
+	case f.SrcDIP != "" && net.ParseIP(f.SrcDIP) == nil:
+		writeErr(w, http.StatusBadRequest, "neispravna javna IP adresa (src_dip)")
 	default:
 		return true
 	}
@@ -276,7 +282,8 @@ func (s *server) handleFWStatus(w http.ResponseWriter, r *http.Request) {
 
 type fwForwardIn struct {
 	FWForward
-	Enabled *bool `json:"enabled"`
+	Enabled    *bool `json:"enabled"`
+	Reflection *bool `json:"reflection"`
 }
 
 func enabledIntOf(e *bool) int {
@@ -317,9 +324,10 @@ func (s *server) handleFWForwardCreate(w http.ResponseWriter, r *http.Request) {
 	f.UUID = newUUID()
 	_, err := s.db.Exec(`INSERT INTO fw_forwards
 		(uuid, name, proto, src_zone, src_dport, dest_zone, dest_ip, dest_port,
-		 enabled, notes) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		 src_dip, reflection, enabled, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
 		f.UUID, f.Name, f.Proto, f.SrcZone, f.SrcDport, f.DestZone, f.DestIP,
-		f.DestPort, enabledIntOf(in.Enabled), f.Notes)
+		f.DestPort, f.SrcDIP, enabledIntOf(in.Reflection),
+		enabledIntOf(in.Enabled), f.Notes)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -340,10 +348,10 @@ func (s *server) handleFWForwardUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := s.db.Exec(`UPDATE fw_forwards SET name=?, proto=?, src_zone=?,
-		src_dport=?, dest_zone=?, dest_ip=?, dest_port=?, enabled=?, notes=?,
-		updated_at=datetime('now') WHERE uuid=?`,
+		src_dport=?, dest_zone=?, dest_ip=?, dest_port=?, src_dip=?, reflection=?,
+		enabled=?, notes=?, updated_at=datetime('now') WHERE uuid=?`,
 		f.Name, f.Proto, f.SrcZone, f.SrcDport, f.DestZone, f.DestIP, f.DestPort,
-		enabledIntOf(in.Enabled), f.Notes, uuid)
+		f.SrcDIP, enabledIntOf(in.Reflection), enabledIntOf(in.Enabled), f.Notes, uuid)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -777,6 +785,15 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 		if f.DestPort != "" {
 			fmt.Fprintf(&b, "set firewall.%s.dest_port=%s\n", sn, f.DestPort)
 		}
+		if f.SrcDIP != "" {
+			fmt.Fprintf(&b, "set firewall.%s.src_dip=%s\n", sn, f.SrcDIP)
+		}
+		// hairpin NAT / NAT reflection: forward dostupan i iz unutarnjih mreža
+		refl := "0"
+		if f.Reflection {
+			refl = "1"
+		}
+		fmt.Fprintf(&b, "set firewall.%s.reflection=%s\n", sn, refl)
 	}
 	for _, f := range rules {
 		sn := rlPrefix + strings.ReplaceAll(f.UUID, "-", "")[:8]

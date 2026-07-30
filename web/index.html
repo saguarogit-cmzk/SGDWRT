@@ -234,7 +234,10 @@
     <section class="card">
       <div class="card-head">
         <h2>Port forwardi (DNAT)</h2>
-        <button id="pf-add" class="primary">Dodaj forward</button>
+        <div class="row-actions">
+          <button id="pub-wizard" class="ghost">Objavi server (čarobnjak)</button>
+          <button id="pf-add" class="primary">Dodaj forward</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table>
@@ -379,6 +382,36 @@
         </div>
         <p class="hint" id="ad-status"></p>
         <p class="hint" id="ad-result"></p>
+      </div>
+    </section>
+  </div>
+
+  <div class="view hidden" id="view-ospf">
+    <section class="grid-2">
+      <div class="card">
+        <h2>OSPF postavke</h2>
+        <label class="check-row"><input type="checkbox" id="os-enabled"> Uključeno</label>
+        <div class="form-grid">
+          <label>Router ID<input id="os-rid" placeholder="prazno = LAN adresa uređaja"></label>
+          <label>Area<input id="os-area" placeholder="0"></label>
+        </div>
+        <p class="hint">Sučelja koja sudjeluju u OSPF-u (kvačica "stub" = mreža
+          se objavljuje drugima, ali se na njoj ne traže susjedni routeri —
+          za mreže s računalima):</p>
+        <div id="os-ifaces" class="checklist"></div>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button id="os-save" class="primary">Spremi i primijeni</button>
+        </div>
+        <p class="hint" id="os-result"></p>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Stanje protokola i susjedi</h2>
+          <button id="os-refresh" class="ghost">Osvježi</button>
+        </div>
+        <pre id="os-status" style="font-size:12px;overflow-x:auto;background:#f6f8fa;border:1px solid var(--line);border-radius:8px;padding:10px;min-height:80px">—</pre>
+        <p class="hint">OSPF automatski razmjenjuje rute s drugim routerima —
+          mreže iza njih postaju dostupne bez ručnog upisivanja ruta.</p>
       </div>
     </section>
   </div>
@@ -685,6 +718,14 @@
         u VLAN-u spajaju se preko switcha koji tagira taj VLAN.
       </div></details>
 
+      <details class="help"><summary>OSPF — automatska razmjena ruta</summary><div>
+        Kad u mreži postoji više routera, OSPF im omogućuje da jedni drugima
+        automatski jave koje mreže poznaju — bez ručnog upisivanja ruta.
+        Odabereš sučelja koja sudjeluju; "stub" označi mreže s računalima
+        (objavljuju se, ali se na njima ne traže susjedni routeri). Stanje i
+        pronađeni susjedi vide se u desnoj kartici.
+      </div></details>
+
       <details class="help"><summary>Multi-WAN — više internet veza</summary><div>
         <b>Failover</b>: veza s manjim prioritetom je glavna; kad njene
         nadzorne adrese prestanu odgovarati na ping, promet prelazi na
@@ -715,6 +756,11 @@
         "prema samom uređaju". <b>DMZ</b>: sav neuhvaćeni promet s interneta
         ide na jedan interni host (oprez — host je potpuno izložen).
         <b>1:1 NAT</b>: cijela javna adresa preslikava se na interni server.
+        <b>Čarobnjak "Objavi server"</b>: odabereš interni server (ili ga
+        izabereš iz inventara), označiš usluge (web, mail, RDP…) i po želji
+        javnu adresu — čarobnjak složi sve forwarde odjednom. <b>NAT
+        reflection (hairpin)</b>: uz svaki forward, uključeno znači da server
+        preko javne adrese rade i korisnici iz lokalne mreže.
       </div></details>
 
       <details class="help"><summary>Blokade — zaštita mreže</summary><div>
@@ -966,6 +1012,41 @@
     </form>
   </dialog>
 
+  <dialog id="pub-dialog">
+    <form id="pub-form">
+      <h2>Objavi server prema internetu</h2>
+      <div class="form-grid">
+        <label>Interni server (IP)
+          <input name="dest_ip" required list="pub-hosts" placeholder="192.168.50.10">
+          <datalist id="pub-hosts"></datalist></label>
+        <label>Naziv (prefiks)<input name="prefix" required placeholder="web1"></label>
+      </div>
+      <div class="checklist" id="pub-services">
+        <label><input type="checkbox" value="80:tcp:http" checked> Web (HTTP, port 80)</label>
+        <label><input type="checkbox" value="443:tcp:https" checked> Web TLS (HTTPS, port 443)</label>
+        <label><input type="checkbox" value="22:tcp:ssh"> SSH (port 22)</label>
+        <label><input type="checkbox" value="3389:tcp:rdp"> Udaljena radna površina (RDP, 3389)</label>
+        <label><input type="checkbox" value="25:tcp:smtp"> Mail — slanje (SMTP, 25)</label>
+        <label><input type="checkbox" value="465:tcp:smtps"> Mail — sigurno slanje (465)</label>
+        <label><input type="checkbox" value="993:tcp:imaps"> Mail — čitanje (IMAPS, 993)</label>
+      </div>
+      <div class="form-grid">
+        <label>Dodatni portovi (npr. 8080 5000-5010)<input name="custom"></label>
+        <label>Javna IP (opcionalno)<input name="src_dip" placeholder="prazno = sve adrese WAN-a"></label>
+        <label class="check"><input type="checkbox" name="reflection" checked>
+          Dostupno i iz lokalne mreže preko javne adrese (NAT reflection)</label>
+      </div>
+      <p class="hint">Čarobnjak stvara po jedan port forward za svaku odabranu
+        uslugu. Ako server ima vlastitu javnu adresu, upiši je — objava tada
+        vrijedi samo na njoj (adresa mora postojati na WAN sučelju).
+        Nakon stvaranja klikni <b>Primijeni firewall</b>.</p>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="pub-cancel">Odustani</button>
+        <button type="submit" class="primary">Stvori forwarde</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="pf-dialog">
     <form id="pf-form">
       <h2 id="pf-dialog-title">Port forward</h2>
@@ -983,7 +1064,10 @@
         <label>Odredišna IP<input name="dest_ip" required placeholder="192.168.50.10"></label>
         <label>Odredišni port<input name="dest_port" placeholder="prazno = isti"></label>
         <label>Odredišna zona<input name="dest_zone" placeholder="lan"></label>
+        <label>Javna IP (opcionalno)<input name="src_dip" placeholder="prazno = sve adrese WAN-a"></label>
         <label class="wide">Napomene<textarea name="notes" rows="2"></textarea></label>
+        <label class="check"><input type="checkbox" name="reflection" checked>
+          NAT reflection (hairpin) — forward radi i iz lokalne mreže</label>
         <label class="check"><input type="checkbox" name="enabled" checked>
           Aktivan — uključi u primjenu</label>
       </div>

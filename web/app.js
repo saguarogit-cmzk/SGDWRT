@@ -798,6 +798,39 @@ function openPeerDialog(p) {
   $("peer-dialog").showModal();
 }
 
+/* ---------- ospf ---------- */
+
+async function loadOspf() {
+  const x = await api("/ospf");
+  $("os-enabled").checked = !!x.enabled;
+  $("os-rid").value = x.router_id || "";
+  $("os-area").value = x.area || "0";
+
+  const chosen = {};
+  for (const i of x.interfaces || []) chosen[i.name] = i;
+  const box = $("os-ifaces");
+  box.replaceChildren();
+  for (const av of x.available_interfaces || []) {
+    const lab = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.value = av.name; cb.checked = !!chosen[av.name];
+    cb.className = "os-if";
+    const stub = document.createElement("input");
+    stub.type = "checkbox"; stub.className = "os-stub"; stub.dataset.name = av.name;
+    stub.checked = chosen[av.name] ? !!chosen[av.name].stub : false;
+    const span = document.createElement("span");
+    span.textContent = `${av.name} (${av.device}) — `;
+    const stubLab = document.createElement("span");
+    stubLab.className = "sub";
+    stubLab.append("stub: ", stub);
+    lab.append(cb, span, stubLab);
+    box.append(lab);
+  }
+  $("os-status").textContent = x.running
+    ? (x.status_text || "OSPF radi — nema podataka o susjedima.")
+    : x.enabled ? "Servis se pokreće…" : "OSPF je isključen.";
+}
+
 /* ---------- blokade (banIP + adblock-fast) ---------- */
 
 async function loadProtection() {
@@ -1334,6 +1367,7 @@ const MODULES = {
   dashboard: ["Dashboard", "Pregled stanja uređaja i mreže", () => null],
   network:   ["Mreža", "LAN adresa, WAN veze i VLAN mreže", () => loadNetwork()],
   multiwan:  ["Multi-WAN", "Više internet veza — failover, raspodjela i nadzor", () => loadMultiwan()],
+  ospf:      ["OSPF", "Dinamičko usmjeravanje — automatska razmjena ruta s routerima", () => loadOspf()],
   dhcp:      ["DHCP", "Dodjela IP adresa i rezervacije za uređaje u mreži", () => loadDhcp()],
   dns:       ["DNS", "Lokalna imena uređaja (npr. nas.lan umjesto IP adrese)", () => loadDns()],
   firewall:  ["Firewall", "Pravila prometa, port forwardi, DMZ i 1:1 NAT", () => loadFirewall()],
@@ -1348,7 +1382,7 @@ const MODULES = {
 };
 const NAV_GROUPS = [
   ["Status", ["dashboard"]],
-  ["Mreža", ["network", "multiwan", "dhcp", "dns"]],
+  ["Mreža", ["network", "multiwan", "ospf", "dhcp", "dns"]],
   ["Zaštita", ["firewall", "protection"]],
   ["VPN", ["wireguard", "openvpn"]],
   ["Sustav", ["devices", "backup", "update", "settings", "help"]],
@@ -1597,6 +1631,75 @@ $("dns-apply").addEventListener("click", async () => {
   }
 });
 
+$("os-save").addEventListener("click", async () => {
+  const interfaces = [];
+  for (const cb of $("os-ifaces").querySelectorAll(".os-if:checked")) {
+    const stub = $("os-ifaces").querySelector(`.os-stub[data-name="${cb.value}"]`);
+    interfaces.push({ name: cb.value, stub: stub ? stub.checked : false });
+  }
+  $("os-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/ospf", "POST", {
+      enabled: $("os-enabled").checked,
+      router_id: $("os-rid").value.trim(),
+      area: $("os-area").value.trim(),
+      interfaces,
+    });
+    $("os-result").textContent = r.enabled
+      ? "OSPF uključen (router ID " + r.router_id + ")." : "OSPF isključen.";
+    setTimeout(() => loadOspf().catch(() => {}), 3000);
+  } catch (e) {
+    $("os-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+$("os-refresh").addEventListener("click", () => loadOspf().catch(alertErr));
+
+$("pub-wizard").addEventListener("click", async () => {
+  const dl = $("pub-hosts");
+  dl.replaceChildren();
+  try {
+    const hs = await api("/inventory/hosts");
+    for (const h of hs.hosts.filter((h) => h.ipv4)) {
+      const o = document.createElement("option");
+      o.value = h.ipv4;
+      o.label = h.hostname || h.mac;
+      dl.append(o);
+    }
+  } catch { /* inventar nije obavezan */ }
+  $("pub-form").reset();
+  $("pub-dialog").showModal();
+});
+$("pub-cancel").addEventListener("click", () => $("pub-dialog").close());
+$("pub-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const ip = f.elements.dest_ip.value.trim();
+  const prefix = f.elements.prefix.value.trim();
+  const srcDip = f.elements.src_dip.value.trim();
+  const refl = f.elements.reflection.checked;
+  const jobs = [];
+  for (const cb of $("pub-services").querySelectorAll("input:checked")) {
+    const [port, proto, svc] = cb.value.split(":");
+    jobs.push({ name: prefix + "-" + svc, proto, src_dport: port });
+  }
+  for (const p of f.elements.custom.value.trim().split(/[\s,]+/).filter(Boolean)) {
+    jobs.push({ name: prefix + "-port" + p.replace("-", "do"), proto: "tcp udp", src_dport: p });
+  }
+  if (!jobs.length) { alert("Odaberi bar jednu uslugu ili port."); return; }
+  try {
+    for (const j of jobs) {
+      await api("/firewall/forwards", "POST", {
+        ...j, dest_ip: ip, src_dip: srcDip, reflection: refl,
+        notes: "čarobnjak: objava servera " + prefix,
+      });
+    }
+    $("pub-dialog").close();
+    $("fw-apply-result").textContent =
+      `Čarobnjak je stvorio ${jobs.length} forwarda — klikni "Primijeni firewall".`;
+    await loadFirewall();
+  } catch (e) { alertErr(e); }
+});
+
 $("pf-add").addEventListener("click", () => openPfDialog(null));
 $("pf-cancel").addEventListener("click", () => $("pf-dialog").close());
 $("pf-form").addEventListener("submit", async (ev) => {
@@ -1604,8 +1707,9 @@ $("pf-form").addEventListener("submit", async (ev) => {
   const f = ev.target;
   const body = {};
   for (const n of ["name", "proto", "src_zone", "src_dport", "dest_zone",
-    "dest_ip", "dest_port", "notes"]) body[n] = f.elements[n].value.trim();
+    "dest_ip", "dest_port", "src_dip", "notes"]) body[n] = f.elements[n].value.trim();
   body.enabled = f.elements.enabled.checked;
+  body.reflection = f.elements.reflection.checked;
   try {
     if (editPfUUID) await api("/firewall/forwards/" + editPfUUID, "PUT", body);
     else await api("/firewall/forwards", "POST", body);

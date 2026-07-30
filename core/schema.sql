@@ -135,6 +135,8 @@ CREATE TABLE IF NOT EXISTS fw_forwards (
     dest_zone   TEXT NOT NULL DEFAULT 'lan',
     dest_ip     TEXT NOT NULL,
     dest_port   TEXT,                            -- prazno = isti kao src_dport
+    src_dip     TEXT,                            -- objava na konkretnoj javnoj IP (prazno = sve)
+    reflection  INTEGER NOT NULL DEFAULT 1,      -- hairpin NAT (forward radi i iz LAN-a)
     enabled     INTEGER NOT NULL DEFAULT 1,
     notes       TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),

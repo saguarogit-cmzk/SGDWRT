@@ -59,6 +59,14 @@ Za uređaje s više internet veza:
 - **Pravila usmjeravanja** — određeni promet (po izvoru, odredištu, portu)
   uvijek ide preko određene veze (npr. računovodstvo preko glavne).
 
+## OSPF
+
+Automatska razmjena ruta između routera (bird2). Odaberi sučelja koja
+sudjeluju ("stub" za mreže s računalima — objavljuju se, ali se na njima ne
+traže susjedi), po želji router ID i area. OSPF promet (IP protokol 89)
+otvara se samo na zonama odabranih sučelja. Stanje protokola i pronađeni
+susjedi prikazuju se u modulu.
+
 ## DHCP
 
 - **Poolovi**: po jedan po mreži (lan, VLAN-ovi...); svaki se može isključiti —
@@ -89,6 +97,11 @@ Za uređaje s više internet veza:
   jedan interni host. Taj host je potpuno izložen — koristiti s oprezom.
 - **1:1 NAT**: javna adresa ↔ interni server u oba smjera (javna adresa mora
   postojati na WAN sučelju).
+- **Čarobnjak "Objavi server"**: interni server (može se izabrati iz
+  inventara) + usluge (web, mail, SSH, RDP, vlastiti portovi) + po želji
+  konkretna javna adresa → čarobnjak stvori sve potrebne forwarde odjednom.
+- **NAT reflection (hairpin)**: opcija uz svaki forward (zadano uključena) —
+  server preko javne adrese rade i korisnici iz lokalne mreže.
 
 ## Blokade
 

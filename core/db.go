@@ -34,5 +34,9 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("shema: %w", err)
 	}
+	// migracije postojećih baza (IF NOT EXISTS ne dodaje nove stupce);
+	// greška "duplicate column" znači da je stupac već tu
+	db.Exec(`ALTER TABLE fw_forwards ADD COLUMN reflection INTEGER NOT NULL DEFAULT 1`)
+	db.Exec(`ALTER TABLE fw_forwards ADD COLUMN src_dip TEXT`)
 	return db, nil
 }

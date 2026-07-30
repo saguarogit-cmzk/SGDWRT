@@ -924,6 +924,12 @@ async function loadMonitorx() {
     ? "Zbroj od zadnjeg resetiranja brojača (nlbwmon)."
     : "Mjerenje prometa (nlbwmon) nije dostupno.";
 
+  api("/syslog").then((sl) => {
+    const el = $("sy-log");
+    el.textContent = sl.log || "—";
+    el.scrollTop = el.scrollHeight;
+  }).catch(() => { $("sy-log").textContent = "Log nedostupan."; });
+
   const eb = $("ev-rows");
   eb.replaceChildren();
   for (const e of x.events) {
@@ -1863,6 +1869,8 @@ $("al-form").addEventListener("submit", async (ev) => {
     await loadFirewall();
   } catch (e) { alertErr(e); }
 });
+
+$("sy-refresh").addEventListener("click", () => loadMonitorx().catch(alertErr));
 
 $("nm-add").addEventListener("click", () => {
   $("nm-form").reset();

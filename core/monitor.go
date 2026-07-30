@@ -323,6 +323,21 @@ func (s *server) handleMonitorSettings(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+/* ---------- sustavski log (prikaz) ---------- */
+
+// handleSyslogView vraća zadnje linije sustavskog loga (logread) — samo za
+// prikaz u GUI-ju, bez parsiranja odluka iz teksta.
+func (s *server) handleSyslogView(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "logread", "-l", "150").Output()
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "logread: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"log": string(out)})
+}
+
 /* ---------- potrošnja prometa (nlbwmon) ---------- */
 
 // handleTraffic vraća top potrošače iz nlbwmon-a (CSV izlaz `nlbw` alata —

@@ -118,6 +118,41 @@ CREATE TABLE IF NOT EXISTS ovpn_client_rules (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Imenovane grupe adresa za firewall pravila (koriste se kao @naziv)
+CREATE TABLE IF NOT EXISTS fw_aliases (
+    uuid        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL UNIQUE,          -- slug, npr. "serveri"
+    ips         TEXT NOT NULL,                 -- IP/CIDR odvojeni razmakom
+    notes       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Praćeni uređaji (ping nadzor s obavijestima)
+CREATE TABLE IF NOT EXISTS nw_monitors (
+    uuid        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    ip          TEXT NOT NULL,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    last_ok     INTEGER,                       -- NULL = još nije provjereno
+    last_change TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Dnevnik događaja (nadzor, safe mode, novi uređaji)
+CREATE TABLE IF NOT EXISTS events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          TEXT NOT NULL DEFAULT (datetime('now')),
+    level       TEXT NOT NULL DEFAULT 'info',  -- info | warning
+    message     TEXT NOT NULL
+);
+
+-- MAC adrese viđene u mreži (za alarm o nepoznatom uređaju)
+CREATE TABLE IF NOT EXISTS seen_macs (
+    mac         TEXT PRIMARY KEY,
+    first_seen  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Opće postavke platforme (ključ/vrijednost)
 CREATE TABLE IF NOT EXISTS settings (
     key         TEXT PRIMARY KEY,
@@ -155,6 +190,9 @@ CREATE TABLE IF NOT EXISTS fw_rules (
     dest_ip     TEXT,
     dest_port   TEXT,
     target      TEXT NOT NULL DEFAULT 'ACCEPT',  -- ACCEPT | REJECT | DROP
+    start_time  TEXT,                            -- HH:MM — pravilo vrijedi od
+    stop_time   TEXT,                            -- HH:MM — pravilo vrijedi do
+    weekdays    TEXT,                            -- npr. "mon tue fri"; prazno = svi dani
     enabled     INTEGER NOT NULL DEFAULT 1,
     notes       TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),

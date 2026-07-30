@@ -64,7 +64,13 @@ function renderSystem(sys) {
   $("hostname").textContent = sys.hostname;
   const kv = $("system-kv");
   kv.replaceChildren();
+  const role = sys.role || {};
+  let roleTxt = role.routing ? "Router + Firewall" : "Firewall (prosljeđivanje isključeno)";
+  roleTxt += ` — ${role.fw_zones || 0} zona, ${role.fw_rules || 0} pravila`;
+  if (role.nat_zones && role.nat_zones.length)
+    roleTxt += `, NAT na: ${role.nat_zones.join(", ")}`;
   const rows = [
+    ["Uloga uređaja", roleTxt],
     ["Model", sys.model],
     ["Firmware", sys.firmware],
     ["Kernel", sys.kernel],
@@ -134,8 +140,31 @@ function renderHealth(h) {
   }
 }
 
+// Čitljivi nazivi umjesto tehničkih (lan, sag_wg0, wan6...)
+function ifaceInfo(name) {
+  if (name === "lan") return ["LAN — lokalna mreža", "mreža"];
+  if (name === "wan") return ["WAN — internet veza", "internet"];
+  if (name === "wan6") return ["WAN — internet (IPv6)", "internet"];
+  if (name.startsWith("sag_wan"))
+    return ["WAN " + name.replace("sag_wan", "") + " — dodatni internet", "internet"];
+  if (name === "sag_wg0") return ["WireGuard VPN", "VPN tunel"];
+  if (name === "sag_ovpn") return ["OpenVPN", "VPN tunel"];
+  if (name.startsWith("sag_vlan"))
+    return ["VLAN " + name.replace("sag_vlan", ""), "mreža"];
+  return [name, ""];
+}
+const PROTO_LABEL = {
+  static: "statička adresa", dhcp: "automatski (DHCP)",
+  dhcpv6: "automatski (IPv6)", wireguard: "WireGuard", none: "tunel",
+  pppoe: "PPPoE",
+};
+function portRoleLabel(role) {
+  if (!role) return "slobodan port";
+  return ifaceInfo(role)[0].split(" — ")[0];
+}
+
 function renderInterfaces(x) {
-  // portovi: samo fizički ethX
+  // portovi: fizički ethX s ulogom (LAN/WAN/slobodan)
   const ports = $("ports");
   ports.replaceChildren();
   for (const d of x.devices.filter((d) => d.name.startsWith("eth"))) {
@@ -143,27 +172,50 @@ function renderInterfaces(x) {
     div.className = "port" + (d.carrier ? " link" : "");
     const name = document.createElement("div");
     name.className = "port-name";
-    name.textContent = d.name;
+    name.textContent = d.name.replace("eth", "Port ") + " · " + portRoleLabel(d.role);
     const state = d.carrier
       ? stGood("Link " + (d.speed ? d.speed.replace("F", "") + " Mbit" : ""))
-      : stOff("Nema linka");
+      : stOff("Nema kabela");
     const mac = document.createElement("div");
     mac.className = "port-mac";
-    mac.textContent = d.mac;
+    mac.textContent = d.name + " · " + d.mac;
     div.append(name, state, mac);
     ports.append(div);
   }
 
-  // logička sučelja
+  // logička sučelja: mreže i internet veze prvo, VPN tuneli na kraju
+  const order = (i) => {
+    const t = ifaceInfo(i.name)[1];
+    return t === "mreža" ? 0 : t === "internet" ? 1 : 2;
+  };
+  const list = [...x.interfaces].sort((a, b) =>
+    order(a) - order(b) || a.name.localeCompare(b.name));
+
   const tb = $("iface-rows");
   tb.replaceChildren();
-  for (const i of x.interfaces) {
+  for (const i of list) {
+    const [label, kind] = ifaceInfo(i.name);
     const tr = document.createElement("tr");
+
+    const tdName = document.createElement("td");
+    tdName.textContent = label;
+    const code = document.createElement("span");
+    code.className = "badge";
+    code.textContent = i.name;
+    tdName.append(code);
+    tr.append(tdName);
+
+    const tdKind = document.createElement("td");
+    tdKind.textContent = kind || "—";
+    tr.append(tdKind);
+
+    const tdSt = document.createElement("td");
+    tdSt.append(i.up ? stGood("Aktivno") : stOff("Neaktivno"));
+    tr.append(tdSt);
+
     const cells = [
-      i.name,
-      null, // stanje
-      i.proto,
-      i.device || "—",
+      PROTO_LABEL[i.proto] || i.proto,
+      kind === "VPN tunel" ? "virtualno" : (i.device || "—"),
       i.ipv4.length ? i.ipv4.join(", ") : "—",
       i.gateway || "—",
       i.dns && i.dns.length ? i.dns.join(", ") : "—",
@@ -171,9 +223,8 @@ function renderInterfaces(x) {
     ];
     cells.forEach((c, n) => {
       const td = document.createElement("td");
-      if (n === 1) td.append(i.up ? stGood("Aktivno") : stOff("Neaktivno"));
-      else td.textContent = c;
-      if (n === 7) td.className = "num";
+      td.textContent = c;
+      if (n === 5) td.className = "num";
       tr.append(td);
     });
     tb.append(tr);
@@ -484,12 +535,39 @@ let editPfUUID = null;
 let editRlUUID = null;
 
 let dmzEnabled = false;
+let editAlUUID = null;
 
 async function loadFirewall() {
-  const [st, fw, rl, dmz, n1] = await Promise.all([
+  const [st, fw, rl, dmz, n1, al] = await Promise.all([
     api("/firewall/status"), api("/firewall/forwards"), api("/firewall/rules"),
-    api("/firewall/dmz"), api("/firewall/nat11"),
+    api("/firewall/dmz"), api("/firewall/nat11"), api("/firewall/aliases"),
   ]);
+
+  const ab = $("al-rows");
+  ab.replaceChildren();
+  for (const a of al.aliases) {
+    const tr = document.createElement("tr");
+    const tdN = document.createElement("td");
+    tdN.textContent = "@" + a.name;
+    tr.append(tdN);
+    for (const v of [a.ips, a.notes || "—"]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    tdAct.append(
+      btnSm("Uredi", false, () => openAlDialog(a)),
+      btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati alias "@${a.name}"? Pravila koja ga koriste ` +
+          "past će pri sljedećoj primjeni.")) return;
+        await api("/firewall/aliases/" + a.uuid, "DELETE").catch(alertErr);
+        loadFirewall().catch(alertErr);
+      }));
+    tr.append(tdAct);
+    ab.append(tr);
+  }
 
   dmzEnabled = dmz.enabled;
   $("dmz-ip").value = dmz.dest_ip || $("dmz-ip").value;
@@ -796,6 +874,100 @@ function openPeerDialog(p) {
   f.elements.notes.value = p ? p.notes || "" : "";
   f.elements.enabled.checked = p ? !!p.enabled : true;
   $("peer-dialog").showModal();
+}
+
+/* ---------- nadzor ---------- */
+
+async function loadMonitorx() {
+  const [x, tr] = await Promise.all([api("/monitor"), api("/traffic")]);
+
+  $("nm-unknown").checked = !!x.unknown_alert;
+  const tb = $("nm-rows");
+  tb.replaceChildren();
+  for (const m of x.monitors) {
+    const row = document.createElement("tr");
+    for (const v of [m.name, m.ip]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      row.append(td);
+    }
+    const tdS = document.createElement("td");
+    tdS.append(m.last_ok === null ? stOff("Provjerava se")
+      : m.last_ok ? stGood("Dostupan") : stCrit("Ne odgovara"));
+    row.append(tdS);
+    const tdC = document.createElement("td");
+    tdC.textContent = m.last_change || "—";
+    row.append(tdC);
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    tdAct.append(btnSm("Obriši", true, async () => {
+      await api("/monitor/" + m.uuid, "DELETE").catch(alertErr);
+      loadMonitorx().catch(alertErr);
+    }));
+    row.append(tdAct);
+    tb.append(row);
+  }
+
+  const trb = $("tr-rows");
+  trb.replaceChildren();
+  for (const h of tr.hosts || []) {
+    const row = document.createElement("tr");
+    for (const v of [h.ip, fmtBytes(h.rx_bytes), fmtBytes(h.tx_bytes),
+      String(h.conns)]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      row.append(td);
+    }
+    trb.append(row);
+  }
+  $("tr-hint").textContent = tr.available
+    ? "Zbroj od zadnjeg resetiranja brojača (nlbwmon)."
+    : "Mjerenje prometa (nlbwmon) nije dostupno.";
+
+  const eb = $("ev-rows");
+  eb.replaceChildren();
+  for (const e of x.events) {
+    const row = document.createElement("tr");
+    const tdT = document.createElement("td");
+    tdT.textContent = e.ts;
+    row.append(tdT);
+    const tdL = document.createElement("td");
+    tdL.append(e.level === "warning" ? stWarn("Upozorenje") : stGood("Info"));
+    row.append(tdL);
+    const tdM = document.createElement("td");
+    tdM.textContent = e.message;
+    row.append(tdM);
+    eb.append(row);
+  }
+}
+
+/* ---------- qos ---------- */
+
+async function loadQos() {
+  const x = await api("/qos");
+  const tb = $("qos-rows");
+  tb.replaceChildren();
+  for (const q of x.queues || []) {
+    const tr = document.createElement("tr");
+    tr.dataset.iface = q.iface;
+    const tdN = document.createElement("td");
+    tdN.textContent = ifaceInfo(q.iface)[0] + " (" + q.device + ")";
+    tr.append(tdN);
+    const tdE = document.createElement("td");
+    const en = document.createElement("input");
+    en.type = "checkbox"; en.className = "q-en"; en.checked = q.enabled;
+    tdE.append(en); tr.append(tdE);
+    for (const [cls, val] of [["q-down", q.download], ["q-up", q.upload]]) {
+      const td = document.createElement("td");
+      const inp = document.createElement("input");
+      inp.className = cls; inp.style.width = "90px";
+      inp.value = val ? (val / 1000).toString() : "";
+      td.append(inp); tr.append(td);
+    }
+    tb.append(tr);
+  }
+  if (!x.installed)
+    $("qos-result").textContent = "Paket sqm-scripts nije instaliran.";
 }
 
 /* ---------- ospf ---------- */
@@ -1124,9 +1296,21 @@ async function applyUpdate(source) {
 let tokVisible = false;
 
 async function loadSettings() {
-  const [s, sys] = await Promise.all([
-    api("/auth/session"), api("/settings/system"),
+  const [s, sys, mon] = await Promise.all([
+    api("/auth/session"), api("/settings/system"), api("/monitor"),
   ]);
+  const acl = sys.mgmt_acl || {};
+  $("acl-enabled").checked = !!acl.enabled;
+  $("acl-allow").value = acl.allow || "";
+
+  const em = mon.email || {};
+  $("sm-enabled").checked = !!em.enabled;
+  $("sm-host").value = em.host || "";
+  $("sm-port").value = em.port || "587";
+  $("sm-user").value = em.user || "";
+  $("sm-from").value = em.from || "";
+  $("sm-to").value = em.to || "";
+
   const sl = sys.syslog || {};
   $("sl-enabled").checked = !!sl.enabled;
   $("sl-host").value = sl.host || "";
@@ -1249,8 +1433,23 @@ let wanNames = [];
 const ACCESS_LABEL = { wan: "internet", wan_lan: "internet + LAN", isolated: "izolirano" };
 
 async function loadNetwork() {
-  const [x, ws, vl] = await Promise.all([
-    api("/network/lan"), api("/network/wans"), api("/network/vlans")]);
+  const [x, ws, vl, dd] = await Promise.all([
+    api("/network/lan"), api("/network/wans"), api("/network/vlans"),
+    api("/ddns")]);
+
+  $("dd-enabled").checked = !!dd.enabled;
+  const sel = $("dd-provider");
+  sel.replaceChildren();
+  for (const p of dd.providers || []) {
+    const o = document.createElement("option");
+    o.value = p; o.textContent = p;
+    sel.append(o);
+  }
+  if (dd.provider) sel.value = dd.provider;
+  $("dd-domain").value = dd.domain || "";
+  $("dd-user").value = dd.username || "";
+  if (dd.registered_ip)
+    $("dd-result").textContent = "Zadnja registrirana adresa: " + dd.registered_ip;
 
   const vb = $("vlan-rows");
   vb.replaceChildren();
@@ -1365,9 +1564,11 @@ function openWanDialog(wn) {
 // moduli aktivne grupe su tabovi iznad sadržaja (uzor: Saguaro Network Manager).
 const MODULES = {
   dashboard: ["Dashboard", "Pregled stanja uređaja i mreže", () => null],
+  monitorx:  ["Nadzor", "Praćenje uređaja, događaji i potrošnja prometa", () => loadMonitorx()],
   network:   ["Mreža", "LAN adresa, WAN veze i VLAN mreže", () => loadNetwork()],
   multiwan:  ["Multi-WAN", "Više internet veza — failover, raspodjela i nadzor", () => loadMultiwan()],
   ospf:      ["OSPF", "Dinamičko usmjeravanje — automatska razmjena ruta s routerima", () => loadOspf()],
+  qos:       ["QoS", "Ograničenje brzine — glatki pozivi i pravedna raspodjela veze", () => loadQos()],
   dhcp:      ["DHCP", "Dodjela IP adresa i rezervacije za uređaje u mreži", () => loadDhcp()],
   dns:       ["DNS", "Lokalna imena uređaja (npr. nas.lan umjesto IP adrese)", () => loadDns()],
   firewall:  ["Firewall", "Pravila prometa, port forwardi, DMZ i 1:1 NAT", () => loadFirewall()],
@@ -1381,8 +1582,8 @@ const MODULES = {
   help:      ["Pomoć", "Upute za rad — kako koristiti svaki modul", () => null],
 };
 const NAV_GROUPS = [
-  ["Status", ["dashboard"]],
-  ["Mreža", ["network", "multiwan", "ospf", "dhcp", "dns"]],
+  ["Status", ["dashboard", "monitorx"]],
+  ["Mreža", ["network", "multiwan", "ospf", "qos", "dhcp", "dns"]],
   ["Zaštita", ["firewall", "protection"]],
   ["VPN", ["wireguard", "openvpn"]],
   ["Sustav", ["devices", "backup", "update", "settings", "help"]],
@@ -1483,6 +1684,11 @@ async function start() {
   try {
     renderSystem(await api("/system"));
     await Promise.all([tickFast(), tickSlow()]);
+    // safe mode: uspješan dohvat sučelja = potvrda da promjena nije zaključala
+    api("/rollback/confirm", "POST", {}).then((r) => {
+      if (r.confirmed)
+        $("refreshed").textContent = "Promjena '" + r.reason + "' potvrđena (safe mode).";
+    }).catch(() => {});
   } catch (e) {
     if (e && e.unauthorized) { logout(true); return; }
     throw e;
@@ -1631,6 +1837,147 @@ $("dns-apply").addEventListener("click", async () => {
   }
 });
 
+function openAlDialog(a) {
+  const f = $("al-form");
+  editAlUUID = a ? a.uuid : null;
+  $("al-dialog-title").textContent = editAlUUID ? "Uredi alias" : "Novi alias";
+  f.elements.name.value = a ? a.name : "";
+  f.elements.ips.value = a ? a.ips : "";
+  f.elements.notes.value = a ? a.notes || "" : "";
+  $("al-dialog").showModal();
+}
+$("al-add").addEventListener("click", () => openAlDialog(null));
+$("al-cancel").addEventListener("click", () => $("al-dialog").close());
+$("al-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {
+    name: f.elements.name.value.trim(),
+    ips: f.elements.ips.value.trim(),
+    notes: f.elements.notes.value.trim(),
+  };
+  try {
+    if (editAlUUID) await api("/firewall/aliases/" + editAlUUID, "PUT", body);
+    else await api("/firewall/aliases", "POST", body);
+    $("al-dialog").close();
+    await loadFirewall();
+  } catch (e) { alertErr(e); }
+});
+
+$("nm-add").addEventListener("click", () => {
+  $("nm-form").reset();
+  $("nm-dialog").showModal();
+});
+$("nm-cancel").addEventListener("click", () => $("nm-dialog").close());
+$("nm-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  try {
+    await api("/monitor", "POST", {
+      name: f.elements.name.value.trim(),
+      ip: f.elements.ip.value.trim(),
+    });
+    $("nm-dialog").close();
+    await loadMonitorx();
+  } catch (e) { alertErr(e); }
+});
+$("nm-unknown").addEventListener("change", async () => {
+  try {
+    const r = await api("/monitor/settings", "POST",
+      { unknown_alert: $("nm-unknown").checked });
+    $("nm-result").textContent = r.unknown_alert
+      ? "Alarm uključen — postojeći uređaji upisani su kao poznati."
+      : "Alarm isključen.";
+  } catch (e) { alertErr(e); }
+});
+
+$("qos-save").addEventListener("click", async () => {
+  const queues = [];
+  for (const tr of $("qos-rows").children) {
+    queues.push({
+      iface: tr.dataset.iface,
+      enabled: tr.querySelector(".q-en").checked,
+      download: Math.round(parseFloat(tr.querySelector(".q-down").value) * 1000) || 0,
+      upload: Math.round(parseFloat(tr.querySelector(".q-up").value) * 1000) || 0,
+    });
+  }
+  $("qos-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/qos", "POST", { queues });
+    $("qos-result").textContent = "Primijenjeno. Backup: " + r.backup;
+  } catch (e) {
+    $("qos-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("dd-save").addEventListener("click", async () => {
+  $("dd-result").textContent = "Spremam…";
+  try {
+    const r = await api("/ddns", "POST", {
+      enabled: $("dd-enabled").checked,
+      provider: $("dd-provider").value,
+      domain: $("dd-domain").value.trim(),
+      username: $("dd-user").value.trim(),
+      password: $("dd-pass").value,
+    });
+    $("dd-result").textContent = r.enabled
+      ? "DDNS uključen — prva registracija slijedi za koju minutu."
+      : "DDNS isključen.";
+    $("dd-pass").value = "";
+  } catch (e) {
+    $("dd-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("acl-save").addEventListener("click", async () => {
+  const en = $("acl-enabled").checked;
+  if (en && !confirm("Uključiti ograničenje pristupa?\n\nAko trenutna adresa " +
+    "tvog računala nije na popisu, izgubit ćeš pristup — safe mode će " +
+    "promjenu vratiti za 2 minute.")) return;
+  $("acl-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/settings/mgmtacl", "POST",
+      { enabled: en, allow: $("acl-allow").value.trim() });
+    if (r.safe_mode) {
+      // još imamo pristup — odmah potvrdi da se promjena ne vrati
+      const c = await api("/rollback/confirm", "POST", {});
+      $("acl-result").textContent = "Ograničenje aktivno i potvrđeno (pristup radi).";
+    } else {
+      $("acl-result").textContent = "Ograničenje isključeno.";
+    }
+  } catch (e) {
+    $("acl-result").textContent = "Greška: " + (e.message || e) +
+      " — ako si izgubio pristup, pričekaj 2 minute (safe mode).";
+  }
+});
+
+$("sm-save").addEventListener("click", async () => {
+  try {
+    await api("/settings/smtp", "POST", {
+      enabled: $("sm-enabled").checked,
+      host: $("sm-host").value.trim(),
+      port: parseInt($("sm-port").value, 10) || 587,
+      user: $("sm-user").value.trim(),
+      pass: $("sm-pass").value,
+      from: $("sm-from").value.trim(),
+      to: $("sm-to").value.trim(),
+    });
+    $("sm-result").textContent = "Spremljeno.";
+    $("sm-pass").value = "";
+  } catch (e) {
+    $("sm-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+$("sm-test").addEventListener("click", async () => {
+  $("sm-result").textContent = "Šaljem probnu poruku…";
+  try {
+    await api("/notify/test", "POST", {});
+    $("sm-result").textContent = "Probna poruka poslana — provjeri sandučić.";
+  } catch (e) {
+    $("sm-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
 $("os-save").addEventListener("click", async () => {
   const interfaces = [];
   for (const cb of $("os-ifaces").querySelectorAll(".os-if:checked")) {
@@ -1725,7 +2072,8 @@ $("rl-form").addEventListener("submit", async (ev) => {
   const f = ev.target;
   const body = {};
   for (const n of ["name", "proto", "src_zone", "src_ip", "dest_zone",
-    "dest_ip", "dest_port", "target", "notes"]) body[n] = f.elements[n].value.trim();
+    "dest_ip", "dest_port", "target", "start_time", "stop_time", "weekdays",
+    "notes"]) body[n] = f.elements[n].value.trim();
   body.enabled = f.elements.enabled.checked;
   try {
     if (editRlUUID) await api("/firewall/rules/" + editRlUUID, "PUT", body);

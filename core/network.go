@@ -142,12 +142,19 @@ func (s *server) handleNetworkLanSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// safe mode: ako se nitko ne prijavi na novu adresu (GUI potvrdi pri
+	// prvom uspješnom dohvatu), stara konfiguracija se sama vraća
+	s.scheduleRollback("promjena LAN adrese",
+		map[string]string{networkConfig: backupName},
+		[][2]string{{"network", "reload"}})
+
 	// odgovor mora otići PRIJE reloada mreže — veza na staroj adresi pada
 	writeJSON(w, http.StatusOK, map[string]any{
 		"applied":   true,
 		"new_url":   "https://" + ip.String() + ":8443/",
 		"reload_in": 3,
 		"backup":    backupName,
+		"safe_mode": true,
 	})
 	go func() {
 		time.Sleep(3 * time.Second)

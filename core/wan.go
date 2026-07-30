@@ -301,8 +301,18 @@ func (s *server) handleWANSet(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	// safe mode: kriva WAN postavka na glavnoj vezi može odsjeći uređaj
+	files := map[string]string{networkConfig: backups[0]}
+	reloads := [][2]string{{"network", "reload"}}
+	if len(backups) > 1 {
+		files[firewallConfig] = backups[1]
+		reloads = append(reloads, [2]string{"firewall", "reload"})
+	}
+	s.scheduleRollback("promjena WAN veze "+name, files, reloads)
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"applied": name, "backups": backups,
+		"applied": name, "backups": backups, "safe_mode": true,
 	})
 }
 

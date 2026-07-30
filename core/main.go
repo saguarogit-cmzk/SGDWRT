@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const version = "0.15.0"
+const version = "0.16.0"
 
 type server struct {
 	tokenMu   sync.RWMutex
@@ -80,6 +80,7 @@ func main() {
 	}
 
 	go collectMetrics()
+	go s.monitorLoop()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
@@ -180,6 +181,24 @@ func main() {
 	mux.Handle("GET /api/v1/settings/system", s.auth(s.handleSystemSettingsGet))
 	mux.Handle("POST /api/v1/settings/syslog", s.auth(s.handleSyslogSet))
 	mux.Handle("GET /api/v1/metrics/history", s.auth(s.handleMetricsHistory))
+	mux.Handle("GET /api/v1/rollback", s.auth(s.handleRollbackStatus))
+	mux.Handle("POST /api/v1/rollback/confirm", s.auth(s.handleRollbackConfirm))
+	mux.Handle("GET /api/v1/firewall/aliases", s.auth(s.handleAliasList))
+	mux.Handle("POST /api/v1/firewall/aliases", s.auth(s.handleAliasCreate))
+	mux.Handle("PUT /api/v1/firewall/aliases/{uuid}", s.auth(s.handleAliasUpdate))
+	mux.Handle("DELETE /api/v1/firewall/aliases/{uuid}", s.auth(s.handleAliasDelete))
+	mux.Handle("GET /api/v1/qos", s.auth(s.handleQosGet))
+	mux.Handle("POST /api/v1/qos", s.auth(s.handleQosSet))
+	mux.Handle("GET /api/v1/ddns", s.auth(s.handleDdnsGet))
+	mux.Handle("POST /api/v1/ddns", s.auth(s.handleDdnsSet))
+	mux.Handle("GET /api/v1/monitor", s.auth(s.handleMonitorGet))
+	mux.Handle("POST /api/v1/monitor", s.auth(s.handleMonitorCreate))
+	mux.Handle("DELETE /api/v1/monitor/{uuid}", s.auth(s.handleMonitorDelete))
+	mux.Handle("POST /api/v1/monitor/settings", s.auth(s.handleMonitorSettings))
+	mux.Handle("POST /api/v1/settings/smtp", s.auth(s.handleSMTPSet))
+	mux.Handle("POST /api/v1/notify/test", s.auth(s.handleNotifyTest))
+	mux.Handle("GET /api/v1/traffic", s.auth(s.handleTraffic))
+	mux.Handle("POST /api/v1/settings/mgmtacl", s.auth(s.handleMgmtACLSet))
 	mux.Handle("GET /api/v1/update/status", s.auth(s.handleUpdateStatus))
 	mux.Handle("POST /api/v1/update/upload", s.auth(s.handleUpdateUpload))
 	mux.Handle("POST /api/v1/update/apply", s.auth(s.handleUpdateApply))

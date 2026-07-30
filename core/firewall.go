@@ -85,6 +85,9 @@ type FWRule struct {
 	DestIP    string `json:"dest_ip"`
 	DestPort  string `json:"dest_port"`
 	Target    string `json:"target"`
+	StartTime string `json:"start_time"`
+	StopTime  string `json:"stop_time"`
+	Weekdays  string `json:"weekdays"`
 	Enabled   bool   `json:"enabled"`
 	Notes     string `json:"notes"`
 	CreatedAt string `json:"created_at"`
@@ -93,14 +96,30 @@ type FWRule struct {
 
 const ruleCols = `uuid, name, family, proto, src_zone, COALESCE(src_ip,''),
 	COALESCE(dest_zone,''), COALESCE(dest_ip,''), COALESCE(dest_port,''),
-	target, enabled, COALESCE(notes,''), created_at, updated_at`
+	target, COALESCE(start_time,''), COALESCE(stop_time,''),
+	COALESCE(weekdays,''), enabled, COALESCE(notes,''), created_at, updated_at`
 
 func scanRule(row interface{ Scan(...any) error }) (FWRule, error) {
 	var f FWRule
 	err := row.Scan(&f.UUID, &f.Name, &f.Family, &f.Proto, &f.SrcZone, &f.SrcIP,
-		&f.DestZone, &f.DestIP, &f.DestPort, &f.Target, &f.Enabled, &f.Notes,
+		&f.DestZone, &f.DestIP, &f.DestPort, &f.Target, &f.StartTime,
+		&f.StopTime, &f.Weekdays, &f.Enabled, &f.Notes,
 		&f.CreatedAt, &f.UpdatedAt)
 	return f, err
+}
+
+var reHHMM = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
+
+var validDays = map[string]bool{"mon": true, "tue": true, "wed": true,
+	"thu": true, "fri": true, "sat": true, "sun": true}
+
+// validAddrOrAlias prihvaća IP/CIDR ili @alias.
+func (s *server) validAddrOrAlias(v string) bool {
+	if strings.HasPrefix(v, "@") {
+		_, err := s.resolveAlias(v)
+		return err == nil
+	}
+	return validAddr(v)
 }
 
 func validateForward(w http.ResponseWriter, f *FWForward) bool {
@@ -142,7 +161,7 @@ func validateForward(w http.ResponseWriter, f *FWForward) bool {
 	return false
 }
 
-func validateRule(w http.ResponseWriter, f *FWRule) bool {
+func (s *server) validateRule(w http.ResponseWriter, f *FWRule) bool {
 	f.Name = strings.TrimSpace(f.Name)
 	f.Family = strings.TrimSpace(f.Family)
 	f.Proto = strings.TrimSpace(f.Proto)
@@ -152,6 +171,9 @@ func validateRule(w http.ResponseWriter, f *FWRule) bool {
 	f.DestIP = strings.TrimSpace(f.DestIP)
 	f.DestPort = strings.TrimSpace(f.DestPort)
 	f.Target = strings.ToUpper(strings.TrimSpace(f.Target))
+	f.StartTime = strings.TrimSpace(f.StartTime)
+	f.StopTime = strings.TrimSpace(f.StopTime)
+	f.Weekdays = strings.ToLower(strings.TrimSpace(f.Weekdays))
 	if f.Family == "" {
 		f.Family = "any"
 	}
@@ -175,17 +197,32 @@ func validateRule(w http.ResponseWriter, f *FWRule) bool {
 		writeErr(w, http.StatusBadRequest, "neispravan protokol")
 	case f.SrcZone != "*" && !reZone.MatchString(f.SrcZone):
 		writeErr(w, http.StatusBadRequest, "neispravna izvorišna zona")
-	case f.SrcIP != "" && !validAddr(f.SrcIP):
-		writeErr(w, http.StatusBadRequest, "neispravna izvorišna adresa (IP ili CIDR)")
+	case f.SrcIP != "" && !s.validAddrOrAlias(f.SrcIP):
+		writeErr(w, http.StatusBadRequest,
+			"neispravna izvorišna adresa (IP, CIDR ili postojeći @alias)")
 	case f.DestZone != "" && f.DestZone != "*" && !reZone.MatchString(f.DestZone):
 		writeErr(w, http.StatusBadRequest, "neispravna odredišna zona")
-	case f.DestIP != "" && !validAddr(f.DestIP):
-		writeErr(w, http.StatusBadRequest, "neispravna odredišna adresa (IP ili CIDR)")
+	case f.DestIP != "" && !s.validAddrOrAlias(f.DestIP):
+		writeErr(w, http.StatusBadRequest,
+			"neispravna odredišna adresa (IP, CIDR ili postojeći @alias)")
 	case f.DestPort != "" && !validPortSpec(f.DestPort):
 		writeErr(w, http.StatusBadRequest, "neispravan odredišni port")
 	case f.Target != "ACCEPT" && f.Target != "REJECT" && f.Target != "DROP":
 		writeErr(w, http.StatusBadRequest, "akcija mora biti ACCEPT, REJECT ili DROP")
+	case f.StartTime != "" && !reHHMM.MatchString(f.StartTime):
+		writeErr(w, http.StatusBadRequest, "vrijeme od mora biti HH:MM")
+	case f.StopTime != "" && !reHHMM.MatchString(f.StopTime):
+		writeErr(w, http.StatusBadRequest, "vrijeme do mora biti HH:MM")
+	case (f.StartTime == "") != (f.StopTime == ""):
+		writeErr(w, http.StatusBadRequest, "vremensko ograničenje traži oba vremena (od i do)")
 	default:
+		for _, d := range strings.Fields(f.Weekdays) {
+			if !validDays[d] {
+				writeErr(w, http.StatusBadRequest,
+					"dani moraju biti mon tue wed thu fri sat sun ("+d+")")
+				return false
+			}
+		}
 		return true
 	}
 	return false
@@ -410,15 +447,17 @@ func (s *server) handleFWRuleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := &in.FWRule
-	if !validateRule(w, f) {
+	if !s.validateRule(w, f) {
 		return
 	}
 	f.UUID = newUUID()
 	_, err := s.db.Exec(`INSERT INTO fw_rules
 		(uuid, name, family, proto, src_zone, src_ip, dest_zone, dest_ip,
-		 dest_port, target, enabled, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 dest_port, target, start_time, stop_time, weekdays, enabled, notes)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		f.UUID, f.Name, f.Family, f.Proto, f.SrcZone, f.SrcIP, f.DestZone,
-		f.DestIP, f.DestPort, f.Target, enabledIntOf(in.Enabled), f.Notes)
+		f.DestIP, f.DestPort, f.Target, f.StartTime, f.StopTime, f.Weekdays,
+		enabledIntOf(in.Enabled), f.Notes)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -435,14 +474,16 @@ func (s *server) handleFWRuleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := &in.FWRule
-	if !validateRule(w, f) {
+	if !s.validateRule(w, f) {
 		return
 	}
 	res, err := s.db.Exec(`UPDATE fw_rules SET name=?, family=?, proto=?,
 		src_zone=?, src_ip=?, dest_zone=?, dest_ip=?, dest_port=?, target=?,
-		enabled=?, notes=?, updated_at=datetime('now') WHERE uuid=?`,
+		start_time=?, stop_time=?, weekdays=?, enabled=?, notes=?,
+		updated_at=datetime('now') WHERE uuid=?`,
 		f.Name, f.Family, f.Proto, f.SrcZone, f.SrcIP, f.DestZone, f.DestIP,
-		f.DestPort, f.Target, enabledIntOf(in.Enabled), f.Notes, uuid)
+		f.DestPort, f.Target, f.StartTime, f.StopTime, f.Weekdays,
+		enabledIntOf(in.Enabled), f.Notes, uuid)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -467,6 +508,127 @@ func (s *server) handleFWRuleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("uuid")})
+}
+
+/* ---------- aliasi (imenovane grupe adresa) ---------- */
+
+var reAliasName = regexp.MustCompile(`^[a-z][a-z0-9-]{1,19}$`)
+
+type FWAlias struct {
+	UUID  string `json:"uuid"`
+	Name  string `json:"name"`
+	IPs   string `json:"ips"`
+	Notes string `json:"notes"`
+}
+
+func (s *server) handleAliasList(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.db.Query(`SELECT uuid, name, ips, COALESCE(notes,'')
+		FROM fw_aliases ORDER BY name`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []FWAlias{}
+	for rows.Next() {
+		var a FWAlias
+		if rows.Scan(&a.UUID, &a.Name, &a.IPs, &a.Notes) == nil {
+			out = append(out, a)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"aliases": out})
+}
+
+func validateAlias(w http.ResponseWriter, a *FWAlias) bool {
+	a.Name = strings.ToLower(strings.TrimSpace(a.Name))
+	a.IPs = strings.TrimSpace(a.IPs)
+	if !reAliasName.MatchString(a.Name) {
+		writeErr(w, http.StatusBadRequest,
+			"naziv aliasa: 2-20 malih slova/znamenki/crtica, počinje slovom")
+		return false
+	}
+	ips := strings.Fields(a.IPs)
+	if len(ips) == 0 {
+		writeErr(w, http.StatusBadRequest, "alias treba bar jednu adresu")
+		return false
+	}
+	for _, ip := range ips {
+		if !validAddr(ip) {
+			writeErr(w, http.StatusBadRequest, "neispravna adresa: "+ip)
+			return false
+		}
+	}
+	return true
+}
+
+func (s *server) handleAliasCreate(w http.ResponseWriter, r *http.Request) {
+	var a FWAlias
+	if !decodeBody(w, r, &a) {
+		return
+	}
+	if !validateAlias(w, &a) {
+		return
+	}
+	a.UUID = newUUID()
+	if _, err := s.db.Exec(`INSERT INTO fw_aliases (uuid, name, ips, notes)
+		VALUES (?,?,?,?)`, a.UUID, a.Name, a.IPs, a.Notes); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			writeErr(w, http.StatusConflict, "alias s tim nazivom već postoji")
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, a)
+}
+
+func (s *server) handleAliasUpdate(w http.ResponseWriter, r *http.Request) {
+	var a FWAlias
+	if !decodeBody(w, r, &a) {
+		return
+	}
+	if !validateAlias(w, &a) {
+		return
+	}
+	res, err := s.db.Exec(`UPDATE fw_aliases SET name=?, ips=?, notes=?,
+		updated_at=datetime('now') WHERE uuid=?`,
+		a.Name, a.IPs, a.Notes, r.PathValue("uuid"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusNotFound, "alias ne postoji")
+		return
+	}
+	writeJSON(w, http.StatusOK, a)
+}
+
+func (s *server) handleAliasDelete(w http.ResponseWriter, r *http.Request) {
+	res, err := s.db.Exec(`DELETE FROM fw_aliases WHERE uuid=?`, r.PathValue("uuid"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusNotFound, "alias ne postoji")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("uuid")})
+}
+
+// resolveAlias vraća adrese aliasa za "@naziv" (ili samu vrijednost ako nije alias).
+func (s *server) resolveAlias(val string) ([]string, error) {
+	if !strings.HasPrefix(val, "@") {
+		return []string{val}, nil
+	}
+	var ips string
+	err := s.db.QueryRow(`SELECT ips FROM fw_aliases WHERE name=?`,
+		strings.TrimPrefix(val, "@")).Scan(&ips)
+	if err != nil {
+		return nil, fmt.Errorf("alias %s ne postoji", val)
+	}
+	return strings.Fields(ips), nil
 }
 
 /* ---------- DMZ ---------- */
@@ -807,16 +969,37 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprintf(&b, "set firewall.%s.src=%s\n", sn, f.SrcZone)
 		if f.SrcIP != "" {
-			fmt.Fprintf(&b, "set firewall.%s.src_ip=%s\n", sn, f.SrcIP)
+			addrs, err := s.resolveAlias(f.SrcIP)
+			if err != nil {
+				writeErr(w, http.StatusConflict, "pravilo "+f.Name+": "+err.Error())
+				return
+			}
+			for _, a := range addrs {
+				fmt.Fprintf(&b, "add_list firewall.%s.src_ip=%s\n", sn, a)
+			}
 		}
 		if f.DestZone != "" {
 			fmt.Fprintf(&b, "set firewall.%s.dest=%s\n", sn, f.DestZone)
 		}
 		if f.DestIP != "" {
-			fmt.Fprintf(&b, "set firewall.%s.dest_ip=%s\n", sn, f.DestIP)
+			addrs, err := s.resolveAlias(f.DestIP)
+			if err != nil {
+				writeErr(w, http.StatusConflict, "pravilo "+f.Name+": "+err.Error())
+				return
+			}
+			for _, a := range addrs {
+				fmt.Fprintf(&b, "add_list firewall.%s.dest_ip=%s\n", sn, a)
+			}
 		}
 		if f.DestPort != "" {
 			fmt.Fprintf(&b, "set firewall.%s.dest_port=%s\n", sn, f.DestPort)
+		}
+		if f.StartTime != "" && f.StopTime != "" {
+			fmt.Fprintf(&b, "set firewall.%s.start_time=%s\n", sn, f.StartTime)
+			fmt.Fprintf(&b, "set firewall.%s.stop_time=%s\n", sn, f.StopTime)
+		}
+		if f.Weekdays != "" {
+			fmt.Fprintf(&b, "set firewall.%s.weekdays=%s\n", sn, uciQuote(f.Weekdays))
 		}
 		fmt.Fprintf(&b, "set firewall.%s.target=%s\n", sn, f.Target)
 	}

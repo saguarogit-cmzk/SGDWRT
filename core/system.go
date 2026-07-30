@@ -48,7 +48,18 @@ func (s *server) handleSystemSettingsGet(w http.ResponseWriter, r *http.Request)
 			}
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"syslog": syslog})
+	// stvarno stanje ACL-a iz firewalla (safe mode ga je mogao vratiti)
+	aclActive := false
+	if fwCfg, err := uciGetConfig(r.Context(), "firewall"); err == nil {
+		_, aclActive = fwCfg["sag_acl_block"]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"syslog": syslog,
+		"mgmt_acl": map[string]any{
+			"enabled": aclActive,
+			"allow":   s.getSetting("mgmt_acl_allow", ""),
+		},
+	})
 }
 
 func (s *server) handleSyslogSet(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +141,99 @@ func (s *server) handleSyslogSet(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enabled": *in.Enabled, "backup": backupName,
+	})
+}
+
+/* ---------- ograničenje upravljačkog pristupa (management ACL) ---------- */
+
+// handleMgmtACLSet: pristup GUI-ju (8443) i SSH-u (22) dopušten samo s
+// navedenih adresa/mreža; sve ostalo se odbacuje. Zbog rizika samo-
+// zaključavanja promjena ide kroz safe mode (auto-rollback bez potvrde).
+func (s *server) handleMgmtACLSet(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var in struct {
+		Enabled *bool  `json:"enabled"`
+		Allow   string `json:"allow"`
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	if in.Enabled == nil {
+		writeErr(w, http.StatusBadRequest, "nedostaje polje enabled")
+		return
+	}
+	allow := strings.Fields(in.Allow)
+	if *in.Enabled && len(allow) == 0 {
+		writeErr(w, http.StatusBadRequest,
+			"navedi bar jednu dopuštenu adresu ili mrežu (CIDR)")
+		return
+	}
+	for _, a := range allow {
+		if !validAddr(a) {
+			writeErr(w, http.StatusBadRequest, "neispravna adresa: "+a)
+			return
+		}
+	}
+
+	backupName, err := s.backupConfig(firewallConfig)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "backup: "+err.Error())
+		return
+	}
+	cfg, err := uciGetConfig(ctx, "firewall")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	var b strings.Builder
+	for name, sec := range cfg {
+		if strings.HasPrefix(name, "sag_acl_") && sectStr(sec, ".type") == "rule" {
+			fmt.Fprintf(&b, "delete firewall.%s\n", name)
+		}
+	}
+	if *in.Enabled {
+		for i, a := range allow {
+			sn := fmt.Sprintf("sag_acl_ok%d", i)
+			fmt.Fprintf(&b, "set firewall.%s=rule\n", sn)
+			fmt.Fprintf(&b, "set firewall.%s.name=%s\n", sn, uciQuote("Saguaro-ACL dopusti "+a))
+			fmt.Fprintf(&b, "set firewall.%s.src=*\n", sn)
+			fmt.Fprintf(&b, "set firewall.%s.src_ip=%s\n", sn, a)
+			fmt.Fprintf(&b, "set firewall.%s.proto=tcp\n", sn)
+			fmt.Fprintf(&b, "set firewall.%s.dest_port=%s\n", sn, uciQuote("8443 22"))
+			fmt.Fprintf(&b, "set firewall.%s.target=ACCEPT\n", sn)
+		}
+		b.WriteString("set firewall.sag_acl_block=rule\n")
+		b.WriteString("set firewall.sag_acl_block.name=Saguaro-ACL-blokada\n")
+		b.WriteString("set firewall.sag_acl_block.src=*\n")
+		b.WriteString("set firewall.sag_acl_block.proto=tcp\n")
+		fmt.Fprintf(&b, "set firewall.sag_acl_block.dest_port=%s\n", uciQuote("8443 22"))
+		b.WriteString("set firewall.sag_acl_block.target=DROP\n")
+	}
+	if b.Len() == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": false})
+		return
+	}
+	b.WriteString("commit firewall\n")
+	if err := uciBatch(ctx, b.String()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := serviceReload(ctx, "firewall", "reload"); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.setSetting("mgmt_acl_allow", strings.Join(allow, " "))
+	s.setSetting("mgmt_acl_enabled", map[bool]string{true: "1", false: "0"}[*in.Enabled])
+
+	// safe mode: bez potvrde u roku vraća se prethodni firewall
+	if *in.Enabled {
+		s.scheduleRollback("ograničenje upravljačkog pristupa",
+			map[string]string{firewallConfig: backupName},
+			[][2]string{{"firewall", "reload"}})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled": *in.Enabled, "backup": backupName,
+		"safe_mode": *in.Enabled,
 	})
 }
 

@@ -104,6 +104,28 @@ func (s *server) handleSystem(w http.ResponseWriter, r *http.Request) {
 	if model == "" {
 		model = b.System
 	}
+
+	// uloga uređaja: router (prosljeđivanje paketa) i firewall (zone/pravila/NAT)
+	routing := false
+	if fwd, err := os.ReadFile("/proc/sys/net/ipv4/ip_forward"); err == nil {
+		routing = strings.TrimSpace(string(fwd)) == "1"
+	}
+	fwZones, fwRules, natZones := 0, 0, []string{}
+	if cfg, err := uciGetConfig(r.Context(), "firewall"); err == nil {
+		for _, sec := range cfg {
+			switch sectStr(sec, ".type") {
+			case "zone":
+				fwZones++
+				if sectStr(sec, "masq") == "1" {
+					natZones = append(natZones, sectStr(sec, "name"))
+				}
+			case "rule", "redirect":
+				fwRules++
+			}
+		}
+	}
+	sort.Strings(natZones)
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"hostname":        b.Hostname,
 		"model":           model,
@@ -116,6 +138,12 @@ func (s *server) handleSystem(w http.ResponseWriter, r *http.Request) {
 		"target":          b.Release.Target,
 		"rootfs":          b.Rootfs,
 		"saguaro_version": version,
+		"role": map[string]any{
+			"routing":   routing,
+			"fw_zones":  fwZones,
+			"fw_rules":  fwRules,
+			"nat_zones": natZones,
+		},
 	})
 }
 
@@ -222,6 +250,36 @@ func (s *server) handleInterfaces(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// uloga fizičkog porta: kojem logičkom sučelju pripada (izravno ili
+	// kroz bridge) — da GUI može reći "eth0 = LAN" umjesto sirovih imena
+	portRole := map[string]string{}
+	if cfg, err := uciGetConfig(r.Context(), "network"); err == nil {
+		bridgeOf := map[string]string{} // fizički port -> ime bridgea
+		for _, sec := range cfg {
+			if sectStr(sec, ".type") == "device" && sectStr(sec, "type") == "bridge" {
+				for _, p := range sectList(sec, "ports") {
+					bridgeOf[p] = sectStr(sec, "name")
+				}
+			}
+		}
+		for name, sec := range cfg {
+			if sectStr(sec, ".type") != "interface" {
+				continue
+			}
+			dev := sectStr(sec, "device")
+			for p, br := range bridgeOf {
+				if br == dev {
+					portRole[p] = name
+				}
+			}
+			if strings.HasPrefix(dev, "eth") && !strings.Contains(dev, ".") {
+				if _, taken := portRole[dev]; !taken || name != "wan6" {
+					portRole[dev] = name
+				}
+			}
+		}
+	}
+
 	names := make([]string, 0, len(devs))
 	for n := range devs {
 		if n != "lo" {
@@ -234,7 +292,7 @@ func (s *server) handleInterfaces(w http.ResponseWriter, r *http.Request) {
 		d := devs[n]
 		devices = append(devices, map[string]any{
 			"name": n, "type": d.Type, "up": d.Up, "carrier": d.Carrier,
-			"speed": d.Speed, "mac": d.MAC,
+			"speed": d.Speed, "mac": d.MAC, "role": portRole[n],
 			"rx_bytes": d.Statistics.RxBytes, "tx_bytes": d.Statistics.TxBytes,
 		})
 	}

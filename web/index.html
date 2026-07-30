@@ -92,8 +92,8 @@
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Sučelje</th><th>Stanje</th><th>Protokol</th><th>Uređaj</th>
-            <th>IPv4</th><th>Gateway</th><th>DNS</th><th>Aktivno</th>
+            <th>Sučelje</th><th>Vrsta</th><th>Stanje</th><th>Dodjela adrese</th>
+            <th>Port</th><th>Adresa</th><th>Gateway</th><th>DNS</th><th>Aktivno</th>
           </tr></thead>
           <tbody id="iface-rows"></tbody>
         </table>
@@ -264,6 +264,21 @@
         </table>
       </div>
     </section>
+    <section class="card">
+      <div class="card-head">
+        <h2>Aliasi — imenovane grupe adresa</h2>
+        <button id="al-add" class="primary">Dodaj alias</button>
+      </div>
+      <p class="hint">Grupi adresa daš ime (npr. <code>serveri</code>) pa je u
+        pravilima koristiš kao <code>@serveri</code> — promjena grupe vrijedi
+        za sva pravila odjednom nakon primjene.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Naziv</th><th>Adrese</th><th>Napomene</th><th></th></tr></thead>
+          <tbody id="al-rows"></tbody>
+        </table>
+      </div>
+    </section>
     <section class="grid-2">
       <div class="card">
         <h2>DMZ</h2>
@@ -383,6 +398,66 @@
         <p class="hint" id="ad-status"></p>
         <p class="hint" id="ad-result"></p>
       </div>
+    </section>
+  </div>
+
+  <div class="view hidden" id="view-monitorx">
+    <section class="grid-2">
+      <div class="card">
+        <div class="card-head">
+          <h2>Praćeni uređaji (ping)</h2>
+          <button id="nm-add" class="primary">Dodaj</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Naziv</th><th>IP</th><th>Stanje</th><th>Promjena</th><th></th></tr></thead>
+            <tbody id="nm-rows"></tbody>
+          </table>
+        </div>
+        <label class="check-row"><input type="checkbox" id="nm-unknown">
+          Alarmiraj kad se u mreži pojavi nepoznat uređaj</label>
+        <p class="hint" id="nm-result"></p>
+      </div>
+      <div class="card">
+        <h2>Potrošnja prometa po uređaju</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>IP</th><th>Preuzeto</th><th>Poslano</th><th>Veze</th></tr></thead>
+            <tbody id="tr-rows"></tbody>
+          </table>
+        </div>
+        <p class="hint" id="tr-hint"></p>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Događaji</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Vrijeme</th><th>Razina</th><th>Poruka</th></tr></thead>
+          <tbody id="ev-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="view hidden" id="view-qos">
+    <section class="card" style="max-width:720px">
+      <h2>Ograničenje brzine po vezi (QoS)</h2>
+      <p class="hint">Upiši stvarnu brzinu veze umanjenu ~5&nbsp;% — pametno
+        upravljanje redom (cake) tada uklanja zagušenja: pozivi i sastanci
+        ostaju glatki i kad netko povlači velike datoteke.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Veza</th><th>Aktivno</th><th>Preuzimanje (Mbit/s)</th><th>Slanje (Mbit/s)</th>
+          </tr></thead>
+          <tbody id="qos-rows"></tbody>
+        </table>
+      </div>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="qos-save" class="primary">Spremi i primijeni</button>
+      </div>
+      <p class="hint" id="qos-result"></p>
     </section>
   </div>
 
@@ -629,6 +704,23 @@
       <p class="hint" id="vlan-result"></p>
     </section>
     <section class="card" style="max-width:560px">
+      <h2>Dinamički DNS (DDNS)</h2>
+      <p class="hint">Kad javna adresa nije stalna, uređaj sam ažurira svoje
+        DNS ime — VPN i objavljeni serveri ostaju dostupni na istom imenu.</p>
+      <label class="check-row"><input type="checkbox" id="dd-enabled"> Uključeno</label>
+      <div class="form-grid">
+        <label>Pružatelj<select id="dd-provider"></select></label>
+        <label>DNS ime<input id="dd-domain" placeholder="mojured.duckdns.org"></label>
+        <label>Korisnik / token ID<input id="dd-user" autocomplete="off"></label>
+        <label>Lozinka / token<input id="dd-pass" type="password" autocomplete="off"
+          placeholder="prazno = zadrži postojeću"></label>
+      </div>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="dd-save" class="primary">Spremi</button>
+      </div>
+      <p class="hint" id="dd-result"></p>
+    </section>
+    <section class="card" style="max-width:560px">
       <h2>LAN adresa uređaja</h2>
       <form id="net-form">
         <div class="form-grid">
@@ -801,6 +893,26 @@
         puni backup, pa se u slučaju problema stanje vrati kroz Backup modul.
       </div></details>
 
+      <details class="help"><summary>Nadzor — praćenje i događaji</summary><div>
+        Praćeni uređaji provjeravaju se pingom svake minute; promjena stanja
+        (pao/oporavio se) upisuje se u događaje i šalje e-mailom. Alarm za
+        <b>nepoznat uređaj</b> javlja kad se u mreži pojavi MAC adresa koje
+        nema u inventaru. Potrošnja prometa pokazuje tko najviše troši vezu.
+      </div></details>
+
+      <details class="help"><summary>QoS — glatka veza za sve</summary><div>
+        Upiši stvarnu brzinu svake internet veze (umanjenu ~5&nbsp;%) — pametni
+        red čekanja (cake) tada sprječava da jedan korisnik zaguši vezu:
+        pozivi, sastanci i surfanje ostaju glatki i pod punim opterećenjem.
+      </div></details>
+
+      <details class="help"><summary>Safe mode — zaštita od zaključavanja</summary><div>
+        Rizične promjene (LAN adresa, WAN veze, ograničenje pristupa) moraju
+        biti potvrđene u roku od 2 minute — sučelje ih potvrdi samo čim se
+        uspješno spoji nakon promjene. Ako pristup pukne, uređaj sam vrati
+        prethodno stanje i to zabilježi u događaje.
+      </div></details>
+
       <details class="help"><summary>Postavke — račun i sustav</summary><div>
         Promjena lozinke (odjavljuje ostale sesije), pregled aktivnih sesija,
         API token za skripte te slanje logova na vanjski syslog poslužitelj.
@@ -847,6 +959,43 @@
         </div>
         <p class="hint" id="sess-result"></p>
       </div>
+    </section>
+    <section class="card" style="max-width:720px">
+      <h2>Ograničenje upravljačkog pristupa (ACL)</h2>
+      <p class="hint">Pristup ovom sučelju i SSH-u dopušten samo s navedenih
+        adresa/mreža. Promjena je pod <b>safe modeom</b>: ako sam sebe
+        zaključaš, vraća se sama za 2 minute.</p>
+      <div class="form-grid">
+        <label class="check" style="grid-column:1/-1"><input type="checkbox" id="acl-enabled">
+          Uključeno</label>
+        <label class="wide">Dopuštene adrese/mreže (razmakom odvojene)
+          <input id="acl-allow" placeholder="192.168.50.0/24 10.6.0.0/24"></label>
+      </div>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="acl-save" class="primary">Spremi</button>
+      </div>
+      <p class="hint" id="acl-result"></p>
+    </section>
+    <section class="card" style="max-width:720px">
+      <h2>Obavijesti e-mailom (SMTP)</h2>
+      <p class="hint">Događaji iz Nadzora (pad servera, nepoznat uređaj, safe
+        mode) šalju se na ovu adresu.</p>
+      <div class="form-grid">
+        <label class="check" style="grid-column:1/-1"><input type="checkbox" id="sm-enabled">
+          Uključeno</label>
+        <label>SMTP poslužitelj<input id="sm-host" placeholder="smtp.gmail.com"></label>
+        <label>Port<input id="sm-port" placeholder="587"></label>
+        <label>Korisnik<input id="sm-user" autocomplete="off"></label>
+        <label>Lozinka<input id="sm-pass" type="password" autocomplete="off"
+          placeholder="prazno = zadrži postojeću"></label>
+        <label>Šalje s adrese<input id="sm-from" placeholder="uredjaj@tvrtka.hr"></label>
+        <label>Prima<input id="sm-to" placeholder="admin@tvrtka.hr"></label>
+      </div>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="sm-save" class="primary">Spremi</button>
+        <button id="sm-test" class="ghost">Pošalji probnu poruku</button>
+      </div>
+      <p class="hint" id="sm-result"></p>
     </section>
     <section class="card" style="max-width:720px">
       <h2>Slanje logova na vanjski poslužitelj (syslog)</h2>
@@ -967,6 +1116,38 @@
       </div>
     </form>
     <p class="hint">Promjene vrijede nakon gumba <b>Primijeni peerove</b>.</p>
+  </dialog>
+
+  <dialog id="al-dialog">
+    <form id="al-form">
+      <h2 id="al-dialog-title">Alias</h2>
+      <div class="form-grid">
+        <label>Naziv<input name="name" required placeholder="serveri"></label>
+        <label class="wide">Adrese (IP/CIDR, razmakom odvojene)
+          <input name="ips" required placeholder="192.168.50.10 192.168.50.25 10.0.4.0/24"></label>
+        <label class="wide">Napomene<textarea name="notes" rows="2"></textarea></label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="al-cancel">Odustani</button>
+        <button type="submit" class="primary">Spremi</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="nm-dialog">
+    <form id="nm-form">
+      <h2>Praćeni uređaj</h2>
+      <div class="form-grid">
+        <label>Naziv<input name="name" required placeholder="glavni server"></label>
+        <label>IP adresa<input name="ip" required placeholder="192.168.50.10"></label>
+      </div>
+      <p class="hint">Uređaj se provjerava pingom svake minute; promjena stanja
+        upisuje se u događaje i šalje e-mailom (ako su obavijesti uključene).</p>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="nm-cancel">Odustani</button>
+        <button type="submit" class="primary">Spremi</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="mwr-dialog">
@@ -1104,10 +1285,16 @@
             <option value="DROP">Odbaci tiho (DROP)</option>
           </select>
         </label>
+        <label>Vrijedi od (HH:MM)<input name="start_time" placeholder="npr. 22:00"></label>
+        <label>Vrijedi do (HH:MM)<input name="stop_time" placeholder="npr. 06:00"></label>
+        <label class="wide">Dani (prazno = svi)<input name="weekdays"
+          placeholder="mon tue wed thu fri sat sun"></label>
         <label class="wide">Napomene<textarea name="notes" rows="2"></textarea></label>
         <label class="check"><input type="checkbox" name="enabled" checked>
           Aktivno — uključi u primjenu</label>
       </div>
+      <p class="hint">U poljima adresa mogu se koristiti i aliasi
+        (npr. <code>@serveri</code>).</p>
       <div class="form-actions">
         <button type="button" class="ghost" id="rl-cancel">Odustani</button>
         <button type="submit" class="primary">Spremi</button>

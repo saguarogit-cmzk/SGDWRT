@@ -82,6 +82,24 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Korisnički računi za GUI login (pri prvom startu nastaje 'admin'
+-- s lozinkom jednakom tadašnjem API tokenu)
+CREATE TABLE IF NOT EXISTS users (
+    uuid        TEXT PRIMARY KEY,
+    username    TEXT NOT NULL UNIQUE,
+    pass_hash   TEXT NOT NULL,                -- pbkdf2:<iter>:<salt hex>:<hash hex>
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Aktivne sesije GUI-ja; čuva se samo SHA-256 sažetak session tokena
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash  TEXT PRIMARY KEY,
+    user_uuid   TEXT NOT NULL REFERENCES users(uuid) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS schema_version (
     version     INTEGER NOT NULL,
     applied_at  TEXT NOT NULL DEFAULT (datetime('now'))

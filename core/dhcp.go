@@ -205,6 +205,56 @@ func (s *server) handleDHCPApply(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleDHCPServerSet uključuje/isključuje DHCP poslužitelj na lan sučelju
+// (dhcp.lan.ignore). Izravna korisnička radnja nad jednom opcijom, uz backup.
+func (s *server) handleDHCPServerSet(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	if in.Enabled == nil {
+		writeErr(w, http.StatusBadRequest, "nedostaje polje enabled")
+		return
+	}
+	cfg, err := uciGetConfig(r.Context(), "dhcp")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	lan, ok := cfg["lan"]
+	if !ok {
+		writeErr(w, http.StatusNotFound, "lan DHCP sekcija ne postoji")
+		return
+	}
+	backupName, err := s.backupConfig(dhcpConfig)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "backup: "+err.Error())
+		return
+	}
+	var batch strings.Builder
+	if *in.Enabled {
+		if sectStr(lan, "ignore") != "" {
+			batch.WriteString("delete dhcp.lan.ignore\n")
+		}
+	} else {
+		batch.WriteString("set dhcp.lan.ignore=1\n")
+	}
+	batch.WriteString("commit dhcp\n")
+	if err := uciBatch(r.Context(), batch.String()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := serviceReload(r.Context(), "dnsmasq", "reload"); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled": *in.Enabled, "backup": backupName,
+	})
+}
+
 // backupConfig kopira config u backup direktorij i čuva zadnjih backupKeep kopija.
 func (s *server) backupConfig(path string) (string, error) {
 	b, err := os.ReadFile(path)

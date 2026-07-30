@@ -12,11 +12,14 @@
 <div id="login" class="login hidden">
   <form id="login-form" class="login-card">
     <div class="brand"><span class="brand-mark">SAGUARO</span><span class="brand-sub">Infrastructure</span></div>
-    <label for="token-input">API token</label>
-    <input id="token-input" type="password" autocomplete="off" spellcheck="false"
-           placeholder="zalijepi token s uređaja" required>
-    <p class="hint">Token se nalazi na uređaju u <code>/opt/saguaro/etc/token</code></p>
-    <p id="login-error" class="login-error hidden">Neispravan token ili uređaj nedostupan.</p>
+    <label for="user-input">Korisničko ime</label>
+    <input id="user-input" autocomplete="username" spellcheck="false"
+           placeholder="admin" required>
+    <label for="pass-input">Lozinka</label>
+    <input id="pass-input" type="password" autocomplete="current-password" required>
+    <p class="hint">Pri prvom pokretanju: korisnik <code>admin</code>, lozinka
+      jednaka API tokenu s uređaja.</p>
+    <p id="login-error" class="login-error hidden">Neispravna prijava ili uređaj nedostupan.</p>
     <button type="submit">Prijava</button>
   </form>
 </div>
@@ -39,6 +42,7 @@
     <a href="#/wireguard" id="tab-wireguard">WireGuard</a>
     <a href="#/backup" id="tab-backup">Backup</a>
     <a href="#/network" id="tab-network">Mreža</a>
+    <a href="#/settings" id="tab-settings">Postavke</a>
   </nav>
 
   <main id="view-dashboard">
@@ -121,6 +125,11 @@
       <div class="card">
         <h2>DHCP poslužitelj</h2>
         <dl class="kv" id="dhcp-server-kv"></dl>
+        <p class="hint" id="dhcp-srv-hint"></p>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button id="dhcp-toggle" class="ghost">—</button>
+        </div>
+        <p class="hint" id="dhcp-toggle-result"></p>
       </div>
       <div class="card">
         <h2>Primjena na uređaj</h2>
@@ -324,6 +333,52 @@
       </div>
     </form>
   </dialog>
+
+  <main id="view-settings" class="hidden">
+    <section class="grid-2">
+      <div class="card">
+        <h2>Promjena lozinke</h2>
+        <form id="pw-form">
+          <div class="form-grid">
+            <label class="wide">Trenutna lozinka<input type="password" name="current"
+              required autocomplete="current-password"></label>
+            <label>Nova lozinka<input type="password" name="new1" required
+              minlength="8" autocomplete="new-password"></label>
+            <label>Ponovi novu lozinku<input type="password" name="new2" required
+              minlength="8" autocomplete="new-password"></label>
+          </div>
+          <p class="hint">Najmanje 8 znakova. Nakon promjene sve ostale sesije
+            se odjavljuju; ova ostaje prijavljena.</p>
+          <p class="hint" id="pw-result"></p>
+          <div class="form-actions" style="justify-content:flex-start">
+            <button type="submit" class="primary">Promijeni lozinku</button>
+          </div>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Sesije</h2>
+        <dl class="kv" id="sess-kv"></dl>
+        <p class="hint">Odjava ostalih sesija poništava prijave u drugim
+          browserima i na drugim računalima.</p>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button id="sess-logout-others" class="primary">Odjavi ostale sesije</button>
+        </div>
+        <p class="hint" id="sess-result"></p>
+      </div>
+    </section>
+    <section class="card" style="max-width:720px">
+      <h2>API token</h2>
+      <p class="hint">Token za strojni pristup API-ju (skripte, integracije) —
+        šalje se kao <code>Authorization: Bearer &lt;token&gt;</code>.
+        Regeneriranje odmah poništava stari token; GUI prijave ostaju.</p>
+      <dl class="kv"><dt>Token</dt><dd id="tok-value" style="word-break:break-all">••••••••••••</dd></dl>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="tok-show" class="ghost">Prikaži</button>
+        <button id="tok-regen" class="primary">Regeneriraj</button>
+      </div>
+      <p class="hint" id="tok-result"></p>
+    </section>
+  </main>
 
   <dialog id="peer-dialog">
     <form id="peer-form">

@@ -254,6 +254,7 @@ function alertErr(e) {
 /* ---------- dhcp ---------- */
 
 let editHostUUID = null;
+let dhcpEnabled = true;
 
 async function loadDhcp() {
   const [st, hs] = await Promise.all([api("/dhcp/status"), api("/inventory/hosts")]);
@@ -273,6 +274,15 @@ async function loadDhcp() {
     const dd = document.createElement("dd"); dd.textContent = v;
     kv.append(dt, dd);
   }
+
+  dhcpEnabled = !sv.ignore;
+  $("dhcp-toggle").textContent = dhcpEnabled
+    ? "Isključi DHCP poslužitelj" : "Uključi DHCP poslužitelj";
+  $("dhcp-srv-hint").textContent = dhcpEnabled
+    ? "⚠ Aktivan DHCP poslužitelj na mreži s postojećim routerom može dijeliti " +
+      "krive adrese klijentima (rogue DHCP). Isključi ga ako adrese dijeli router."
+    : "DHCP poslužitelj je isključen — rezervacije se primjenjuju, ali ne " +
+      "dijele dok ga ponovno ne uključiš.";
 
   const managedDB = hs.hosts.filter((h) => h.managed).length;
   const sagOnDev = st.static_leases.filter((l) => l.managed_by_saguaro).length;
@@ -558,6 +568,28 @@ function openPeerDialog(p) {
   $("peer-dialog").showModal();
 }
 
+/* ---------- postavke ---------- */
+
+let tokVisible = false;
+
+async function loadSettings() {
+  const s = await api("/auth/session");
+  const kv = $("sess-kv");
+  kv.replaceChildren();
+  for (const [k, v] of [["Prijavljen kao", s.username],
+    ["Aktivnih sesija", s.active_sessions]]) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    kv.append(dt, dd);
+  }
+  tokVisible = false;
+  $("tok-value").textContent = "••••••••••••";
+  $("tok-show").textContent = "Prikaži";
+  $("tok-result").textContent = "";
+  $("pw-result").textContent = "";
+  $("sess-result").textContent = "";
+}
+
 /* ---------- backup ---------- */
 
 async function apiBlob(path) {
@@ -663,8 +695,10 @@ function route() {
     : location.hash.startsWith("#/dns") ? "dns"
     : location.hash.startsWith("#/wireguard") ? "wireguard"
     : location.hash.startsWith("#/backup") ? "backup"
+    : location.hash.startsWith("#/settings") ? "settings"
     : location.hash.startsWith("#/network") ? "network" : "dashboard";
-  for (const v of ["dashboard", "devices", "dhcp", "dns", "wireguard", "backup", "network"]) {
+  for (const v of ["dashboard", "devices", "dhcp", "dns", "wireguard", "backup",
+    "settings", "network"]) {
     $("view-" + v).classList.toggle("hidden", v !== view);
     $("tab-" + v).classList.toggle("active", v === view);
   }
@@ -674,6 +708,7 @@ function route() {
   if (view === "dns") loadDns().catch(alertErr);
   if (view === "wireguard") loadWireguard().catch(alertErr);
   if (view === "backup") loadBackup().catch(alertErr);
+  if (view === "settings") loadSettings().catch(alertErr);
   if (view === "network") loadNetwork().catch(alertErr);
 }
 window.addEventListener("hashchange", route);
@@ -718,6 +753,9 @@ function onTickError(e) {
 }
 
 function logout(showError) {
+  // pri ručnoj odjavi poništi sesiju i na uređaju (best effort);
+  // kod 401 odjave sesija je ionako nevaljana
+  if (token && !showError) api("/auth/logout", "POST", {}).catch(() => {});
   stopTimers();
   localStorage.removeItem("saguaro_token");
   token = "";
@@ -728,12 +766,27 @@ function logout(showError) {
 
 /* ---------- init ---------- */
 
-$("login-form").addEventListener("submit", (ev) => {
+$("login-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
-  token = $("token-input").value.trim();
-  localStorage.setItem("saguaro_token", token);
   $("login-error").classList.add("hidden");
-  start().catch(() => logout(true));
+  try {
+    const r = await fetch(API + "/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: $("user-input").value.trim(),
+        password: $("pass-input").value,
+      }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || "HTTP " + r.status);
+    token = data.token;
+    localStorage.setItem("saguaro_token", token);
+    $("pass-input").value = "";
+    await start();
+  } catch {
+    logout(true);
+  }
 });
 $("logout").addEventListener("click", () => logout(false));
 
@@ -903,6 +956,84 @@ $("wgconf-copy").addEventListener("click", async () => {
     $("wgconf-copy").textContent = "Kopirano ✓";
   }
   setTimeout(() => { $("wgconf-copy").textContent = "Kopiraj"; }, 1500);
+});
+
+$("dhcp-toggle").addEventListener("click", async () => {
+  const next = !dhcpEnabled;
+  const q = next
+    ? "Uključiti DHCP poslužitelj na ovom uređaju?\n\nAko u mreži već postoji " +
+      "router koji dijeli adrese, klijenti mogu dobivati krive adrese."
+    : "Isključiti DHCP poslužitelj? Klijenti će adrese dobivati od postojećeg routera.";
+  if (!confirm(q)) return;
+  $("dhcp-toggle-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/dhcp/server", "POST", { enabled: next });
+    $("dhcp-toggle-result").textContent =
+      (r.enabled ? "Uključeno." : "Isključeno.") + " Backup: " + r.backup;
+    await loadDhcp();
+  } catch (e) {
+    $("dhcp-toggle-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("pw-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  if (f.elements.new1.value !== f.elements.new2.value) {
+    $("pw-result").textContent = "Nove lozinke se ne podudaraju.";
+    return;
+  }
+  $("pw-result").textContent = "Mijenjam…";
+  try {
+    await api("/auth/password", "POST", {
+      current: f.elements.current.value,
+      new: f.elements.new1.value,
+    });
+    f.reset();
+    $("pw-result").textContent = "Lozinka promijenjena. Ostale sesije su odjavljene.";
+    loadSettings().catch(() => {});
+  } catch (e) {
+    $("pw-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("sess-logout-others").addEventListener("click", async () => {
+  try {
+    const r = await api("/auth/logout-others", "POST", {});
+    $("sess-result").textContent = `Odjavljeno sesija: ${r.removed}`;
+    loadSettings().catch(() => {});
+  } catch (e) {
+    $("sess-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("tok-show").addEventListener("click", async () => {
+  if (tokVisible) {
+    tokVisible = false;
+    $("tok-value").textContent = "••••••••••••";
+    $("tok-show").textContent = "Prikaži";
+    return;
+  }
+  try {
+    const r = await api("/settings/token");
+    $("tok-value").textContent = r.token;
+    tokVisible = true;
+    $("tok-show").textContent = "Sakrij";
+  } catch (e) { alertErr(e); }
+});
+
+$("tok-regen").addEventListener("click", async () => {
+  if (!confirm("Regenerirati API token?\n\nStari token odmah prestaje vrijediti — " +
+    "skripte i integracije koje ga koriste treba ažurirati.")) return;
+  try {
+    const r = await api("/settings/token/regenerate", "POST", {});
+    $("tok-value").textContent = r.token;
+    tokVisible = true;
+    $("tok-show").textContent = "Sakrij";
+    $("tok-result").textContent = "Novi token je aktivan — spremi ga na sigurno.";
+  } catch (e) {
+    $("tok-result").textContent = "Greška: " + (e.message || e);
+  }
 });
 
 $("bk-create").addEventListener("click", async () => {

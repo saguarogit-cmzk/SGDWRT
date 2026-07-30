@@ -17,14 +17,16 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
 
-const version = "0.7.0"
+const version = "0.8.0"
 
 type server struct {
-	token     string
+	tokenMu   sync.RWMutex
+	token     string // API token za strojni pristup; GUI koristi sesije (auth.go)
 	webDir    string
 	etcDir    string
 	dataDir   string
@@ -63,6 +65,9 @@ func main() {
 
 	s := &server{token: token, webDir: *webDir, etcDir: *etcDir,
 		dataDir: *dataDir, backupDir: *backupDir, started: time.Now(), db: db}
+	if err := s.ensureAdmin(token); err != nil {
+		log.Fatalf("admin korisnik: %v", err)
+	}
 
 	{
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -76,6 +81,14 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
+	mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
+	mux.Handle("POST /api/v1/auth/logout", s.auth(s.handleLogout))
+	mux.Handle("POST /api/v1/auth/logout-others", s.auth(s.handleLogoutOthers))
+	mux.Handle("GET /api/v1/auth/session", s.auth(s.handleSessionInfo))
+	mux.Handle("POST /api/v1/auth/password", s.auth(s.handlePasswordChange))
+	mux.Handle("GET /api/v1/settings/token", s.auth(s.handleTokenGet))
+	mux.Handle("POST /api/v1/settings/token/regenerate", s.auth(s.handleTokenRegen))
+	mux.Handle("POST /api/v1/dhcp/server", s.auth(s.handleDHCPServerSet))
 	mux.Handle("GET /api/v1/system", s.auth(s.handleSystem))
 	mux.Handle("GET /api/v1/system/status", s.auth(s.handleStatus))
 	mux.Handle("GET /api/v1/storage", s.auth(s.handleStorage))
@@ -167,14 +180,19 @@ func ensureToken(path string) (string, error) {
 	return t, nil
 }
 
+// auth propušta strojni API token ili valjanu GUI sesiju.
 func (s *server) auth(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		if ok && subtle.ConstantTimeCompare([]byte(got), []byte(s.apiToken())) == 1 {
+			next(w, r)
 			return
 		}
-		next(w, r)
+		if ok && s.sessionUser(got) != "" {
+			next(w, r)
+			return
+		}
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 	})
 }
 

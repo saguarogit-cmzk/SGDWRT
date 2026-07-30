@@ -360,18 +360,29 @@ function openHostDialog(h) {
   $("host-dialog").showModal();
 }
 
+/* ---------- mreža ---------- */
+
+async function loadNetwork() {
+  const x = await api("/network/lan");
+  const f = $("net-form");
+  for (const name of ["ipaddr", "netmask", "gateway", "dns"])
+    f.elements[name].value = x[name] || "";
+}
+
 /* ---------- router ---------- */
 
 function route() {
   const view = location.hash.startsWith("#/devices") ? "devices"
-    : location.hash.startsWith("#/dhcp") ? "dhcp" : "dashboard";
-  for (const v of ["dashboard", "devices", "dhcp"]) {
+    : location.hash.startsWith("#/dhcp") ? "dhcp"
+    : location.hash.startsWith("#/network") ? "network" : "dashboard";
+  for (const v of ["dashboard", "devices", "dhcp", "network"]) {
     $("view-" + v).classList.toggle("hidden", v !== view);
     $("tab-" + v).classList.toggle("active", v === view);
   }
   if (!token) return;
   if (view === "devices") loadDevices().catch(alertErr);
   if (view === "dhcp") loadDhcp().catch(alertErr);
+  if (view === "network") loadNetwork().catch(alertErr);
 }
 window.addEventListener("hashchange", route);
 
@@ -487,6 +498,32 @@ $("dhcp-apply").addEventListener("click", async () => {
     $("dhcp-apply-result").textContent = "Greška: " + (e.message || e);
   } finally {
     btn.disabled = false;
+  }
+});
+
+$("net-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {};
+  for (const name of ["ipaddr", "netmask", "gateway", "dns"])
+    body[name] = f.elements[name].value.trim();
+  if (!confirm(
+    `Promijeniti adresu uređaja na ${body.ipaddr}?\n\n` +
+    `Veza na trenutnoj adresi će pasti, a browser će te preusmjeriti na:\n` +
+    `https://${body.ipaddr}:8443/\n\nTamo se prijavi ponovno istim tokenom.`)) return;
+  try {
+    const r = await api("/network/lan", "POST", body);
+    let n = 8;
+    const tick = () => {
+      $("net-result").textContent =
+        `Primijenjeno (backup: ${r.backup}). Preusmjeravam na ${r.new_url} za ${n} s…`;
+      if (n-- <= 0) { location.href = r.new_url; return; }
+      setTimeout(tick, 1000);
+    };
+    stopTimers();
+    tick();
+  } catch (e) {
+    alertErr(e);
   }
 });
 

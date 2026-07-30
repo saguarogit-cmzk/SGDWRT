@@ -35,6 +35,7 @@
     <a href="#/" id="tab-dashboard" class="active">Dashboard</a>
     <a href="#/devices" id="tab-devices">Uređaji</a>
     <a href="#/dhcp" id="tab-dhcp">DHCP</a>
+    <a href="#/network" id="tab-network">Mreža</a>
   </nav>
 
   <main id="view-dashboard">
@@ -152,6 +153,27 @@
           <tbody id="lease-rows"></tbody>
         </table>
       </div>
+    </section>
+  </main>
+
+  <main id="view-network" class="hidden">
+    <section class="card" style="max-width:560px">
+      <h2>LAN adresa uređaja</h2>
+      <form id="net-form">
+        <div class="form-grid">
+          <label>IP adresa<input name="ipaddr" required placeholder="192.168.1.222"></label>
+          <label>Mrežna maska<input name="netmask" placeholder="255.255.255.0"></label>
+          <label>Gateway<input name="gateway" placeholder="192.168.1.1"></label>
+          <label>DNS (razmakom odvojeni)<input name="dns" placeholder="192.168.1.1"></label>
+        </div>
+        <p class="hint">Nakon primjene uređaj mijenja adresu — bit ćeš automatski
+          preusmjeren na novu. Na novoj adresi prijavi se ponovno istim tokenom.
+          Prije izmjene sprema se backup konfiguracije na uređaju.</p>
+        <p class="hint" id="net-result"></p>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button type="submit" class="primary">Primijeni novu adresu</button>
+        </div>
+      </form>
     </section>
   </main>
 

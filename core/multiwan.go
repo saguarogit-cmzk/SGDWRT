@@ -18,6 +18,10 @@ const mwan3Config = "/etc/config/mwan3"
 
 var reRuleLabel = regexp.MustCompile(`^[a-z][a-z0-9]{0,7}$`)
 
+// uplink može biti i lan (izlaz kroz postojeći router) — korisno kad je
+// uređaj interni router iza tuđeg firewalla
+var reUplinkName = regexp.MustCompile(`^(lan|wan|sag_wan[2-9])$`)
+
 type mwWan struct {
 	Name     string `json:"name"`
 	Enabled  bool   `json:"enabled"`
@@ -56,7 +60,7 @@ func (s *server) handleMultiwanGet(w http.ResponseWriter, r *http.Request) {
 
 	wans := []mwWan{}
 	for name, sec := range netCfg {
-		if sectStr(sec, ".type") != "interface" || !reWanName.MatchString(name) {
+		if sectStr(sec, ".type") != "interface" || !reUplinkName.MatchString(name) {
 			continue
 		}
 		o := mwWan{Name: name, Priority: len(wans) + 1, Weight: 1,
@@ -138,7 +142,7 @@ func (s *server) handleMultiwanSet(w http.ResponseWriter, r *http.Request) {
 	activeCount := 0
 	for i := range in.Wans {
 		x := &in.Wans[i]
-		if !reWanName.MatchString(x.Name) {
+		if !reUplinkName.MatchString(x.Name) {
 			writeErr(w, http.StatusBadRequest, "neispravno WAN ime: "+x.Name)
 			return
 		}

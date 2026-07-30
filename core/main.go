@@ -200,6 +200,7 @@ func main() {
 	mux.Handle("GET /api/v1/traffic", s.auth(s.handleTraffic))
 	mux.Handle("GET /api/v1/syslog", s.auth(s.handleSyslogView))
 	mux.Handle("POST /api/v1/settings/mgmtacl", s.auth(s.handleMgmtACLSet))
+	mux.Handle("POST /api/v1/settings/time", s.auth(s.handleTimeSet))
 	mux.Handle("GET /api/v1/update/status", s.auth(s.handleUpdateStatus))
 	mux.Handle("POST /api/v1/update/upload", s.auth(s.handleUpdateUpload))
 	mux.Handle("POST /api/v1/update/apply", s.auth(s.handleUpdateApply))

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -53,11 +54,41 @@ func (s *server) handleSystemSettingsGet(w http.ResponseWriter, r *http.Request)
 	if fwCfg, err := uciGetConfig(r.Context(), "firewall"); err == nil {
 		_, aclActive = fwCfg["sag_acl_block"]
 	}
+
+	// vrijeme: zona, NTP poslužitelj i trenutni sat uređaja (samo za prikaz)
+	zonename, ntpServer := "UTC", false
+	if sect := findSystemSection(cfg); sect != "" {
+		if z := sectStr(cfg[sect], "zonename"); z != "" {
+			zonename = z
+		}
+	}
+	ntpUpstreams := ""
+	if ntp, ok := cfg["ntp"]; ok {
+		ntpServer = sectStr(ntp, "enable_server") == "1"
+		ntpUpstreams = strings.Join(sectList(ntp, "server"), " ")
+	}
+	deviceTime := ""
+	if out, err := exec.CommandContext(r.Context(), "date",
+		"+%d.%m.%Y %H:%M:%S %Z").Output(); err == nil {
+		deviceTime = strings.TrimSpace(string(out))
+	}
+	zoneNames := make([]string, 0, len(tzZones))
+	for _, z := range tzZones {
+		zoneNames = append(zoneNames, z.Name)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"syslog": syslog,
 		"mgmt_acl": map[string]any{
 			"enabled": aclActive,
 			"allow":   s.getSetting("mgmt_acl_allow", ""),
+		},
+		"time": map[string]any{
+			"zonename":    zonename,
+			"ntp_server":  ntpServer,
+			"ntp_servers": ntpUpstreams,
+			"device_time": deviceTime,
+			"zones":       zoneNames,
 		},
 	})
 }
@@ -141,6 +172,138 @@ func (s *server) handleSyslogSet(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enabled": *in.Enabled, "backup": backupName,
+	})
+}
+
+/* ---------- vrijeme: vremenska zona + NTP poslužitelj ---------- */
+
+// Kurirane zone s POSIX TZ zapisom (radi bez tzdata paketa).
+var tzZones = []struct {
+	Name  string `json:"name"`
+	Posix string `json:"-"`
+}{
+	{"UTC", "UTC0"},
+	{"Europe/Zagreb", "CET-1CEST,M3.5.0,M10.5.0/3"},
+	{"Europe/Sarajevo", "CET-1CEST,M3.5.0,M10.5.0/3"},
+	{"Europe/Belgrade", "CET-1CEST,M3.5.0,M10.5.0/3"},
+	{"Europe/Ljubljana", "CET-1CEST,M3.5.0,M10.5.0/3"},
+	{"Europe/Vienna", "CET-1CEST,M3.5.0,M10.5.0/3"},
+	{"Europe/Berlin", "CET-1CEST,M3.5.0,M10.5.0/3"},
+	{"Europe/Budapest", "CET-1CEST,M3.5.0,M10.5.0/3"},
+	{"Europe/Rome", "CET-1CEST,M3.5.0,M10.5.0/3"},
+	{"Europe/Prague", "CET-1CEST,M3.5.0,M10.5.0/3"},
+	{"Europe/Warsaw", "CET-1CEST,M3.5.0,M10.5.0/3"},
+	{"Europe/Paris", "CET-1CEST,M3.5.0,M10.5.0/3"},
+	{"Europe/Zurich", "CET-1CEST,M3.5.0,M10.5.0/3"},
+	{"Europe/London", "GMT0BST,M3.5.0/1,M10.5.0"},
+	{"Europe/Lisbon", "WET0WEST,M3.5.0/1,M10.5.0"},
+	{"Europe/Athens", "EET-2EEST,M3.5.0/3,M10.5.0/4"},
+	{"Europe/Bucharest", "EET-2EEST,M3.5.0/3,M10.5.0/4"},
+	{"Europe/Helsinki", "EET-2EEST,M3.5.0/3,M10.5.0/4"},
+	{"Europe/Istanbul", "<+03>-3"},
+	{"Europe/Moscow", "MSK-3"},
+	{"America/New_York", "EST5EDT,M3.2.0,M11.1.0"},
+	{"America/Chicago", "CST6CDT,M3.2.0,M11.1.0"},
+	{"America/Los_Angeles", "PST8PDT,M3.2.0,M11.1.0"},
+	{"Asia/Dubai", "<+04>-4"},
+	{"Australia/Sydney", "AEST-10AEDT,M10.1.0,M4.1.0/3"},
+}
+
+func tzPosixFor(name string) string {
+	for _, z := range tzZones {
+		if z.Name == name {
+			return z.Posix
+		}
+	}
+	return ""
+}
+
+func (s *server) handleTimeSet(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var in struct {
+		Zonename   string  `json:"zonename"`
+		NTPServer  *bool   `json:"ntp_server"`
+		NTPServers *string `json:"ntp_servers"` // razmakom odvojeni; prazno = zadani pool
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	in.Zonename = strings.TrimSpace(in.Zonename)
+	posix := tzPosixFor(in.Zonename)
+	if posix == "" {
+		writeErr(w, http.StatusBadRequest, "nepoznata vremenska zona")
+		return
+	}
+	var upstreams []string
+	if in.NTPServers != nil {
+		for _, srv := range strings.Fields(*in.NTPServers) {
+			srv = strings.ToLower(srv)
+			if net.ParseIP(srv) == nil && !validDNSName(srv) {
+				writeErr(w, http.StatusBadRequest, "neispravan NTP poslužitelj: "+srv)
+				return
+			}
+			upstreams = append(upstreams, srv)
+		}
+	}
+	cfg, err := uciGetConfig(ctx, "system")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	sect := findSystemSection(cfg)
+	if sect == "" {
+		writeErr(w, http.StatusNotFound, "system sekcija ne postoji")
+		return
+	}
+	backupName, err := s.backupConfig(systemConfig)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "backup: "+err.Error())
+		return
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "set system.%s.zonename=%s\n", sect, uciQuote(in.Zonename))
+	fmt.Fprintf(&b, "set system.%s.timezone=%s\n", sect, uciQuote(posix))
+	if in.NTPServer != nil {
+		if *in.NTPServer {
+			b.WriteString("set system.ntp.enabled=1\n")
+			b.WriteString("set system.ntp.enable_server=1\n")
+		} else if _, ok := cfg["ntp"]; ok {
+			b.WriteString("set system.ntp.enable_server=0\n")
+		}
+	}
+	if in.NTPServers != nil {
+		if ntp, ok := cfg["ntp"]; ok {
+			if _, has := ntp["server"]; has {
+				b.WriteString("delete system.ntp.server\n")
+			}
+		} else {
+			b.WriteString("set system.ntp=timeserver\n")
+		}
+		if len(upstreams) == 0 {
+			// prazno = vrati zadani OpenWrt pool
+			for i := 0; i < 4; i++ {
+				fmt.Fprintf(&b, "add_list system.ntp.server=%d.openwrt.pool.ntp.org\n", i)
+			}
+		}
+		for _, srv := range upstreams {
+			fmt.Fprintf(&b, "add_list system.ntp.server=%s\n", srv)
+		}
+	}
+	b.WriteString("commit system\n")
+	if err := uciBatch(ctx, b.String()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// system reload postavlja /tmp/TZ; sysntpd i log preuzimaju novo stanje
+	for _, svc := range [][2]string{{"system", "reload"}, {"sysntpd", "restart"},
+		{"log", "restart"}} {
+		if err := serviceReload(ctx, svc[0], svc[1]); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"zonename": in.Zonename, "backup": backupName,
 	})
 }
 

@@ -1305,6 +1305,19 @@ async function loadSettings() {
   const [s, sys, mon] = await Promise.all([
     api("/auth/session"), api("/settings/system"), api("/monitor"),
   ]);
+  const tz = sys.time || {};
+  $("tz-now").textContent = tz.device_time || "—";
+  const zsel = $("tz-zone");
+  zsel.replaceChildren();
+  for (const z of tz.zones || []) {
+    const o = document.createElement("option");
+    o.value = z; o.textContent = z;
+    zsel.append(o);
+  }
+  if (tz.zonename) zsel.value = tz.zonename;
+  $("tz-ntp").checked = !!tz.ntp_server;
+  $("tz-servers").value = tz.ntp_servers || "";
+
   const acl = sys.mgmt_acl || {};
   $("acl-enabled").checked = !!acl.enabled;
   $("acl-allow").value = acl.allow || "";
@@ -1934,6 +1947,22 @@ $("dd-save").addEventListener("click", async () => {
     $("dd-pass").value = "";
   } catch (e) {
     $("dd-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("tz-save").addEventListener("click", async () => {
+  $("tz-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/settings/time", "POST", {
+      zonename: $("tz-zone").value,
+      ntp_server: $("tz-ntp").checked,
+      ntp_servers: $("tz-servers").value.trim(),
+    });
+    $("tz-result").textContent = "Zona postavljena: " + r.zonename +
+      ". Novi zapisi u logu koriste lokalno vrijeme.";
+    setTimeout(() => loadSettings().catch(() => {}), 1500);
+  } catch (e) {
+    $("tz-result").textContent = "Greška: " + (e.message || e);
   }
 });
 

@@ -975,6 +975,24 @@
       </div>
     </section>
     <section class="card" style="max-width:720px">
+      <h2>Vrijeme i NTP</h2>
+      <dl class="kv"><dt>Sat uređaja</dt><dd id="tz-now">—</dd></dl>
+      <div class="form-grid">
+        <label>Vremenska zona<select id="tz-zone"></select></label>
+        <label class="check" style="grid-column:auto"><input type="checkbox" id="tz-ntp">
+          Uređaj je NTP poslužitelj za lokalnu mrežu</label>
+        <label class="wide">NTP poslužitelji za sinkronizaciju (razmakom odvojeni)
+          <input id="tz-servers" placeholder="prazno = zadani pool (0-3.openwrt.pool.ntp.org)"></label>
+      </div>
+      <p class="hint">Uređaj sinkronizira vrijeme s interneta (NTP klijent je
+        uvijek uključen). Ako je i poslužitelj, računala u mreži mogu
+        uzimati točno vrijeme s njega (adresa uređaja, port 123).</p>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="tz-save" class="primary">Spremi</button>
+      </div>
+      <p class="hint" id="tz-result"></p>
+    </section>
+    <section class="card" style="max-width:720px">
       <h2>Ograničenje upravljačkog pristupa (ACL)</h2>
       <p class="hint">Pristup ovom sučelju i SSH-u dopušten samo s navedenih
         adresa/mreža. Promjena je pod <b>safe modeom</b>: ako sam sebe

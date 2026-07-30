@@ -360,6 +360,86 @@ function openHostDialog(h) {
   $("host-dialog").showModal();
 }
 
+/* ---------- dns ---------- */
+
+let editRecUUID = null;
+let dnsDomain = "lan";
+
+async function loadDns() {
+  const [st, rc] = await Promise.all([api("/dns/status"), api("/dns/records")]);
+
+  const dm = st.dnsmasq || {};
+  dnsDomain = dm.domain || "lan";
+  const kv = $("dns-server-kv");
+  kv.replaceChildren();
+  const rows = [
+    ["Lokalna domena", dm.domain || "—"],
+    ["Lokalne zone", dm.local || "—"],
+    ["Zaštita od DNS rebinda", dm.rebind_protection ? "uključena" : "isključena"],
+  ];
+  for (const [k, v] of rows) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    kv.append(dt, dd);
+  }
+
+  const enabledDB = rc.records.filter((r) => r.enabled).length;
+  const sagOnDev = st.entries.filter((e) => e.managed_by_saguaro).length;
+  const foreign = st.entries.length - sagOnDev;
+  let info = `U bazi aktivnih zapisa: ${enabledDB} · Saguaro zapisa na uređaju: ${sagOnDev}`;
+  if (foreign > 0) info += ` · ostalih (ručnih/LuCI, ne diraju se): ${foreign}`;
+  if (enabledDB !== sagOnDev) info += " — ⚠ razlika, potrebna primjena";
+  $("dns-sync-info").textContent = info;
+
+  const tb = $("rec-rows");
+  tb.replaceChildren();
+  for (const rec of rc.records) {
+    const tr = document.createElement("tr");
+    const shown = rec.name.includes(".") ? rec.name : rec.name + "." + dnsDomain;
+    for (const v of [shown, rec.type, rec.value]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdE = document.createElement("td");
+    tdE.append(rec.enabled ? stGood("Da") : stOff("Ne"));
+    tr.append(tdE);
+    const tdN = document.createElement("td");
+    tdN.textContent = rec.notes || "—";
+    tr.append(tdN);
+
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    const edit = document.createElement("button");
+    edit.className = "btn-sm";
+    edit.textContent = "Uredi";
+    edit.onclick = () => openRecDialog(rec);
+    const del = document.createElement("button");
+    del.className = "btn-sm danger";
+    del.textContent = "Obriši";
+    del.onclick = async () => {
+      if (!confirm(`Obrisati DNS zapis "${rec.name}"?`)) return;
+      await api("/dns/records/" + rec.uuid, "DELETE").catch(alertErr);
+      loadDns().catch(alertErr);
+    };
+    tdAct.append(edit, del);
+    tr.append(tdAct);
+    tb.append(tr);
+  }
+}
+
+function openRecDialog(rec) {
+  const f = $("rec-form");
+  editRecUUID = rec ? rec.uuid : null;
+  $("rec-dialog-title").textContent = editRecUUID ? "Uredi DNS zapis" : "Novi DNS zapis";
+  f.elements.name.value = rec ? rec.name : "";
+  f.elements.rtype.value = rec ? rec.type : "A";
+  f.elements.value.value = rec ? rec.value : "";
+  f.elements.notes.value = rec ? rec.notes || "" : "";
+  f.elements.enabled.checked = rec ? !!rec.enabled : true;
+  $("rec-dialog").showModal();
+}
+
 /* ---------- mreža ---------- */
 
 async function loadNetwork() {
@@ -374,14 +454,16 @@ async function loadNetwork() {
 function route() {
   const view = location.hash.startsWith("#/devices") ? "devices"
     : location.hash.startsWith("#/dhcp") ? "dhcp"
+    : location.hash.startsWith("#/dns") ? "dns"
     : location.hash.startsWith("#/network") ? "network" : "dashboard";
-  for (const v of ["dashboard", "devices", "dhcp", "network"]) {
+  for (const v of ["dashboard", "devices", "dhcp", "dns", "network"]) {
     $("view-" + v).classList.toggle("hidden", v !== view);
     $("tab-" + v).classList.toggle("active", v === view);
   }
   if (!token) return;
   if (view === "devices") loadDevices().catch(alertErr);
   if (view === "dhcp") loadDhcp().catch(alertErr);
+  if (view === "dns") loadDns().catch(alertErr);
   if (view === "network") loadNetwork().catch(alertErr);
 }
 window.addEventListener("hashchange", route);
@@ -496,6 +578,44 @@ $("dhcp-apply").addEventListener("click", async () => {
     await loadDhcp();
   } catch (e) {
     $("dhcp-apply-result").textContent = "Greška: " + (e.message || e);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("rec-add").addEventListener("click", () => openRecDialog(null));
+$("rec-cancel").addEventListener("click", () => $("rec-dialog").close());
+$("rec-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {
+    name: f.elements.name.value.trim(),
+    type: f.elements.rtype.value,
+    value: f.elements.value.value.trim(),
+    notes: f.elements.notes.value.trim(),
+    enabled: f.elements.enabled.checked,
+  };
+  try {
+    if (editRecUUID) await api("/dns/records/" + editRecUUID, "PUT", body);
+    else await api("/dns/records", "POST", body);
+    $("rec-dialog").close();
+    await loadDns();
+  } catch (e) {
+    alertErr(e);
+  }
+});
+
+$("dns-apply").addEventListener("click", async () => {
+  const btn = $("dns-apply");
+  btn.disabled = true;
+  $("dns-apply-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/dns/apply", "POST", {});
+    $("dns-apply-result").textContent =
+      `Primijenjeno: ${r.applied} zapisa (uklonjeno starih: ${r.removed}). Backup: ${r.backup}`;
+    await loadDns();
+  } catch (e) {
+    $("dns-apply-result").textContent = "Greška: " + (e.message || e);
   } finally {
     btn.disabled = false;
   }

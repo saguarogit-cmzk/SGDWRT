@@ -47,6 +47,19 @@ CREATE TABLE IF NOT EXISTS hosts (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Lokalni DNS zapisi (A/CNAME) koje Saguaro primjenjuje u dnsmasq (sag_* sekcije)
+CREATE TABLE IF NOT EXISTS dns_records (
+    uuid        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,                -- hostname ili FQDN (malim slovima)
+    rtype       TEXT NOT NULL DEFAULT 'A' CHECK (rtype IN ('A','CNAME')),
+    value       TEXT NOT NULL,                -- A: IPv4 adresa; CNAME: ciljno ime
+    notes       TEXT,
+    enabled     INTEGER NOT NULL DEFAULT 1,   -- 0 = ostaje u bazi, ne primjenjuje se
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (name, rtype)
+);
+
 CREATE TABLE IF NOT EXISTS schema_version (
     version     INTEGER NOT NULL,
     applied_at  TEXT NOT NULL DEFAULT (datetime('now'))

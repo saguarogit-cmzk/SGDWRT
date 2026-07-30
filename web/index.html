@@ -35,6 +35,7 @@
     <a href="#/" id="tab-dashboard" class="active">Dashboard</a>
     <a href="#/devices" id="tab-devices">Uređaji</a>
     <a href="#/dhcp" id="tab-dhcp">DHCP</a>
+    <a href="#/dns" id="tab-dns">DNS</a>
     <a href="#/network" id="tab-network">Mreža</a>
   </nav>
 
@@ -156,6 +157,38 @@
     </section>
   </main>
 
+  <main id="view-dns" class="hidden">
+    <section class="grid-2">
+      <div class="card">
+        <h2>DNS poslužitelj</h2>
+        <dl class="kv" id="dns-server-kv"></dl>
+      </div>
+      <div class="card">
+        <h2>Primjena na uređaj</h2>
+        <p class="hint" id="dns-sync-info">—</p>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button id="dns-apply" class="primary">Primijeni DNS zapise</button>
+        </div>
+        <p class="hint" id="dns-apply-result"></p>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <h2>Lokalni DNS zapisi</h2>
+        <button id="rec-add" class="primary">Dodaj zapis</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Naziv</th><th>Tip</th><th>Vrijednost</th><th>Aktivan</th>
+            <th>Napomene</th><th></th>
+          </tr></thead>
+          <tbody id="rec-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
   <main id="view-network" class="hidden">
     <section class="card" style="max-width:560px">
       <h2>LAN adresa uređaja</h2>
@@ -191,6 +224,33 @@
       </div>
       <div class="form-actions">
         <button type="button" class="ghost" id="host-cancel">Odustani</button>
+        <button type="submit" class="primary">Spremi</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="rec-dialog">
+    <form id="rec-form">
+      <h2 id="rec-dialog-title">DNS zapis</h2>
+      <div class="form-grid">
+        <label>Naziv<input name="name" required placeholder="nas ili nas.lan"></label>
+        <label>Tip
+          <select name="rtype">
+            <option value="A">A — ime → IP adresa</option>
+            <option value="CNAME">CNAME — alias drugog imena</option>
+          </select>
+        </label>
+        <label class="wide">Vrijednost<input name="value" required
+          placeholder="192.168.50.10 (A) ili nas.lan (CNAME)"></label>
+        <label class="wide">Napomene<textarea name="notes" rows="2"></textarea></label>
+        <label class="check"><input type="checkbox" name="enabled" checked>
+          Aktivan — uključi u primjenu</label>
+      </div>
+      <p class="hint">Ime bez točke dobiva lokalnu domenu uređaja
+        (npr. <code>nas</code> → <code>nas.lan</code>). CNAME cilj mora biti
+        ime koje ovaj DNS već razrješava.</p>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="rec-cancel">Odustani</button>
         <button type="submit" class="primary">Spremi</button>
       </div>
     </form>

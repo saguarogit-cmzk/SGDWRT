@@ -194,12 +194,12 @@ dialog h2 { margin: 0 0 16px; font-size: 15px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-grid label { display: grid; gap: 4px; color: var(--ink-2); font-size: 12px; }
 .form-grid label.wide { grid-column: 1 / -1; }
-.form-grid input, .form-grid textarea {
+.form-grid input, .form-grid textarea, .form-grid select {
   background: var(--page); color: var(--ink); border: 1px solid var(--grid);
   border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit;
 }
 .form-grid input:disabled { opacity: 0.5; }
-.form-grid input:focus, .form-grid textarea:focus {
+.form-grid input:focus, .form-grid textarea:focus, .form-grid select:focus {
   outline: 2px solid var(--accent); border-color: transparent;
 }
 .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }

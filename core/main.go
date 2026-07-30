@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const version = "0.4.0"
+const version = "0.5.0"
 
 type server struct {
 	token     string
@@ -90,6 +90,12 @@ func main() {
 	mux.Handle("DELETE /api/v1/inventory/hosts/{uuid}", s.auth(s.handleHostDelete))
 	mux.Handle("GET /api/v1/dhcp/status", s.auth(s.handleDHCPStatus))
 	mux.Handle("POST /api/v1/dhcp/apply", s.auth(s.handleDHCPApply))
+	mux.Handle("GET /api/v1/dns/status", s.auth(s.handleDNSStatus))
+	mux.Handle("GET /api/v1/dns/records", s.auth(s.handleDNSRecordList))
+	mux.Handle("POST /api/v1/dns/records", s.auth(s.handleDNSRecordCreate))
+	mux.Handle("PUT /api/v1/dns/records/{uuid}", s.auth(s.handleDNSRecordUpdate))
+	mux.Handle("DELETE /api/v1/dns/records/{uuid}", s.auth(s.handleDNSRecordDelete))
+	mux.Handle("POST /api/v1/dns/apply", s.auth(s.handleDNSApply))
 	mux.Handle("GET /api/v1/network/lan", s.auth(s.handleNetworkLanGet))
 	mux.Handle("POST /api/v1/network/lan", s.auth(s.handleNetworkLanSet))
 	mux.HandleFunc("/", s.handleRoot)

@@ -60,6 +60,28 @@ CREATE TABLE IF NOT EXISTS dns_records (
     UNIQUE (name, rtype)
 );
 
+-- WireGuard peerovi; privatni ključ postoji samo ako je par generiran na
+-- uređaju (omogućuje export klijentskog configa), inače je peer donio svoj javni
+CREATE TABLE IF NOT EXISTS wg_peers (
+    uuid        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    public_key  TEXT NOT NULL UNIQUE,
+    private_key TEXT,
+    tunnel_ip   TEXT NOT NULL UNIQUE,         -- adresa peera u tunelu (bez maske)
+    keepalive   INTEGER,                      -- persistent keepalive u s (NULL = isključen)
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Opće postavke platforme (ključ/vrijednost)
+CREATE TABLE IF NOT EXISTS settings (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS schema_version (
     version     INTEGER NOT NULL,
     applied_at  TEXT NOT NULL DEFAULT (datetime('now'))

@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const version = "0.5.0"
+const version = "0.6.0"
 
 type server struct {
 	token     string
@@ -96,6 +96,14 @@ func main() {
 	mux.Handle("PUT /api/v1/dns/records/{uuid}", s.auth(s.handleDNSRecordUpdate))
 	mux.Handle("DELETE /api/v1/dns/records/{uuid}", s.auth(s.handleDNSRecordDelete))
 	mux.Handle("POST /api/v1/dns/apply", s.auth(s.handleDNSApply))
+	mux.Handle("GET /api/v1/wireguard/status", s.auth(s.handleWGStatus))
+	mux.Handle("POST /api/v1/wireguard/server", s.auth(s.handleWGServerSet))
+	mux.Handle("GET /api/v1/wireguard/peers", s.auth(s.handleWGPeerList))
+	mux.Handle("POST /api/v1/wireguard/peers", s.auth(s.handleWGPeerCreate))
+	mux.Handle("PUT /api/v1/wireguard/peers/{uuid}", s.auth(s.handleWGPeerUpdate))
+	mux.Handle("DELETE /api/v1/wireguard/peers/{uuid}", s.auth(s.handleWGPeerDelete))
+	mux.Handle("GET /api/v1/wireguard/peers/{uuid}/config", s.auth(s.handleWGPeerConfig))
+	mux.Handle("POST /api/v1/wireguard/apply", s.auth(s.handleWGApply))
 	mux.Handle("GET /api/v1/network/lan", s.auth(s.handleNetworkLanGet))
 	mux.Handle("POST /api/v1/network/lan", s.auth(s.handleNetworkLanSet))
 	mux.HandleFunc("/", s.handleRoot)

@@ -440,6 +440,124 @@ function openRecDialog(rec) {
   $("rec-dialog").showModal();
 }
 
+/* ---------- wireguard ---------- */
+
+let editPeerUUID = null;
+
+function fmtAgo(epoch) {
+  if (!epoch) return "—";
+  const s = Math.floor(Date.now() / 1000 - epoch);
+  if (s < 0) return "—";
+  if (s < 90) return "prije " + s + " s";
+  if (s < 5400) return "prije " + Math.round(s / 60) + " min";
+  return "prije " + Math.round(s / 3600) + " h";
+}
+
+async function loadWireguard() {
+  const [st, ps] = await Promise.all([
+    api("/wireguard/status"), api("/wireguard/peers"),
+  ]);
+
+  const srv = st.server || {};
+  const f = $("wg-form");
+  if (srv.configured) {
+    f.elements.listen_port.value = srv.listen_port || "";
+    f.elements.address.value = (srv.addresses || []).join(", ");
+    f.elements.endpoint_host.value = srv.endpoint_host || "";
+    f.elements.client_dns.value = srv.client_dns || "";
+    f.elements.client_allowed_ips.value = srv.client_allowed_ips || "";
+  }
+
+  const kv = $("wg-kv");
+  kv.replaceChildren();
+  const rows = [
+    ["Paketi", st.installed ? "instalirani" : "nedostaju (kmod-wireguard, wireguard-tools)"],
+    ["Sučelje " + "sag_wg0", st.running ? "aktivno" : srv.configured ? "neaktivno" : "nije konfigurirano"],
+    ["Javni ključ", srv.public_key || "—"],
+    ["Port", srv.listen_port || "—"],
+  ];
+  for (const [k, v] of rows) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    dd.style.wordBreak = "break-all";
+    kv.append(dt, dd);
+  }
+
+  const enabledDB = ps.peers.filter((p) => p.enabled).length;
+  let info = `U bazi aktivnih peerova: ${enabledDB} · na uređaju: ${st.uci_peers}`;
+  if (enabledDB !== st.uci_peers) info += " — ⚠ razlika, potrebna primjena";
+  $("wg-sync-info").textContent = info;
+
+  const tb = $("peer-rows");
+  tb.replaceChildren();
+  for (const p of ps.peers) {
+    const stat = (st.stats || {})[p.public_key];
+    const tr = document.createElement("tr");
+    for (const v of [p.name, p.tunnel_ip, p.public_key.slice(0, 12) + "…"]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdE = document.createElement("td");
+    tdE.append(p.enabled ? stGood("Da") : stOff("Ne"));
+    tr.append(tdE);
+    const tdH = document.createElement("td");
+    tdH.textContent = stat ? fmtAgo(stat.latest_handshake) : "—";
+    tr.append(tdH);
+    const tdT = document.createElement("td");
+    tdT.textContent = stat && (stat.rx_bytes || stat.tx_bytes)
+      ? fmtBytes(stat.rx_bytes) + " / " + fmtBytes(stat.tx_bytes) : "—";
+    tr.append(tdT);
+
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    if (p.has_private) {
+      const conf = document.createElement("button");
+      conf.className = "btn-sm";
+      conf.textContent = "Config";
+      conf.onclick = async () => {
+        try {
+          const c = await api("/wireguard/peers/" + p.uuid + "/config");
+          $("wgconf-title").textContent = "Klijentski config — " + c.name;
+          $("wgconf-text").value = c.config;
+          $("wgconf-dialog").showModal();
+        } catch (e) { alertErr(e); }
+      };
+      tdAct.append(conf);
+    }
+    const edit = document.createElement("button");
+    edit.className = "btn-sm";
+    edit.textContent = "Uredi";
+    edit.onclick = () => openPeerDialog(p);
+    const del = document.createElement("button");
+    del.className = "btn-sm danger";
+    del.textContent = "Obriši";
+    del.onclick = async () => {
+      if (!confirm(`Obrisati peer "${p.name}"? Njegov ključ se ne može vratiti.`)) return;
+      await api("/wireguard/peers/" + p.uuid, "DELETE").catch(alertErr);
+      loadWireguard().catch(alertErr);
+    };
+    tdAct.append(edit, del);
+    tr.append(tdAct);
+    tb.append(tr);
+  }
+}
+
+function openPeerDialog(p) {
+  const f = $("peer-form");
+  editPeerUUID = p ? p.uuid : null;
+  $("peer-dialog-title").textContent = editPeerUUID ? "Uredi peer" : "Novi peer";
+  f.elements.name.value = p ? p.name : "";
+  f.elements.tunnel_ip.value = p ? p.tunnel_ip : "";
+  f.elements.public_key.value = p ? p.public_key : "";
+  // ključ je identitet peera — kod uređivanja se ne mijenja
+  f.elements.public_key.disabled = !!editPeerUUID;
+  f.elements.keepalive.value = p && p.keepalive ? p.keepalive : "";
+  f.elements.notes.value = p ? p.notes || "" : "";
+  f.elements.enabled.checked = p ? !!p.enabled : true;
+  $("peer-dialog").showModal();
+}
+
 /* ---------- mreža ---------- */
 
 async function loadNetwork() {
@@ -455,8 +573,9 @@ function route() {
   const view = location.hash.startsWith("#/devices") ? "devices"
     : location.hash.startsWith("#/dhcp") ? "dhcp"
     : location.hash.startsWith("#/dns") ? "dns"
+    : location.hash.startsWith("#/wireguard") ? "wireguard"
     : location.hash.startsWith("#/network") ? "network" : "dashboard";
-  for (const v of ["dashboard", "devices", "dhcp", "dns", "network"]) {
+  for (const v of ["dashboard", "devices", "dhcp", "dns", "wireguard", "network"]) {
     $("view-" + v).classList.toggle("hidden", v !== view);
     $("tab-" + v).classList.toggle("active", v === view);
   }
@@ -464,6 +583,7 @@ function route() {
   if (view === "devices") loadDevices().catch(alertErr);
   if (view === "dhcp") loadDhcp().catch(alertErr);
   if (view === "dns") loadDns().catch(alertErr);
+  if (view === "wireguard") loadWireguard().catch(alertErr);
   if (view === "network") loadNetwork().catch(alertErr);
 }
 window.addEventListener("hashchange", route);
@@ -619,6 +739,80 @@ $("dns-apply").addEventListener("click", async () => {
   } finally {
     btn.disabled = false;
   }
+});
+
+$("wg-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {
+    listen_port: parseInt(f.elements.listen_port.value, 10) || 0,
+    address: f.elements.address.value.trim(),
+    endpoint_host: f.elements.endpoint_host.value.trim(),
+    client_dns: f.elements.client_dns.value.trim(),
+    client_allowed_ips: f.elements.client_allowed_ips.value.trim(),
+  };
+  $("wg-server-result").textContent = "Spremam…";
+  try {
+    const r = await api("/wireguard/server", "POST", body);
+    $("wg-server-result").textContent =
+      `Spremljeno. Backupi: ${r.backups.join(", ")}`;
+    await loadWireguard();
+  } catch (e) {
+    $("wg-server-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("wg-apply").addEventListener("click", async () => {
+  const btn = $("wg-apply");
+  btn.disabled = true;
+  $("wg-apply-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/wireguard/apply", "POST", {});
+    $("wg-apply-result").textContent =
+      `Primijenjeno: ${r.applied} peerova (uklonjeno starih: ${r.removed}). Backup: ${r.backup}`;
+    await loadWireguard();
+  } catch (e) {
+    $("wg-apply-result").textContent = "Greška: " + (e.message || e);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("peer-add").addEventListener("click", () => openPeerDialog(null));
+$("peer-cancel").addEventListener("click", () => $("peer-dialog").close());
+$("peer-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {
+    name: f.elements.name.value.trim(),
+    tunnel_ip: f.elements.tunnel_ip.value.trim(),
+    keepalive: parseInt(f.elements.keepalive.value, 10) || 0,
+    notes: f.elements.notes.value.trim(),
+    enabled: f.elements.enabled.checked,
+  };
+  if (!editPeerUUID) body.public_key = f.elements.public_key.value.trim();
+  try {
+    if (editPeerUUID) await api("/wireguard/peers/" + editPeerUUID, "PUT", body);
+    else await api("/wireguard/peers", "POST", body);
+    $("peer-dialog").close();
+    await loadWireguard();
+  } catch (e) {
+    alertErr(e);
+  }
+});
+
+$("wgconf-close").addEventListener("click", () => $("wgconf-dialog").close());
+$("wgconf-copy").addEventListener("click", async () => {
+  const ta = $("wgconf-text");
+  try {
+    await navigator.clipboard.writeText(ta.value);
+    $("wgconf-copy").textContent = "Kopirano ✓";
+  } catch {
+    ta.select();
+    document.execCommand("copy");
+    $("wgconf-copy").textContent = "Kopirano ✓";
+  }
+  setTimeout(() => { $("wgconf-copy").textContent = "Kopiraj"; }, 1500);
 });
 
 $("net-form").addEventListener("submit", async (ev) => {

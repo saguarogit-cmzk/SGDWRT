@@ -107,16 +107,16 @@ function renderStorage(x) {
 
 function renderHealth(h) {
   const badge = $("health-badge");
-  const b = h.status === "ok" ? stGood("Sustav u redu") : stWarn("Degradirano");
+  const b = h.status === "ok" ? stGood("Sve radi") : stWarn("Dio provjera ne prolazi");
   b.id = "health-badge";
   badge.replaceWith(b);
 
   const list = $("health-checks");
   list.replaceChildren();
   const items = [
-    ["Gateway", h.gateway.address || "nepoznat", h.gateway.reachable],
-    ["DNS razrješavanje", "", h.dns.ok],
-    ["Internet", "1.1.1.1:443", h.internet.ok],
+    ["Izlaz prema mreži (gateway)", h.gateway.address || "nepoznat", h.gateway.reachable],
+    ["Pretvorba imena u adrese (DNS)", "npr. google.com → IP", h.dns.ok],
+    ["Pristup internetu", "provjera prema 1.1.1.1", h.internet.ok],
   ];
   for (const [name, detail, ok] of items) {
     const li = document.createElement("li");
@@ -741,8 +741,10 @@ async function loadWireguard() {
   }
 }
 
+let vpnRulesBase = "wireguard/peers"; // ili "openvpn/clients"
+
 async function refreshVpnRules() {
-  const x = await api("/wireguard/peers/" + vpnRulesPeer.uuid + "/rules");
+  const x = await api("/" + vpnRulesBase + "/" + vpnRulesPeer.uuid + "/rules");
   const tb = $("vpn-rule-rows");
   tb.replaceChildren();
   for (const rr of x.rules) {
@@ -755,8 +757,9 @@ async function refreshVpnRules() {
     }
     const tdAct = document.createElement("td");
     tdAct.className = "row-actions";
+    const delBase = vpnRulesBase.startsWith("openvpn") ? "openvpn" : "wireguard";
     tdAct.append(btnSm("Obriši", true, async () => {
-      await api("/wireguard/rules/" + rr.uuid, "DELETE").catch(alertErr);
+      await api("/" + delBase + "/rules/" + rr.uuid, "DELETE").catch(alertErr);
       refreshVpnRules().catch(alertErr);
     }));
     tr.append(tdAct);
@@ -764,8 +767,9 @@ async function refreshVpnRules() {
   }
 }
 
-function openVpnRulesDialog(p) {
+function openVpnRulesDialog(p, base) {
   vpnRulesPeer = p;
+  vpnRulesBase = base || "wireguard/peers";
   $("vpn-rules-title").textContent = `VPN pristup — ${p.name} (${p.tunnel_ip})`;
   $("vpn-rule-form").reset();
   refreshVpnRules().catch(alertErr);
@@ -785,6 +789,108 @@ function openPeerDialog(p) {
   f.elements.notes.value = p ? p.notes || "" : "";
   f.elements.enabled.checked = p ? !!p.enabled : true;
   $("peer-dialog").showModal();
+}
+
+/* ---------- openvpn ---------- */
+
+let editOvcUUID = null;
+let ovAccessMode = "full";
+
+async function loadOpenvpn() {
+  const [st, cl] = await Promise.all([
+    api("/openvpn/status"), api("/openvpn/clients"),
+  ]);
+
+  const srv = st.server || {};
+  const f = $("ov-form");
+  if (srv.configured) {
+    f.elements.port.value = srv.port || "";
+    f.elements.network.value = srv.network || "";
+    f.elements.endpoint_host.value = srv.endpoint_host || "";
+    f.elements.client_dns.value = srv.client_dns || "";
+    f.elements.push_lan.checked = !!srv.push_lan;
+  }
+
+  const kv = $("ov-kv");
+  kv.replaceChildren();
+  const rows = [
+    ["Paket", st.installed ? "instaliran" : "nedostaje (openvpn-openssl)"],
+    ["Poslužitelj", st.running ? "radi" : srv.configured ? "ne radi" : "nije postavljen"],
+    ["Mreža tunela", srv.network || "—"],
+    ["Trenutno spojeno", String((st.connected || []).length)],
+  ];
+  for (const [k, v] of rows) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    kv.append(dt, dd);
+  }
+
+  ovAccessMode = st.access_mode || "full";
+  $("ov-access").textContent = ovAccessMode === "full"
+    ? "Prebaci na ograničen pristup" : "Prebaci na pun pristup";
+  $("ov-access-hint").textContent = ovAccessMode === "full"
+    ? "Pun pristup: svi VPN korisnici vide LAN i internet."
+    : "Ograničen pristup: korisnici dosežu samo ono što im dopuštaju " +
+      "pravila (gumb Pristup).";
+
+  const connected = {};
+  for (const c of st.connected || []) connected[c.name] = c;
+
+  const tb = $("ovc-rows");
+  tb.replaceChildren();
+  for (const c of cl.clients) {
+    const live = connected[c.name];
+    const tr = document.createElement("tr");
+    for (const v of [c.name, c.tunnel_ip]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdE = document.createElement("td");
+    tdE.append(c.enabled ? stGood("Da") : stOff("Ne"));
+    tr.append(tdE);
+    const tdC = document.createElement("td");
+    tdC.append(live ? stGood("Spojen (" + live.real_addr.split(":")[0] + ")")
+      : stOff("Nije spojen"));
+    tr.append(tdC);
+    const tdT = document.createElement("td");
+    tdT.textContent = live ? fmtBytes(live.rx_bytes) + " / " + fmtBytes(live.tx_bytes) : "—";
+    tr.append(tdT);
+
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    tdAct.append(
+      btnSm("Config", false, async () => {
+        try {
+          const x = await api("/openvpn/clients/" + c.uuid + "/config");
+          $("wgconf-title").textContent = "OpenVPN config — " + x.name + ".ovpn";
+          $("wgconf-text").value = x.config;
+          $("wgconf-dialog").showModal();
+        } catch (e) { alertErr(e); }
+      }),
+      btnSm("Pristup", false, () => openVpnRulesDialog(c, "openvpn/clients")),
+      btnSm("Uredi", false, () => openOvcDialog(c)),
+      btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati klijenta "${c.name}"? Njegov certifikat ` +
+          "prestaje vrijediti nakon primjene.")) return;
+        await api("/openvpn/clients/" + c.uuid, "DELETE").catch(alertErr);
+        loadOpenvpn().catch(alertErr);
+      }));
+    tr.append(tdAct);
+    tb.append(tr);
+  }
+}
+
+function openOvcDialog(c) {
+  const f = $("ovc-form");
+  editOvcUUID = c ? c.uuid : null;
+  $("ovc-dialog-title").textContent = editOvcUUID ? "Uredi klijenta" : "Novi klijent";
+  f.elements.name.value = c ? c.name : "";
+  f.elements.name.disabled = !!editOvcUUID; // naziv je CN certifikata
+  f.elements.tunnel_ip.value = c ? c.tunnel_ip : "";
+  f.elements.notes.value = c ? c.notes || "" : "";
+  f.elements.enabled.checked = c ? !!c.enabled : true;
+  $("ovc-dialog").showModal();
 }
 
 /* ---------- postavke ---------- */
@@ -1016,31 +1122,78 @@ function openWanDialog(wn) {
   $("wan-dialog").showModal();
 }
 
-/* ---------- router ---------- */
+/* ---------- navigacija i router ---------- */
+
+// Moduli: id → [naslov, opis, loader]. Lijeva traka prikazuje grupe;
+// moduli aktivne grupe su tabovi iznad sadržaja (uzor: Saguaro Network Manager).
+const MODULES = {
+  dashboard: ["Dashboard", "Pregled stanja uređaja i mreže", () => null],
+  network:   ["Mreža", "LAN adresa, WAN veze i VLAN mreže", () => loadNetwork()],
+  dhcp:      ["DHCP", "Dodjela IP adresa i rezervacije za uređaje u mreži", () => loadDhcp()],
+  dns:       ["DNS", "Lokalna imena uređaja (npr. nas.lan umjesto IP adrese)", () => loadDns()],
+  firewall:  ["Firewall", "Pravila prometa, port forwardi, DMZ i 1:1 NAT", () => loadFirewall()],
+  wireguard: ["WireGuard", "Udaljeni pristup — moderni VPN s ključevima", () => loadWireguard()],
+  openvpn:   ["OpenVPN", "Udaljeni pristup — klasični VPN s certifikatima", () => loadOpenvpn()],
+  devices:   ["Uređaji", "Inventar opreme — ovaj uređaj i susjedni", () => loadDevices()],
+  backup:    ["Backup", "Sigurnosne kopije uređaja i vraćanje", () => loadBackup()],
+  settings:  ["Postavke", "Korisnički račun, sesije i API token", () => loadSettings()],
+};
+const NAV_GROUPS = [
+  ["Status", ["dashboard"]],
+  ["Mreža", ["network", "dhcp", "dns"]],
+  ["Zaštita", ["firewall"]],
+  ["VPN", ["wireguard", "openvpn"]],
+  ["Sustav", ["devices", "backup", "settings"]],
+];
+const groupOf = (id) => NAV_GROUPS.findIndex((g) => g[1].includes(id));
+const lastByGroup = {};
+
+function renderNav(active) {
+  const nav = $("nav");
+  nav.replaceChildren();
+  const gi = groupOf(active);
+  NAV_GROUPS.forEach((g, i) => {
+    const b = document.createElement("button");
+    b.className = "nav-cat" + (i === gi ? " active" : "");
+    b.textContent = g[0];
+    b.onclick = () => {
+      const target = lastByGroup[i] && g[1].includes(lastByGroup[i])
+        ? lastByGroup[i] : g[1][0];
+      location.hash = "#/" + (target === "dashboard" ? "" : target);
+    };
+    nav.append(b);
+  });
+
+  const sub = $("subnav");
+  const ids = NAV_GROUPS[gi][1];
+  if (ids.length <= 1) {
+    sub.classList.add("hidden");
+    sub.replaceChildren();
+  } else {
+    sub.classList.remove("hidden");
+    sub.replaceChildren();
+    for (const id of ids) {
+      const b = document.createElement("button");
+      b.className = "subtab" + (id === active ? " active" : "");
+      b.textContent = MODULES[id][0];
+      b.onclick = () => { location.hash = "#/" + id; };
+      sub.append(b);
+    }
+  }
+}
 
 function route() {
-  const view = location.hash.startsWith("#/devices") ? "devices"
-    : location.hash.startsWith("#/dhcp") ? "dhcp"
-    : location.hash.startsWith("#/dns") ? "dns"
-    : location.hash.startsWith("#/firewall") ? "firewall"
-    : location.hash.startsWith("#/wireguard") ? "wireguard"
-    : location.hash.startsWith("#/backup") ? "backup"
-    : location.hash.startsWith("#/settings") ? "settings"
-    : location.hash.startsWith("#/network") ? "network" : "dashboard";
-  for (const v of ["dashboard", "devices", "dhcp", "dns", "firewall",
-    "wireguard", "backup", "settings", "network"]) {
+  let view = location.hash.replace(/^#\/?/, "").split("/")[0];
+  if (!MODULES[view]) view = "dashboard";
+  lastByGroup[groupOf(view)] = view;
+  for (const v of Object.keys(MODULES))
     $("view-" + v).classList.toggle("hidden", v !== view);
-    $("tab-" + v).classList.toggle("active", v === view);
-  }
+  $("page-title").textContent = MODULES[view][0];
+  $("page-desc").textContent = MODULES[view][1];
+  renderNav(view);
   if (!token) return;
-  if (view === "devices") loadDevices().catch(alertErr);
-  if (view === "dhcp") loadDhcp().catch(alertErr);
-  if (view === "dns") loadDns().catch(alertErr);
-  if (view === "firewall") loadFirewall().catch(alertErr);
-  if (view === "wireguard") loadWireguard().catch(alertErr);
-  if (view === "backup") loadBackup().catch(alertErr);
-  if (view === "settings") loadSettings().catch(alertErr);
-  if (view === "network") loadNetwork().catch(alertErr);
+  const load = MODULES[view][2]();
+  if (load) load.catch(alertErr);
 }
 window.addEventListener("hashchange", route);
 
@@ -1377,7 +1530,7 @@ $("vpn-rule-form").addEventListener("submit", async (ev) => {
     proto: f.elements.proto.value,
   };
   try {
-    await api("/wireguard/peers/" + vpnRulesPeer.uuid + "/rules", "POST", body);
+    await api("/" + vpnRulesBase + "/" + vpnRulesPeer.uuid + "/rules", "POST", body);
     f.elements.dest_ip.value = "";
     f.elements.dest_port.value = "";
     await refreshVpnRules();
@@ -1490,6 +1643,76 @@ $("wgconf-copy").addEventListener("click", async () => {
     $("wgconf-copy").textContent = "Kopirano ✓";
   }
   setTimeout(() => { $("wgconf-copy").textContent = "Kopiraj"; }, 1500);
+});
+
+$("ov-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {
+    port: parseInt(f.elements.port.value, 10) || 0,
+    network: f.elements.network.value.trim(),
+    endpoint_host: f.elements.endpoint_host.value.trim(),
+    client_dns: f.elements.client_dns.value.trim(),
+    push_lan: f.elements.push_lan.checked,
+  };
+  $("ov-server-result").textContent = "Spremam (prvi put traje par sekundi — izdaju se certifikati)…";
+  try {
+    const r = await api("/openvpn/server", "POST", body);
+    $("ov-server-result").textContent = "Spremljeno. Backupi: " + r.backups.join(", ");
+    await loadOpenvpn();
+  } catch (e) {
+    $("ov-server-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("ov-apply").addEventListener("click", async () => {
+  const btn = $("ov-apply");
+  btn.disabled = true;
+  $("ov-apply-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/openvpn/apply", "POST", {});
+    $("ov-apply-result").textContent =
+      `Primijenjeno: ${r.applied_clients} klijenata, ${r.applied_rules} pravila. ` +
+      `Backup: ${r.backup}`;
+    await loadOpenvpn();
+  } catch (e) {
+    $("ov-apply-result").textContent = "Greška: " + (e.message || e);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("ov-access").addEventListener("click", async () => {
+  const next = ovAccessMode === "full" ? "restricted" : "full";
+  const q = next === "restricted"
+    ? "Prebaciti na OGRANIČEN pristup? Korisnici gube pristup svemu osim " +
+      "onoga što im dopustiš pravilima."
+    : "Prebaciti na PUN pristup? Svi VPN korisnici vide LAN i internet.";
+  if (!confirm(q)) return;
+  try {
+    const r = await api("/openvpn/access", "POST", { mode: next });
+    $("ov-apply-result").textContent = "Način pristupa: " + r.mode;
+    await loadOpenvpn();
+  } catch (e) { alertErr(e); }
+});
+
+$("ovc-add").addEventListener("click", () => openOvcDialog(null));
+$("ovc-cancel").addEventListener("click", () => $("ovc-dialog").close());
+$("ovc-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {
+    tunnel_ip: f.elements.tunnel_ip.value.trim(),
+    notes: f.elements.notes.value.trim(),
+    enabled: f.elements.enabled.checked,
+  };
+  if (!editOvcUUID) body.name = f.elements.name.value.trim();
+  try {
+    if (editOvcUUID) await api("/openvpn/clients/" + editOvcUUID, "PUT", body);
+    else await api("/openvpn/clients", "POST", body);
+    $("ovc-dialog").close();
+    await loadOpenvpn();
+  } catch (e) { alertErr(e); }
 });
 
 $("pw-form").addEventListener("submit", async (ev) => {

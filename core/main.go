@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const version = "0.10.0"
+const version = "0.11.0"
 
 type server struct {
 	tokenMu   sync.RWMutex
@@ -123,6 +123,18 @@ func main() {
 	mux.Handle("DELETE /api/v1/wireguard/rules/{uuid}", s.auth(s.handleWGRuleDelete))
 	mux.Handle("POST /api/v1/wireguard/access", s.auth(s.handleWGAccessSet))
 	mux.Handle("POST /api/v1/wireguard/apply", s.auth(s.handleWGApply))
+	mux.Handle("GET /api/v1/openvpn/status", s.auth(s.handleOvpnStatus))
+	mux.Handle("POST /api/v1/openvpn/server", s.auth(s.handleOvpnServerSet))
+	mux.Handle("POST /api/v1/openvpn/access", s.auth(s.handleOvpnAccessSet))
+	mux.Handle("GET /api/v1/openvpn/clients", s.auth(s.handleOvpnClientList))
+	mux.Handle("POST /api/v1/openvpn/clients", s.auth(s.handleOvpnClientCreate))
+	mux.Handle("PUT /api/v1/openvpn/clients/{uuid}", s.auth(s.handleOvpnClientUpdate))
+	mux.Handle("DELETE /api/v1/openvpn/clients/{uuid}", s.auth(s.handleOvpnClientDelete))
+	mux.Handle("GET /api/v1/openvpn/clients/{uuid}/config", s.auth(s.handleOvpnClientConfig))
+	mux.Handle("GET /api/v1/openvpn/clients/{uuid}/rules", s.auth(s.handleOvpnClientRuleList))
+	mux.Handle("POST /api/v1/openvpn/clients/{uuid}/rules", s.auth(s.handleOvpnClientRuleCreate))
+	mux.Handle("DELETE /api/v1/openvpn/rules/{uuid}", s.auth(s.handleOvpnRuleDelete))
+	mux.Handle("POST /api/v1/openvpn/apply", s.auth(s.handleOvpnApply))
 	mux.Handle("GET /api/v1/network/lan", s.auth(s.handleNetworkLanGet))
 	mux.Handle("POST /api/v1/network/lan", s.auth(s.handleNetworkLanSet))
 	mux.Handle("GET /api/v1/firewall/status", s.auth(s.handleFWStatus))

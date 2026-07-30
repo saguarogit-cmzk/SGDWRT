@@ -90,6 +90,34 @@ CREATE TABLE IF NOT EXISTS wg_peer_rules (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- OpenVPN klijenti: certifikat+ključ generirani na uređaju (za .ovpn export),
+-- fiksna adresa u tunelu preko CCD datoteke (ccd-exclusive: bez CCD-a nema spajanja)
+CREATE TABLE IF NOT EXISTS ovpn_clients (
+    uuid        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL UNIQUE,          -- CN certifikata
+    cert_pem    TEXT NOT NULL,
+    key_pem     TEXT NOT NULL,
+    tunnel_ip   TEXT NOT NULL UNIQUE,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Pristupna pravila po OpenVPN klijentu (isti model kao wg_peer_rules)
+CREATE TABLE IF NOT EXISTS ovpn_client_rules (
+    uuid        TEXT PRIMARY KEY,
+    client_uuid TEXT NOT NULL REFERENCES ovpn_clients(uuid) ON DELETE CASCADE,
+    dest_zone   TEXT NOT NULL DEFAULT 'lan',
+    dest_ip     TEXT,
+    dest_port   TEXT,
+    proto       TEXT NOT NULL DEFAULT 'tcp udp',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Opće postavke platforme (ključ/vrijednost)
 CREATE TABLE IF NOT EXISTS settings (
     key         TEXT PRIMARY KEY,

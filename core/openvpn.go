@@ -1,0 +1,920 @@
+package main
+
+import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/hex"
+	"encoding/pem"
+	"fmt"
+	"math/big"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// OpenVPN modul: vlastiti PKI (CA + certifikati, sve u Go-u), server kroz
+// uci openvpn sekciju sag_server, fiksne adrese klijenata kroz CCD datoteke
+// (ccd-exclusive: klijent bez CCD-a se ne može spojiti — to je i "opoziv"),
+// pristupna pravila po klijentu kao sag_or_* firewall sekcije.
+const ovpnUciSection = "sag_server"
+const ovpnDev = "tun_sag"
+const ovpnIface = "sag_ovpn"
+const ovpnStatusFile = "/tmp/sag_ovpn.status"
+const ovpnConfigFile = "/etc/config/openvpn"
+const orPrefix = "sag_or_"
+
+var reClientName = regexp.MustCompile(`^[a-z][a-z0-9-]{1,30}$`)
+
+func (s *server) ovpnDir() string { return filepath.Join(s.etcDir, "ovpn") }
+func (s *server) ccdDir() string  { return filepath.Join(s.ovpnDir(), "ccd") }
+
+/* ---------- PKI (ECDSA P-256, potpisivanje vlastitim CA-om) ---------- */
+
+func writePEM(path, blockType string, der []byte, mode os.FileMode) error {
+	return os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: der}), mode)
+}
+
+func newSerial() *big.Int {
+	n, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 120))
+	return n
+}
+
+// ensureOvpnPKI stvara CA, serverski certifikat i tls-crypt ključ pri prvom pozivu.
+func (s *server) ensureOvpnPKI() error {
+	dir := s.ovpnDir()
+	if err := os.MkdirAll(s.ccdDir(), 0o700); err != nil {
+		return err
+	}
+	caCrt, caKey := filepath.Join(dir, "ca.crt"), filepath.Join(dir, "ca.key")
+	if _, err := os.Stat(caCrt); err != nil {
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			return err
+		}
+		tpl := &x509.Certificate{
+			SerialNumber:          newSerial(),
+			Subject:               pkix.Name{CommonName: "Saguaro VPN CA"},
+			NotBefore:             time.Now().Add(-time.Hour),
+			NotAfter:              time.Now().AddDate(10, 0, 0),
+			IsCA:                  true,
+			BasicConstraintsValid: true,
+			KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		}
+		der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, &key.PublicKey, key)
+		if err != nil {
+			return err
+		}
+		kder, _ := x509.MarshalECPrivateKey(key)
+		if err := writePEM(caKey, "EC PRIVATE KEY", kder, 0o600); err != nil {
+			return err
+		}
+		if err := writePEM(caCrt, "CERTIFICATE", der, 0o644); err != nil {
+			return err
+		}
+	}
+	// serverski certifikat
+	srvCrt, srvKey := filepath.Join(dir, "server.crt"), filepath.Join(dir, "server.key")
+	if _, err := os.Stat(srvCrt); err != nil {
+		certPEM, keyPEM, err := s.ovpnSignCert("saguaro-server",
+			x509.ExtKeyUsageServerAuth)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(srvKey, []byte(keyPEM), 0o600); err != nil {
+			return err
+		}
+		if err := os.WriteFile(srvCrt, []byte(certPEM), 0o644); err != nil {
+			return err
+		}
+	}
+	// tls-crypt ključ (OpenVPN static key format: 256 bajtova heksadecimalno)
+	tcKey := filepath.Join(dir, "tc.key")
+	if _, err := os.Stat(tcKey); err != nil {
+		raw := make([]byte, 256)
+		if _, err := rand.Read(raw); err != nil {
+			return err
+		}
+		var b strings.Builder
+		b.WriteString("-----BEGIN OpenVPN Static key V1-----\n")
+		h := hex.EncodeToString(raw)
+		for i := 0; i < len(h); i += 32 {
+			b.WriteString(h[i:i+32] + "\n")
+		}
+		b.WriteString("-----END OpenVPN Static key V1-----\n")
+		if err := os.WriteFile(tcKey, []byte(b.String()), 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ovpnSignCert izdaje certifikat s danim CN-om potpisan našim CA-om.
+func (s *server) ovpnSignCert(cn string, eku x509.ExtKeyUsage) (certPEM, keyPEM string, err error) {
+	dir := s.ovpnDir()
+	caCrtB, err := os.ReadFile(filepath.Join(dir, "ca.crt"))
+	if err != nil {
+		return "", "", err
+	}
+	caKeyB, err := os.ReadFile(filepath.Join(dir, "ca.key"))
+	if err != nil {
+		return "", "", err
+	}
+	caBlock, _ := pem.Decode(caCrtB)
+	keyBlock, _ := pem.Decode(caKeyB)
+	if caBlock == nil || keyBlock == nil {
+		return "", "", fmt.Errorf("CA nije čitljiv")
+	}
+	caCert, err := x509.ParseCertificate(caBlock.Bytes)
+	if err != nil {
+		return "", "", err
+	}
+	caKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+	if err != nil {
+		return "", "", err
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return "", "", err
+	}
+	tpl := &x509.Certificate{
+		SerialNumber: newSerial(),
+		Subject:      pkix.Name{CommonName: cn},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().AddDate(10, 0, 0),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{eku},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tpl, caCert, &key.PublicKey, caKey)
+	if err != nil {
+		return "", "", err
+	}
+	kder, _ := x509.MarshalECPrivateKey(key)
+	certPEM = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	keyPEM = string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kder}))
+	return certPEM, keyPEM, nil
+}
+
+/* ---------- pomoćne ---------- */
+
+// ovpnServerNet čita mrežu tunela iz uci openvpn sekcije ("10.7.0.0 255.255.255.0").
+func (s *server) ovpnServerNet(cfg map[string]uciSection) *net.IPNet {
+	sec, ok := cfg[ovpnUciSection]
+	if !ok {
+		return nil
+	}
+	f := strings.Fields(sectStr(sec, "server"))
+	if len(f) != 2 {
+		return nil
+	}
+	ip := net.ParseIP(f[0])
+	maskIP := net.ParseIP(f[1])
+	if ip == nil || maskIP == nil || maskIP.To4() == nil {
+		return nil
+	}
+	return &net.IPNet{IP: ip.Mask(net.IPMask(maskIP.To4())), Mask: net.IPMask(maskIP.To4())}
+}
+
+/* ---------- status ---------- */
+
+type ovpnConnected struct {
+	Name      string `json:"name"`
+	RealAddr  string `json:"real_addr"`
+	TunnelIP  string `json:"tunnel_ip"`
+	RxBytes   int64  `json:"rx_bytes"`
+	TxBytes   int64  `json:"tx_bytes"`
+	SinceUnix int64  `json:"since"`
+}
+
+// parseOvpnStatus čita OpenVPN status datoteku (status-version 2, CSV format
+// dokumentiran u openvpn(8)) — management sučelje ne izlažemo.
+func parseOvpnStatus(path string) []ovpnConnected {
+	out := []ovpnConnected{}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return out
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Split(line, ",")
+		if len(f) < 9 || f[0] != "CLIENT_LIST" {
+			continue
+		}
+		rx, _ := strconv.ParseInt(f[5], 10, 64)
+		tx, _ := strconv.ParseInt(f[6], 10, 64)
+		since, _ := strconv.ParseInt(f[8], 10, 64)
+		out = append(out, ovpnConnected{
+			Name: f[1], RealAddr: f[2], TunnelIP: strings.Split(f[3], ":")[0],
+			RxBytes: rx, TxBytes: tx, SinceUnix: since,
+		})
+	}
+	return out
+}
+
+func (s *server) handleOvpnStatus(w http.ResponseWriter, r *http.Request) {
+	_, lookErr := exec.LookPath("openvpn")
+	cfg, err := uciGetConfig(r.Context(), "openvpn")
+	if err != nil {
+		cfg = map[string]uciSection{}
+	}
+
+	srv := map[string]any{"configured": false}
+	if sec, ok := cfg[ovpnUciSection]; ok {
+		network := ""
+		if n := s.ovpnServerNet(cfg); n != nil {
+			network = n.String()
+		}
+		srv = map[string]any{
+			"configured":    true,
+			"port":          sectStr(sec, "port"),
+			"proto":         sectStr(sec, "proto"),
+			"network":       network,
+			"endpoint_host": s.getSetting("ovpn_endpoint_host", ""),
+			"client_dns":    s.getSetting("ovpn_client_dns", ""),
+			"push_lan":      s.getSetting("ovpn_push_lan", "1") == "1",
+		}
+	}
+
+	// radi li servis (procd instanca kroz ubus)
+	running := false
+	var svc map[string]struct {
+		Instances map[string]struct {
+			Running bool `json:"running"`
+		} `json:"instances"`
+	}
+	if err := ubusCallArg(r.Context(), "service", "list",
+		`{"name":"openvpn"}`, &svc); err == nil {
+		for _, x := range svc["openvpn"].Instances {
+			if x.Running {
+				running = true
+			}
+		}
+	}
+
+	accessMode := "restricted"
+	if fwCfg, err := uciGetConfig(r.Context(), "firewall"); err == nil {
+		if _, ok := fwCfg["sag_ovpn_lan"]; ok {
+			accessMode = "full"
+		} else if _, ok := fwCfg["sag_ovpn_wan"]; ok {
+			accessMode = "full"
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"installed":   lookErr == nil,
+		"server":      srv,
+		"running":     running,
+		"access_mode": accessMode,
+		"connected":   parseOvpnStatus(ovpnStatusFile),
+	})
+}
+
+/* ---------- postavke poslužitelja ---------- */
+
+type ovpnServerIn struct {
+	Port         int    `json:"port"`
+	Network      string `json:"network"` // CIDR mreže tunela, npr. 10.7.0.0/24
+	EndpointHost string `json:"endpoint_host"`
+	ClientDNS    string `json:"client_dns"`
+	PushLan      *bool  `json:"push_lan"`
+}
+
+func (s *server) handleOvpnServerSet(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var in ovpnServerIn
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	if in.Port == 0 {
+		in.Port = 1194
+	}
+	if in.Port < 1 || in.Port > 65535 {
+		writeErr(w, http.StatusBadRequest, "neispravan port")
+		return
+	}
+	if in.Network == "" {
+		in.Network = "10.7.0.0/24"
+	}
+	_, ipnet, err := net.ParseCIDR(strings.TrimSpace(in.Network))
+	if err != nil || ipnet.IP.To4() == nil {
+		writeErr(w, http.StatusBadRequest,
+			"mreža tunela mora biti IPv4 CIDR, npr. 10.7.0.0/24")
+		return
+	}
+	in.EndpointHost = strings.ToLower(strings.TrimSpace(in.EndpointHost))
+	if in.EndpointHost != "" && net.ParseIP(in.EndpointHost) == nil &&
+		!validDNSName(in.EndpointHost) {
+		writeErr(w, http.StatusBadRequest, "neispravan endpoint (IP ili ime)")
+		return
+	}
+	in.ClientDNS = strings.TrimSpace(in.ClientDNS)
+	if in.ClientDNS != "" && net.ParseIP(in.ClientDNS) == nil {
+		writeErr(w, http.StatusBadRequest, "neispravan DNS za klijente")
+		return
+	}
+
+	if err := s.ensureOvpnPKI(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "PKI: "+err.Error())
+		return
+	}
+
+	backups := []string{}
+	for _, cfgPath := range []string{ovpnConfigFile, networkConfig, firewallConfig} {
+		if _, err := os.Stat(cfgPath); err == nil {
+			bn, err := s.backupConfig(cfgPath)
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, "backup: "+err.Error())
+				return
+			}
+			backups = append(backups, bn)
+		}
+	}
+
+	dir := s.ovpnDir()
+	mask := net.IP(ipnet.Mask).String()
+	lanNet := ""
+	if netCfg, err := uciGetConfig(ctx, "network"); err == nil {
+		if lan, ok := netCfg["lan"]; ok {
+			lanIP := net.ParseIP(sectStr(lan, "ipaddr"))
+			lanMask := net.ParseIP(sectStr(lan, "netmask"))
+			if lanIP != nil && lanMask != nil {
+				m := net.IPMask(lanMask.To4())
+				lanNet = lanIP.Mask(m).String() + " " + lanMask.String()
+			}
+		}
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "set openvpn.%s=openvpn\n", ovpnUciSection)
+	fmt.Fprintf(&b, "set openvpn.%s.enabled=1\n", ovpnUciSection)
+	fmt.Fprintf(&b, "set openvpn.%s.dev=%s\n", ovpnUciSection, ovpnDev)
+	fmt.Fprintf(&b, "set openvpn.%s.dev_type=tun\n", ovpnUciSection)
+	fmt.Fprintf(&b, "set openvpn.%s.proto=udp\n", ovpnUciSection)
+	fmt.Fprintf(&b, "set openvpn.%s.port=%d\n", ovpnUciSection, in.Port)
+	fmt.Fprintf(&b, "set openvpn.%s.topology=subnet\n", ovpnUciSection)
+	fmt.Fprintf(&b, "set openvpn.%s.server=%s\n", ovpnUciSection,
+		uciQuote(ipnet.IP.String()+" "+mask))
+	fmt.Fprintf(&b, "set openvpn.%s.ca=%s\n", ovpnUciSection, filepath.Join(dir, "ca.crt"))
+	fmt.Fprintf(&b, "set openvpn.%s.cert=%s\n", ovpnUciSection, filepath.Join(dir, "server.crt"))
+	fmt.Fprintf(&b, "set openvpn.%s.key=%s\n", ovpnUciSection, filepath.Join(dir, "server.key"))
+	fmt.Fprintf(&b, "set openvpn.%s.dh=none\n", ovpnUciSection)
+	fmt.Fprintf(&b, "set openvpn.%s.tls_crypt=%s\n", ovpnUciSection, filepath.Join(dir, "tc.key"))
+	fmt.Fprintf(&b, "set openvpn.%s.keepalive=%s\n", ovpnUciSection, uciQuote("10 60"))
+	fmt.Fprintf(&b, "set openvpn.%s.persist_key=1\n", ovpnUciSection)
+	fmt.Fprintf(&b, "set openvpn.%s.persist_tun=1\n", ovpnUciSection)
+	fmt.Fprintf(&b, "set openvpn.%s.client_config_dir=%s\n", ovpnUciSection, s.ccdDir())
+	fmt.Fprintf(&b, "set openvpn.%s.ccd_exclusive=1\n", ovpnUciSection)
+	fmt.Fprintf(&b, "set openvpn.%s.status=%s\n", ovpnUciSection, ovpnStatusFile)
+	fmt.Fprintf(&b, "set openvpn.%s.status_version=2\n", ovpnUciSection)
+	fmt.Fprintf(&b, "set openvpn.%s.verb=2\n", ovpnUciSection)
+	fmt.Fprintf(&b, "delete openvpn.%s.push\n", ovpnUciSection)
+	pushLan := in.PushLan == nil || *in.PushLan
+	if pushLan && lanNet != "" {
+		fmt.Fprintf(&b, "add_list openvpn.%s.push=%s\n", ovpnUciSection,
+			uciQuote("route "+lanNet))
+	}
+	if in.ClientDNS != "" {
+		fmt.Fprintf(&b, "add_list openvpn.%s.push=%s\n", ovpnUciSection,
+			uciQuote("dhcp-option DNS "+in.ClientDNS))
+	}
+	b.WriteString("commit openvpn\n")
+	if err := uciBatch(ctx, b.String()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// mrežno sučelje + firewall zona (jednom; idempotentno)
+	var nb strings.Builder
+	fmt.Fprintf(&nb, "set network.%s=interface\n", ovpnIface)
+	fmt.Fprintf(&nb, "set network.%s.proto=none\n", ovpnIface)
+	fmt.Fprintf(&nb, "set network.%s.device=%s\n", ovpnIface, ovpnDev)
+	nb.WriteString("commit network\n")
+	if err := uciBatch(ctx, nb.String()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	var fb strings.Builder
+	fb.WriteString("set firewall.sag_ovpn_zone=zone\n")
+	fb.WriteString("set firewall.sag_ovpn_zone.name=sagovpn\n")
+	fb.WriteString("delete firewall.sag_ovpn_zone.network\n")
+	fmt.Fprintf(&fb, "add_list firewall.sag_ovpn_zone.network=%s\n", ovpnIface)
+	fb.WriteString("set firewall.sag_ovpn_zone.input=ACCEPT\n")
+	fb.WriteString("set firewall.sag_ovpn_zone.output=ACCEPT\n")
+	fb.WriteString("set firewall.sag_ovpn_zone.forward=REJECT\n")
+	fb.WriteString("set firewall.sag_ovpn_rule=rule\n")
+	fb.WriteString("set firewall.sag_ovpn_rule.name=Saguaro-OpenVPN\n")
+	fb.WriteString("set firewall.sag_ovpn_rule.src=wan\n")
+	fb.WriteString("set firewall.sag_ovpn_rule.proto=udp\n")
+	fmt.Fprintf(&fb, "set firewall.sag_ovpn_rule.dest_port=%d\n", in.Port)
+	fb.WriteString("set firewall.sag_ovpn_rule.target=ACCEPT\n")
+	// pun pristup pri prvom postavljanju (kao WireGuard); mijenja se kroz /access
+	fwCfg, _ := uciGetConfig(ctx, "firewall")
+	_, hasLan := fwCfg["sag_ovpn_lan"]
+	_, hasWan := fwCfg["sag_ovpn_wan"]
+	_, hadZone := fwCfg["sag_ovpn_zone"]
+	if !hadZone || hasLan || hasWan {
+		fb.WriteString("set firewall.sag_ovpn_lan=forwarding\n")
+		fb.WriteString("set firewall.sag_ovpn_lan.src=sagovpn\n")
+		fb.WriteString("set firewall.sag_ovpn_lan.dest=lan\n")
+		fb.WriteString("set firewall.sag_ovpn_wan=forwarding\n")
+		fb.WriteString("set firewall.sag_ovpn_wan.src=sagovpn\n")
+		fb.WriteString("set firewall.sag_ovpn_wan.dest=wan\n")
+	}
+	fb.WriteString("commit firewall\n")
+	if err := uciBatch(ctx, fb.String()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	for k, v := range map[string]string{
+		"ovpn_endpoint_host": in.EndpointHost,
+		"ovpn_client_dns":    in.ClientDNS,
+		"ovpn_push_lan":      map[bool]string{true: "1", false: "0"}[pushLan],
+	} {
+		if err := s.setSetting(k, v); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
+	if err := serviceReload(ctx, "openvpn", "enable"); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, svc := range [][2]string{{"firewall", "reload"}, {"network", "reload"},
+		{"openvpn", "restart"}} {
+		if err := serviceReload(ctx, svc[0], svc[1]); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"applied": true, "backups": backups})
+}
+
+// handleOvpnAccessSet — pun/ograničen pristup, isti model kao WireGuard.
+func (s *server) handleOvpnAccessSet(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var in struct {
+		Mode string `json:"mode"`
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	if in.Mode != "full" && in.Mode != "restricted" {
+		writeErr(w, http.StatusBadRequest, "mode mora biti full ili restricted")
+		return
+	}
+	backupName, err := s.backupConfig(firewallConfig)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "backup: "+err.Error())
+		return
+	}
+	cfg, err := uciGetConfig(ctx, "firewall")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	var b strings.Builder
+	if in.Mode == "full" {
+		b.WriteString("set firewall.sag_ovpn_lan=forwarding\n")
+		b.WriteString("set firewall.sag_ovpn_lan.src=sagovpn\n")
+		b.WriteString("set firewall.sag_ovpn_lan.dest=lan\n")
+		b.WriteString("set firewall.sag_ovpn_wan=forwarding\n")
+		b.WriteString("set firewall.sag_ovpn_wan.src=sagovpn\n")
+		b.WriteString("set firewall.sag_ovpn_wan.dest=wan\n")
+	} else {
+		for _, sect := range []string{"sag_ovpn_lan", "sag_ovpn_wan"} {
+			if _, ok := cfg[sect]; ok {
+				fmt.Fprintf(&b, "delete firewall.%s\n", sect)
+			}
+		}
+	}
+	if b.Len() == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"mode": in.Mode})
+		return
+	}
+	b.WriteString("commit firewall\n")
+	if err := uciBatch(ctx, b.String()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := serviceReload(ctx, "firewall", "reload"); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"mode": in.Mode, "backup": backupName})
+}
+
+/* ---------- klijenti ---------- */
+
+type OvpnClient struct {
+	UUID      string `json:"uuid"`
+	Name      string `json:"name"`
+	TunnelIP  string `json:"tunnel_ip"`
+	Enabled   bool   `json:"enabled"`
+	Notes     string `json:"notes"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// certifikat i ključ se ne vraćaju kroz popis — samo kroz /config export
+const ovpnCols = `uuid, name, tunnel_ip, enabled, COALESCE(notes,''),
+	created_at, updated_at`
+
+func scanOvpnClient(row interface{ Scan(...any) error }) (OvpnClient, error) {
+	var c OvpnClient
+	err := row.Scan(&c.UUID, &c.Name, &c.TunnelIP, &c.Enabled, &c.Notes,
+		&c.CreatedAt, &c.UpdatedAt)
+	return c, err
+}
+
+func (s *server) handleOvpnClientList(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.db.Query(`SELECT ` + ovpnCols + ` FROM ovpn_clients ORDER BY tunnel_ip`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []OvpnClient{}
+	for rows.Next() {
+		c, err := scanOvpnClient(rows)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		out = append(out, c)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"clients": out})
+}
+
+type ovpnClientIn struct {
+	OvpnClient
+	Enabled *bool `json:"enabled"`
+}
+
+func (s *server) validateOvpnClient(w http.ResponseWriter, c *OvpnClient) bool {
+	c.Name = strings.ToLower(strings.TrimSpace(c.Name))
+	c.TunnelIP = strings.TrimSpace(c.TunnelIP)
+	if !reClientName.MatchString(c.Name) {
+		writeErr(w, http.StatusBadRequest,
+			"naziv: 2-31 malih slova/znamenki/crtica, počinje slovom")
+		return false
+	}
+	ip := net.ParseIP(c.TunnelIP)
+	if ip == nil || ip.To4() == nil {
+		writeErr(w, http.StatusBadRequest, "neispravna adresa u tunelu")
+		return false
+	}
+	cfg, err := uciGetConfig(context.Background(), "openvpn")
+	if err == nil {
+		if n := s.ovpnServerNet(cfg); n != nil && !n.Contains(ip) {
+			writeErr(w, http.StatusBadRequest,
+				"adresa "+c.TunnelIP+" nije u mreži tunela "+n.String())
+			return false
+		}
+	}
+	return true
+}
+
+func (s *server) handleOvpnClientCreate(w http.ResponseWriter, r *http.Request) {
+	var in ovpnClientIn
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	c := &in.OvpnClient
+	if !s.validateOvpnClient(w, c) {
+		return
+	}
+	if err := s.ensureOvpnPKI(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "PKI: "+err.Error())
+		return
+	}
+	certPEM, keyPEM, err := s.ovpnSignCert(c.Name, x509.ExtKeyUsageClientAuth)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	c.UUID = newUUID()
+	_, err = s.db.Exec(`INSERT INTO ovpn_clients
+		(uuid, name, cert_pem, key_pem, tunnel_ip, enabled, notes)
+		VALUES (?,?,?,?,?,?,?)`,
+		c.UUID, c.Name, certPEM, keyPEM, c.TunnelIP, enabledIntOf(in.Enabled), c.Notes)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			writeErr(w, http.StatusConflict,
+				"klijent s tim nazivom ili adresom već postoji")
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	cc, _ := scanOvpnClient(s.db.QueryRow(
+		`SELECT `+ovpnCols+` FROM ovpn_clients WHERE uuid=?`, c.UUID))
+	writeJSON(w, http.StatusCreated, cc)
+}
+
+func (s *server) handleOvpnClientUpdate(w http.ResponseWriter, r *http.Request) {
+	uuid := r.PathValue("uuid")
+	var in ovpnClientIn
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	c := &in.OvpnClient
+	// naziv je CN certifikata i ne mijenja se; mijenjaju se adresa/stanje/napomene
+	var name string
+	if err := s.db.QueryRow(`SELECT name FROM ovpn_clients WHERE uuid=?`,
+		uuid).Scan(&name); err != nil {
+		writeErr(w, http.StatusNotFound, "klijent ne postoji")
+		return
+	}
+	c.Name = name
+	if !s.validateOvpnClient(w, c) {
+		return
+	}
+	_, err := s.db.Exec(`UPDATE ovpn_clients SET tunnel_ip=?, enabled=?, notes=?,
+		updated_at=datetime('now') WHERE uuid=?`,
+		c.TunnelIP, enabledIntOf(in.Enabled), c.Notes, uuid)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			writeErr(w, http.StatusConflict, "klijent s tom adresom već postoji")
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	cc, _ := scanOvpnClient(s.db.QueryRow(
+		`SELECT `+ovpnCols+` FROM ovpn_clients WHERE uuid=?`, uuid))
+	writeJSON(w, http.StatusOK, cc)
+}
+
+func (s *server) handleOvpnClientDelete(w http.ResponseWriter, r *http.Request) {
+	res, err := s.db.Exec(`DELETE FROM ovpn_clients WHERE uuid=?`, r.PathValue("uuid"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusNotFound, "klijent ne postoji")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("uuid")})
+}
+
+/* ---------- .ovpn export ---------- */
+
+func (s *server) handleOvpnClientConfig(w http.ResponseWriter, r *http.Request) {
+	var name, certPEM, keyPEM string
+	err := s.db.QueryRow(`SELECT name, cert_pem, key_pem FROM ovpn_clients
+		WHERE uuid=?`, r.PathValue("uuid")).Scan(&name, &certPEM, &keyPEM)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "klijent ne postoji")
+		return
+	}
+	cfg, err := uciGetConfig(r.Context(), "openvpn")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	sec, ok := cfg[ovpnUciSection]
+	if !ok {
+		writeErr(w, http.StatusConflict, "OpenVPN poslužitelj još nije postavljen")
+		return
+	}
+	port := sectStr(sec, "port")
+	caB, err1 := os.ReadFile(filepath.Join(s.ovpnDir(), "ca.crt"))
+	tcB, err2 := os.ReadFile(filepath.Join(s.ovpnDir(), "tc.key"))
+	if err1 != nil || err2 != nil {
+		writeErr(w, http.StatusInternalServerError, "PKI datoteke nedostupne")
+		return
+	}
+	endpoint := s.getSetting("ovpn_endpoint_host", "")
+	if endpoint == "" {
+		if netCfg, err := uciGetConfig(r.Context(), "network"); err == nil {
+			if lan, ok := netCfg["lan"]; ok {
+				endpoint = sectStr(lan, "ipaddr")
+			}
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("client\ndev tun\nproto udp\n")
+	fmt.Fprintf(&b, "remote %s %s\n", endpoint, port)
+	b.WriteString("resolv-retry infinite\nnobind\npersist-key\npersist-tun\n")
+	b.WriteString("remote-cert-tls server\nverb 3\n\n")
+	fmt.Fprintf(&b, "<ca>\n%s</ca>\n", string(caB))
+	fmt.Fprintf(&b, "<cert>\n%s</cert>\n", certPEM)
+	fmt.Fprintf(&b, "<key>\n%s</key>\n", keyPEM)
+	fmt.Fprintf(&b, "<tls-crypt>\n%s</tls-crypt>\n", string(tcB))
+
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "config": b.String()})
+}
+
+/* ---------- pristupna pravila po klijentu ---------- */
+
+func (s *server) handleOvpnClientRuleList(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.db.Query(`SELECT uuid, client_uuid, dest_zone,
+		COALESCE(dest_ip,''), COALESCE(dest_port,''), proto, enabled,
+		COALESCE(notes,''), created_at, updated_at
+		FROM ovpn_client_rules WHERE client_uuid=? ORDER BY created_at`,
+		r.PathValue("uuid"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []WGPeerRule{}
+	for rows.Next() {
+		var x WGPeerRule
+		if err := rows.Scan(&x.UUID, &x.PeerUUID, &x.DestZone, &x.DestIP,
+			&x.DestPort, &x.Proto, &x.Enabled, &x.Notes,
+			&x.CreatedAt, &x.UpdatedAt); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		out = append(out, x)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rules": out})
+}
+
+func (s *server) handleOvpnClientRuleCreate(w http.ResponseWriter, r *http.Request) {
+	clientUUID := r.PathValue("uuid")
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM ovpn_clients WHERE uuid=?`,
+		clientUUID).Scan(&n); err != nil || n == 0 {
+		writeErr(w, http.StatusNotFound, "klijent ne postoji")
+		return
+	}
+	var in wgRuleIn
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	x := &in.WGPeerRule
+	if !validateWGRule(w, x) {
+		return
+	}
+	x.UUID = newUUID()
+	_, err := s.db.Exec(`INSERT INTO ovpn_client_rules
+		(uuid, client_uuid, dest_zone, dest_ip, dest_port, proto, enabled, notes)
+		VALUES (?,?,?,?,?,?,?,?)`,
+		x.UUID, clientUUID, x.DestZone, x.DestIP, x.DestPort, x.Proto,
+		enabledIntOf(in.Enabled), x.Notes)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"created": x.UUID})
+}
+
+func (s *server) handleOvpnRuleDelete(w http.ResponseWriter, r *http.Request) {
+	res, err := s.db.Exec(`DELETE FROM ovpn_client_rules WHERE uuid=?`, r.PathValue("uuid"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusNotFound, "pravilo ne postoji")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("uuid")})
+}
+
+/* ---------- primjena ---------- */
+
+// handleOvpnApply sinkronizira CCD datoteke (fiksne adrese; ccd-exclusive
+// znači da isključeni klijent gubi mogućnost spajanja) i sag_or_* pravila.
+func (s *server) handleOvpnApply(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	ovpnCfg, err := uciGetConfig(ctx, "openvpn")
+	if err != nil || ovpnCfg[ovpnUciSection] == nil {
+		writeErr(w, http.StatusConflict, "prvo spremi postavke poslužitelja")
+		return
+	}
+	ipnet := s.ovpnServerNet(ovpnCfg)
+	if ipnet == nil {
+		writeErr(w, http.StatusConflict, "mreža tunela nije čitljiva iz konfiguracije")
+		return
+	}
+	mask := net.IP(ipnet.Mask).String()
+
+	rows, err := s.db.Query(`SELECT name, tunnel_ip FROM ovpn_clients
+		WHERE enabled = 1 ORDER BY tunnel_ip`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	type cl struct{ name, ip string }
+	clients := []cl{}
+	for rows.Next() {
+		var c cl
+		if err := rows.Scan(&c.name, &c.ip); err != nil {
+			rows.Close()
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		clients = append(clients, c)
+	}
+	rows.Close()
+
+	// CCD: obriši sve postojeće pa zapiši aktivne
+	if err := os.RemoveAll(s.ccdDir()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := os.MkdirAll(s.ccdDir(), 0o700); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, c := range clients {
+		line := fmt.Sprintf("ifconfig-push %s %s\n", c.ip, mask)
+		if err := os.WriteFile(filepath.Join(s.ccdDir(), c.name),
+			[]byte(line), 0o600); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
+	// pristupna pravila -> sag_or_* firewall sekcije
+	type vr struct{ uuid, ip, zone, dip, dport, proto string }
+	vrRows, err := s.db.Query(`SELECT r.uuid, c.tunnel_ip, r.dest_zone,
+		COALESCE(r.dest_ip,''), COALESCE(r.dest_port,''), r.proto
+		FROM ovpn_client_rules r JOIN ovpn_clients c ON c.uuid = r.client_uuid
+		WHERE r.enabled = 1 AND c.enabled = 1 ORDER BY c.tunnel_ip`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	vrs := []vr{}
+	for vrRows.Next() {
+		var x vr
+		if err := vrRows.Scan(&x.uuid, &x.ip, &x.zone, &x.dip, &x.dport, &x.proto); err != nil {
+			vrRows.Close()
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		vrs = append(vrs, x)
+	}
+	vrRows.Close()
+
+	backupName, err := s.backupConfig(firewallConfig)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "backup: "+err.Error())
+		return
+	}
+	fwCfg, err := uciGetConfig(ctx, "firewall")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	var fb strings.Builder
+	removed := 0
+	for name, sec := range fwCfg {
+		if strings.HasPrefix(name, orPrefix) && sectStr(sec, ".type") == "rule" {
+			fmt.Fprintf(&fb, "delete firewall.%s\n", name)
+			removed++
+		}
+	}
+	for _, x := range vrs {
+		sn := orPrefix + strings.ReplaceAll(x.uuid, "-", "")[:8]
+		fmt.Fprintf(&fb, "set firewall.%s=rule\n", sn)
+		fmt.Fprintf(&fb, "set firewall.%s.name=%s\n", sn, uciQuote("OVPN "+x.ip+" -> "+x.zone))
+		fmt.Fprintf(&fb, "set firewall.%s.src=sagovpn\n", sn)
+		fmt.Fprintf(&fb, "set firewall.%s.src_ip=%s\n", sn, x.ip)
+		if x.zone != "" {
+			fmt.Fprintf(&fb, "set firewall.%s.dest=%s\n", sn, x.zone)
+		}
+		if x.dip != "" {
+			fmt.Fprintf(&fb, "set firewall.%s.dest_ip=%s\n", sn, x.dip)
+		}
+		if x.dport != "" {
+			fmt.Fprintf(&fb, "set firewall.%s.dest_port=%s\n", sn, x.dport)
+		}
+		if x.proto != "all" {
+			fmt.Fprintf(&fb, "set firewall.%s.proto=%s\n", sn, uciQuote(x.proto))
+		}
+		fmt.Fprintf(&fb, "set firewall.%s.target=ACCEPT\n", sn)
+	}
+	fb.WriteString("commit firewall\n")
+	if err := uciBatch(ctx, fb.String()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := serviceReload(ctx, "firewall", "reload"); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"applied_clients": len(clients),
+		"applied_rules":   len(vrs),
+		"removed_rules":   removed,
+		"backup":          backupName,
+	})
+}

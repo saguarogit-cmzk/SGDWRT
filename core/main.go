@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -20,30 +21,50 @@ import (
 	"time"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 type server struct {
 	token   string
 	webDir  string
 	started time.Time
+	db      *sql.DB
 }
 
 func main() {
 	listen := flag.String("listen", ":8443", "adresa:port za slušanje")
 	etcDir := flag.String("etc", "/opt/saguaro/etc", "direktorij konfiguracije (token, certifikat)")
 	webDir := flag.String("web", "/opt/saguaro/web", "direktorij statičkog weba")
+	dataDir := flag.String("data", "/opt/saguaro/data", "direktorij podataka (SQLite)")
 	noTLS := flag.Bool("no-tls", false, "posluži bez TLS-a (samo za razvoj)")
 	flag.Parse()
 
 	if err := os.MkdirAll(*etcDir, 0o755); err != nil {
 		log.Fatalf("etc direktorij: %v", err)
 	}
+	if err := os.MkdirAll(*dataDir, 0o755); err != nil {
+		log.Fatalf("data direktorij: %v", err)
+	}
 	token, err := ensureToken(filepath.Join(*etcDir, "token"))
 	if err != nil {
 		log.Fatalf("token: %v", err)
 	}
+	db, err := openDB(filepath.Join(*dataDir, "saguaro.db"))
+	if err != nil {
+		log.Fatalf("baza: %v", err)
+	}
+	defer db.Close()
 
-	s := &server{token: token, webDir: *webDir, started: time.Now()}
+	s := &server{token: token, webDir: *webDir, started: time.Now(), db: db}
+
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		if err := s.ensureSelf(ctx); err != nil {
+			// bez ubus-a (npr. razvoj na radnoj stanici) samoregistracija ne prolazi;
+			// servis ipak kreće, zapis se popuni pri sljedećem startu na uređaju
+			log.Printf("upozorenje: samoregistracija u inventory nije uspjela: %v", err)
+		}
+		cancel()
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
@@ -51,6 +72,16 @@ func main() {
 	mux.Handle("GET /api/v1/system/status", s.auth(s.handleStatus))
 	mux.Handle("GET /api/v1/storage", s.auth(s.handleStorage))
 	mux.Handle("GET /api/v1/interfaces", s.auth(s.handleInterfaces))
+	mux.Handle("GET /api/v1/identity", s.auth(s.handleIdentity))
+	mux.Handle("GET /api/v1/inventory/devices", s.auth(s.handleDeviceList))
+	mux.Handle("POST /api/v1/inventory/devices", s.auth(s.handleDeviceCreate))
+	mux.Handle("GET /api/v1/inventory/devices/{uuid}", s.auth(s.handleDeviceGet))
+	mux.Handle("PUT /api/v1/inventory/devices/{uuid}", s.auth(s.handleDeviceUpdate))
+	mux.Handle("DELETE /api/v1/inventory/devices/{uuid}", s.auth(s.handleDeviceDelete))
+	mux.Handle("GET /api/v1/inventory/hosts", s.auth(s.handleHostList))
+	mux.Handle("POST /api/v1/inventory/hosts", s.auth(s.handleHostCreate))
+	mux.Handle("PUT /api/v1/inventory/hosts/{uuid}", s.auth(s.handleHostUpdate))
+	mux.Handle("DELETE /api/v1/inventory/hosts/{uuid}", s.auth(s.handleHostDelete))
 	mux.HandleFunc("/", s.handleRoot)
 
 	srv := &http.Server{

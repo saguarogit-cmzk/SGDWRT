@@ -31,7 +31,12 @@
     </div>
   </header>
 
-  <main>
+  <nav class="tabs">
+    <a href="#/" id="tab-dashboard" class="active">Dashboard</a>
+    <a href="#/devices" id="tab-devices">Uređaji</a>
+  </nav>
+
+  <main id="view-dashboard">
     <section class="tiles">
       <div class="tile">
         <div class="tile-label">CPU opterećenje</div>
@@ -87,6 +92,45 @@
       </div>
     </section>
   </main>
+
+  <main id="view-devices" class="hidden">
+    <section class="card">
+      <div class="card-head">
+        <h2>Inventory — uređaji</h2>
+        <button id="dev-add" class="primary">Dodaj uređaj</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Hostname</th><th>Model</th><th>Firmware</th><th>Serijski</th>
+            <th>Lokacija</th><th>Klijent</th><th>Napomene</th><th></th>
+          </tr></thead>
+          <tbody id="dev-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="dev-dialog">
+    <form id="dev-form">
+      <h2 id="dev-dialog-title">Uređaj</h2>
+      <div class="form-grid">
+        <label>Hostname<input name="hostname" required></label>
+        <label>Model<input name="model"></label>
+        <label>Firmware<input name="firmware"></label>
+        <label>Serijski broj<input name="serial"></label>
+        <label>Lokacija<input name="location"></label>
+        <label>Klijent<input name="customer"></label>
+        <label class="wide">Napomene<textarea name="notes" rows="3"></textarea></label>
+      </div>
+      <p class="hint hidden" id="dev-self-note">Ovo je ovaj uređaj — hardverska
+        polja puni sustav automatski; uređuju se samo lokacija, klijent i napomene.</p>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="dev-cancel">Odustani</button>
+        <button type="submit" class="primary">Spremi</button>
+      </div>
+    </form>
+  </dialog>
 
   <footer>
     <span id="versions">—</span>

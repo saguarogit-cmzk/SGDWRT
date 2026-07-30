@@ -9,13 +9,20 @@ let timers = [];
 
 /* ---------- pomoćne ---------- */
 
-async function api(path) {
-  const r = await fetch(API + path, {
+async function api(path, method = "GET", body = null) {
+  const opts = {
+    method,
     headers: token ? { Authorization: "Bearer " + token } : {},
-  });
+  };
+  if (body !== null) {
+    opts.headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(API + path, opts);
   if (r.status === 401) throw { unauthorized: true };
-  if (!r.ok) throw new Error(path + ": HTTP " + r.status);
-  return r.json();
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || path + ": HTTP " + r.status);
+  return data;
 }
 
 const GB = 1024 * 1024 * 1024;
@@ -173,6 +180,89 @@ function renderInterfaces(x) {
   }
 }
 
+/* ---------- inventory: uređaji ---------- */
+
+let editUUID = null; // null = novi uređaj
+let editIsSelf = false;
+
+async function loadDevices() {
+  const x = await api("/inventory/devices");
+  const tb = $("dev-rows");
+  tb.replaceChildren();
+  for (const d of x.devices) {
+    const tr = document.createElement("tr");
+
+    const tdName = document.createElement("td");
+    tdName.textContent = d.hostname;
+    if (d.is_self) {
+      const b = document.createElement("span");
+      b.className = "badge";
+      b.textContent = "ovaj uređaj";
+      tdName.append(b);
+    }
+    tr.append(tdName);
+
+    for (const v of [d.model, d.firmware, d.serial, d.location, d.customer, d.notes]) {
+      const td = document.createElement("td");
+      td.textContent = v || "—";
+      tr.append(td);
+    }
+
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    const edit = document.createElement("button");
+    edit.className = "btn-sm";
+    edit.textContent = "Uredi";
+    edit.onclick = () => openDeviceDialog(d);
+    tdAct.append(edit);
+    if (!d.is_self) {
+      const del = document.createElement("button");
+      del.className = "btn-sm danger";
+      del.textContent = "Obriši";
+      del.onclick = async () => {
+        if (!confirm(`Obrisati uređaj "${d.hostname}"?`)) return;
+        await api("/inventory/devices/" + d.uuid, "DELETE").catch(alertErr);
+        loadDevices().catch(onTickError);
+      };
+      tdAct.append(del);
+    }
+    tr.append(tdAct);
+    tb.append(tr);
+  }
+}
+
+function openDeviceDialog(d) {
+  const f = $("dev-form");
+  editUUID = d ? d.uuid : null;
+  editIsSelf = d ? d.is_self : false;
+  $("dev-dialog-title").textContent = d ? "Uredi uređaj" : "Novi uređaj";
+  $("dev-self-note").classList.toggle("hidden", !editIsSelf);
+  for (const el of f.elements) {
+    if (!el.name) continue;
+    el.value = d ? d[el.name] || "" : "";
+    // hardverska polja ovog uređaja puni samoregistracija
+    el.disabled = editIsSelf && !["location", "customer", "notes"].includes(el.name);
+  }
+  $("dev-dialog").showModal();
+}
+
+function alertErr(e) {
+  if (e && e.unauthorized) { logout(true); return; }
+  alert("Greška: " + (e.message || e));
+}
+
+/* ---------- router ---------- */
+
+function route() {
+  const devices = location.hash.startsWith("#/devices");
+  $("view-dashboard").classList.toggle("hidden", devices);
+  $("view-devices").classList.toggle("hidden", !devices);
+  $("tab-dashboard").classList.toggle("active", !devices);
+  $("tab-devices").classList.toggle("active", devices);
+  if (devices && token) loadDevices().catch(alertErr);
+}
+window.addEventListener("hashchange", route);
+
 /* ---------- petlje ---------- */
 
 async function tickFast() {
@@ -204,6 +294,7 @@ async function start() {
   $("app").classList.remove("hidden");
   timers.push(setInterval(() => tickFast().catch(onTickError), 5000));
   timers.push(setInterval(() => tickSlow().catch(onTickError), 15000));
+  route();
 }
 
 function onTickError(e) {
@@ -230,6 +321,26 @@ $("login-form").addEventListener("submit", (ev) => {
   start().catch(() => logout(true));
 });
 $("logout").addEventListener("click", () => logout(false));
+
+$("dev-add").addEventListener("click", () => openDeviceDialog(null));
+$("dev-cancel").addEventListener("click", () => $("dev-dialog").close());
+$("dev-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {};
+  const fields = editIsSelf
+    ? ["location", "customer", "notes"]
+    : ["hostname", "model", "firmware", "serial", "location", "customer", "notes"];
+  for (const name of fields) body[name] = f.elements[name].value.trim();
+  try {
+    if (editUUID) await api("/inventory/devices/" + editUUID, "PUT", body);
+    else await api("/inventory/devices", "POST", body);
+    $("dev-dialog").close();
+    await loadDevices();
+  } catch (e) {
+    alertErr(e);
+  }
+});
 
 if (token) start().catch(() => logout(true));
 else $("login").classList.remove("hidden");

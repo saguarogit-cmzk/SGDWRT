@@ -81,6 +81,18 @@ header {
 }
 .ghost:hover { border-color: var(--muted); color: var(--ink); }
 
+/* --- tabovi --- */
+.tabs {
+  max-width: 1100px; margin: 0 auto; padding: 12px 24px 0;
+  display: flex; gap: 4px;
+}
+.tabs a {
+  color: var(--ink-2); text-decoration: none; font-size: 14px; font-weight: 600;
+  padding: 6px 14px; border-radius: 8px 8px 0 0; border-bottom: 2px solid transparent;
+}
+.tabs a:hover { color: var(--ink); }
+.tabs a.active { color: var(--ink); border-bottom-color: var(--accent); }
+
 main { max-width: 1100px; margin: 0 auto; padding: 24px; display: grid; gap: 16px; }
 footer {
   max-width: 1100px; margin: 0 auto; padding: 0 24px 24px;
@@ -150,3 +162,44 @@ th {
 td { border-bottom: 1px solid var(--grid); padding: 8px 12px 8px 0; }
 tr:last-child td { border-bottom: 0; }
 td.num, .kv dd.num { font-variant-numeric: tabular-nums; }
+
+/* --- inventory --- */
+.card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.card-head h2 { margin: 0; }
+.primary {
+  background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+  padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.btn-sm {
+  background: none; border: 1px solid var(--grid); color: var(--ink-2);
+  border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer;
+}
+.btn-sm:hover { border-color: var(--muted); color: var(--ink); }
+.btn-sm.danger:hover { border-color: var(--st-crit); color: var(--st-crit); }
+.badge {
+  display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; color: var(--accent);
+  border: 1px solid var(--accent);
+}
+.row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+/* --- dialog --- */
+dialog {
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--hairline); border-radius: 12px;
+  padding: 24px; width: min(560px, 92vw);
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+dialog h2 { margin: 0 0 16px; font-size: 15px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-grid label { display: grid; gap: 4px; color: var(--ink-2); font-size: 12px; }
+.form-grid label.wide { grid-column: 1 / -1; }
+.form-grid input, .form-grid textarea {
+  background: var(--page); color: var(--ink); border: 1px solid var(--grid);
+  border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit;
+}
+.form-grid input:disabled { opacity: 0.5; }
+.form-grid input:focus, .form-grid textarea:focus {
+  outline: 2px solid var(--accent); border-color: transparent;
+}
+.form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }

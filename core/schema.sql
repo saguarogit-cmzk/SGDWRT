@@ -1,9 +1,7 @@
--- Saguaro Inventory — SQLite shema v1
+-- Saguaro Inventory — SQLite shema v1 (ugrađena u binary preko go:embed)
 -- Sync-ready: svaki zapis ima uuid i updated_at, pa je buduća
 -- sinkronizacija prema centralnom kontroleru moguća bez migracije (D-001).
-
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
+-- PRAGMA postavke (WAL, foreign_keys) idu kroz DSN, ne ovdje.
 
 CREATE TABLE IF NOT EXISTS devices (
     uuid        TEXT PRIMARY KEY,             -- generira se pri prvom bootu

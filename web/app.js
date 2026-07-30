@@ -251,15 +251,127 @@ function alertErr(e) {
   alert("Greška: " + (e.message || e));
 }
 
+/* ---------- dhcp ---------- */
+
+let editHostUUID = null;
+
+async function loadDhcp() {
+  const [st, hs] = await Promise.all([api("/dhcp/status"), api("/inventory/hosts")]);
+
+  const kv = $("dhcp-server-kv");
+  kv.replaceChildren();
+  const sv = st.server || {};
+  const rows = [
+    ["Sučelje", sv.interface || "—"],
+    ["Početak raspona", sv.start || "—"],
+    ["Veličina raspona", sv.limit || "—"],
+    ["Trajanje leasea", sv.leasetime || "—"],
+    ["Stanje", sv.ignore ? "isključen" : "aktivan"],
+  ];
+  for (const [k, v] of rows) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    kv.append(dt, dd);
+  }
+
+  const managedDB = hs.hosts.filter((h) => h.managed).length;
+  const sagOnDev = st.static_leases.filter((l) => l.managed_by_saguaro).length;
+  const foreign = st.static_leases.length - sagOnDev;
+  let info = `U bazi upravljanih hostova: ${managedDB} · Saguaro rezervacija na uređaju: ${sagOnDev}`;
+  if (foreign > 0) info += ` · ostalih (ručnih/LuCI, ne diraju se): ${foreign}`;
+  if (managedDB !== sagOnDev) info += " — ⚠ razlika, potrebna primjena";
+  $("dhcp-sync-info").textContent = info;
+
+  // hosts iz inventoryja
+  const tb = $("host-rows");
+  tb.replaceChildren();
+  const knownMacs = new Set();
+  for (const h of hs.hosts) {
+    knownMacs.add(h.mac);
+    const tr = document.createElement("tr");
+    for (const v of [h.hostname || "—", h.mac, h.ipv4 || "—"]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdM = document.createElement("td");
+    tdM.append(h.managed ? stGood("Da") : stOff("Ne"));
+    tr.append(tdM);
+    for (const v of [h.customer || "—", h.notes || "—"]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    const edit = document.createElement("button");
+    edit.className = "btn-sm";
+    edit.textContent = "Uredi";
+    edit.onclick = () => openHostDialog(h);
+    const del = document.createElement("button");
+    del.className = "btn-sm danger";
+    del.textContent = "Obriši";
+    del.onclick = async () => {
+      if (!confirm(`Obrisati host "${h.hostname || h.mac}"?`)) return;
+      await api("/inventory/hosts/" + h.uuid, "DELETE").catch(alertErr);
+      loadDhcp().catch(alertErr);
+    };
+    tdAct.append(edit, del);
+    tr.append(tdAct);
+    tb.append(tr);
+  }
+
+  // aktivni leaseovi
+  const lb = $("lease-rows");
+  lb.replaceChildren();
+  for (const l of st.active_leases) {
+    const tr = document.createElement("tr");
+    for (const v of [l.hostname || "—", l.mac, l.ip,
+      l.expires_at ? new Date(l.expires_at * 1000).toLocaleString("hr-HR") : "—"]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    if (!knownMacs.has(l.mac)) {
+      const add = document.createElement("button");
+      add.className = "btn-sm";
+      add.textContent = "U rezervacije";
+      add.onclick = () => openHostDialog({
+        hostname: l.hostname, mac: l.mac, ipv4: l.ip, managed: true,
+      });
+      tdAct.append(add);
+    }
+    tr.append(tdAct);
+    lb.append(tr);
+  }
+}
+
+function openHostDialog(h) {
+  const f = $("host-form");
+  editHostUUID = h && h.uuid ? h.uuid : null;
+  $("host-dialog-title").textContent = editHostUUID ? "Uredi host" : "Novi host";
+  for (const el of f.elements) {
+    if (!el.name) continue;
+    if (el.type === "checkbox") el.checked = h ? !!h[el.name] : false;
+    else el.value = h ? h[el.name] || "" : "";
+  }
+  $("host-dialog").showModal();
+}
+
 /* ---------- router ---------- */
 
 function route() {
-  const devices = location.hash.startsWith("#/devices");
-  $("view-dashboard").classList.toggle("hidden", devices);
-  $("view-devices").classList.toggle("hidden", !devices);
-  $("tab-dashboard").classList.toggle("active", !devices);
-  $("tab-devices").classList.toggle("active", devices);
-  if (devices && token) loadDevices().catch(alertErr);
+  const view = location.hash.startsWith("#/devices") ? "devices"
+    : location.hash.startsWith("#/dhcp") ? "dhcp" : "dashboard";
+  for (const v of ["dashboard", "devices", "dhcp"]) {
+    $("view-" + v).classList.toggle("hidden", v !== view);
+    $("tab-" + v).classList.toggle("active", v === view);
+  }
+  if (!token) return;
+  if (view === "devices") loadDevices().catch(alertErr);
+  if (view === "dhcp") loadDhcp().catch(alertErr);
 }
 window.addEventListener("hashchange", route);
 
@@ -339,6 +451,42 @@ $("dev-form").addEventListener("submit", async (ev) => {
     await loadDevices();
   } catch (e) {
     alertErr(e);
+  }
+});
+
+$("host-add").addEventListener("click", () => openHostDialog(null));
+$("host-cancel").addEventListener("click", () => $("host-dialog").close());
+$("host-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {};
+  for (const name of ["hostname", "mac", "ipv4", "customer", "notes"])
+    body[name] = f.elements[name].value.trim();
+  body.managed = f.elements.managed.checked;
+  try {
+    if (editHostUUID) await api("/inventory/hosts/" + editHostUUID, "PUT", body);
+    else await api("/inventory/hosts", "POST", body);
+    $("host-dialog").close();
+    await loadDhcp();
+  } catch (e) {
+    alertErr(e);
+  }
+});
+
+$("dhcp-apply").addEventListener("click", async () => {
+  const btn = $("dhcp-apply");
+  btn.disabled = true;
+  $("dhcp-apply-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/dhcp/apply", "POST", {});
+    let msg = `Primijenjeno: ${r.applied} rezervacija (uklonjeno starih: ${r.removed}). Backup: ${r.backup}`;
+    if (r.skipped && r.skipped.length) msg += ` · preskočeno: ${r.skipped.join(", ")}`;
+    $("dhcp-apply-result").textContent = msg;
+    await loadDhcp();
+  } catch (e) {
+    $("dhcp-apply-result").textContent = "Greška: " + (e.message || e);
+  } finally {
+    btn.disabled = false;
   }
 });
 

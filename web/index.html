@@ -34,6 +34,7 @@
   <nav class="tabs">
     <a href="#/" id="tab-dashboard" class="active">Dashboard</a>
     <a href="#/devices" id="tab-devices">Uređaji</a>
+    <a href="#/dhcp" id="tab-dhcp">DHCP</a>
   </nav>
 
   <main id="view-dashboard">
@@ -110,6 +111,68 @@
       </div>
     </section>
   </main>
+
+  <main id="view-dhcp" class="hidden">
+    <section class="grid-2">
+      <div class="card">
+        <h2>DHCP poslužitelj</h2>
+        <dl class="kv" id="dhcp-server-kv"></dl>
+      </div>
+      <div class="card">
+        <h2>Primjena na uređaj</h2>
+        <p class="hint" id="dhcp-sync-info">—</p>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button id="dhcp-apply" class="primary">Primijeni rezervacije</button>
+        </div>
+        <p class="hint" id="dhcp-apply-result"></p>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <h2>Rezervacije (iz inventoryja)</h2>
+        <button id="host-add" class="primary">Dodaj host</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Hostname</th><th>MAC</th><th>IPv4</th><th>Upravljano</th>
+            <th>Klijent</th><th>Napomene</th><th></th>
+          </tr></thead>
+          <tbody id="host-rows"></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Aktivni leaseovi</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Hostname</th><th>MAC</th><th>IP</th><th>Istječe</th><th></th>
+          </tr></thead>
+          <tbody id="lease-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="host-dialog">
+    <form id="host-form">
+      <h2 id="host-dialog-title">Host</h2>
+      <div class="form-grid">
+        <label>Hostname<input name="hostname"></label>
+        <label>MAC adresa<input name="mac" required placeholder="aa:bb:cc:dd:ee:ff"></label>
+        <label>IPv4 (statični lease)<input name="ipv4" placeholder="192.168.30.50"></label>
+        <label>Klijent<input name="customer"></label>
+        <label class="wide">Napomene<textarea name="notes" rows="2"></textarea></label>
+        <label class="check"><input type="checkbox" name="managed">
+          Upravljano — uključi u DHCP rezervacije</label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="host-cancel">Odustani</button>
+        <button type="submit" class="primary">Spremi</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="dev-dialog">
     <form id="dev-form">

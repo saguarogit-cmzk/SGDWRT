@@ -21,13 +21,14 @@ import (
 	"time"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 type server struct {
-	token   string
-	webDir  string
-	started time.Time
-	db      *sql.DB
+	token     string
+	webDir    string
+	backupDir string
+	started   time.Time
+	db        *sql.DB
 }
 
 func main() {
@@ -35,6 +36,7 @@ func main() {
 	etcDir := flag.String("etc", "/opt/saguaro/etc", "direktorij konfiguracije (token, certifikat)")
 	webDir := flag.String("web", "/opt/saguaro/web", "direktorij statičkog weba")
 	dataDir := flag.String("data", "/opt/saguaro/data", "direktorij podataka (SQLite)")
+	backupDir := flag.String("backup", "/opt/saguaro/backup", "direktorij backupa konfiguracija")
 	noTLS := flag.Bool("no-tls", false, "posluži bez TLS-a (samo za razvoj)")
 	flag.Parse()
 
@@ -43,6 +45,9 @@ func main() {
 	}
 	if err := os.MkdirAll(*dataDir, 0o755); err != nil {
 		log.Fatalf("data direktorij: %v", err)
+	}
+	if err := os.MkdirAll(*backupDir, 0o700); err != nil {
+		log.Fatalf("backup direktorij: %v", err)
 	}
 	token, err := ensureToken(filepath.Join(*etcDir, "token"))
 	if err != nil {
@@ -54,7 +59,8 @@ func main() {
 	}
 	defer db.Close()
 
-	s := &server{token: token, webDir: *webDir, started: time.Now(), db: db}
+	s := &server{token: token, webDir: *webDir, backupDir: *backupDir,
+		started: time.Now(), db: db}
 
 	{
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -82,6 +88,8 @@ func main() {
 	mux.Handle("POST /api/v1/inventory/hosts", s.auth(s.handleHostCreate))
 	mux.Handle("PUT /api/v1/inventory/hosts/{uuid}", s.auth(s.handleHostUpdate))
 	mux.Handle("DELETE /api/v1/inventory/hosts/{uuid}", s.auth(s.handleHostDelete))
+	mux.Handle("GET /api/v1/dhcp/status", s.auth(s.handleDHCPStatus))
+	mux.Handle("POST /api/v1/dhcp/apply", s.auth(s.handleDHCPApply))
 	mux.HandleFunc("/", s.handleRoot)
 
 	srv := &http.Server{

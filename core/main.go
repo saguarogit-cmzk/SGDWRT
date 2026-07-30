@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const version = "0.9.0"
+const version = "0.10.0"
 
 type server struct {
 	tokenMu   sync.RWMutex
@@ -118,6 +118,10 @@ func main() {
 	mux.Handle("PUT /api/v1/wireguard/peers/{uuid}", s.auth(s.handleWGPeerUpdate))
 	mux.Handle("DELETE /api/v1/wireguard/peers/{uuid}", s.auth(s.handleWGPeerDelete))
 	mux.Handle("GET /api/v1/wireguard/peers/{uuid}/config", s.auth(s.handleWGPeerConfig))
+	mux.Handle("GET /api/v1/wireguard/peers/{uuid}/rules", s.auth(s.handleWGPeerRuleList))
+	mux.Handle("POST /api/v1/wireguard/peers/{uuid}/rules", s.auth(s.handleWGPeerRuleCreate))
+	mux.Handle("DELETE /api/v1/wireguard/rules/{uuid}", s.auth(s.handleWGRuleDelete))
+	mux.Handle("POST /api/v1/wireguard/access", s.auth(s.handleWGAccessSet))
 	mux.Handle("POST /api/v1/wireguard/apply", s.auth(s.handleWGApply))
 	mux.Handle("GET /api/v1/network/lan", s.auth(s.handleNetworkLanGet))
 	mux.Handle("POST /api/v1/network/lan", s.auth(s.handleNetworkLanSet))
@@ -131,6 +135,15 @@ func main() {
 	mux.Handle("PUT /api/v1/firewall/rules/{uuid}", s.auth(s.handleFWRuleUpdate))
 	mux.Handle("DELETE /api/v1/firewall/rules/{uuid}", s.auth(s.handleFWRuleDelete))
 	mux.Handle("POST /api/v1/firewall/apply", s.auth(s.handleFWApply))
+	mux.Handle("GET /api/v1/firewall/dmz", s.auth(s.handleDMZGet))
+	mux.Handle("POST /api/v1/firewall/dmz", s.auth(s.handleDMZSet))
+	mux.Handle("GET /api/v1/firewall/nat11", s.auth(s.handleNAT11List))
+	mux.Handle("POST /api/v1/firewall/nat11", s.auth(s.handleNAT11Create))
+	mux.Handle("PUT /api/v1/firewall/nat11/{uuid}", s.auth(s.handleNAT11Update))
+	mux.Handle("DELETE /api/v1/firewall/nat11/{uuid}", s.auth(s.handleNAT11Delete))
+	mux.Handle("GET /api/v1/network/vlans", s.auth(s.handleVlanList))
+	mux.Handle("POST /api/v1/network/vlans", s.auth(s.handleVlanCreate))
+	mux.Handle("DELETE /api/v1/network/vlans/{vid}", s.auth(s.handleVlanDelete))
 	mux.Handle("GET /api/v1/network/wans", s.auth(s.handleWANList))
 	mux.Handle("POST /api/v1/network/wans/{name}", s.auth(s.handleWANSet))
 	mux.Handle("DELETE /api/v1/network/wans/{name}", s.auth(s.handleWANDelete))

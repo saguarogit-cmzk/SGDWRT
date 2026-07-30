@@ -259,6 +259,38 @@
         </table>
       </div>
     </section>
+    <section class="grid-2">
+      <div class="card">
+        <h2>DMZ</h2>
+        <p class="hint">Sav dolazni WAN promet (koji nije uhvaćen port
+          forwardima) preusmjeri na jedan interni host. Taj host je potpuno
+          izložen internetu — koristi oprezno.</p>
+        <div class="form-grid" style="grid-template-columns:1fr">
+          <label>DMZ host (IP)<input id="dmz-ip" placeholder="192.168.50.10"></label>
+        </div>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button id="dmz-toggle" class="primary">—</button>
+        </div>
+        <p class="hint" id="dmz-result"></p>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>1:1 NAT</h2>
+          <button id="n1-add" class="primary">Dodaj</button>
+        </div>
+        <p class="hint">Javna adresa mora postojati na WAN sučelju
+          (Mreža → WAN → adrese). Primjenjuje se gumbom Primijeni firewall.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Naziv</th><th>Javna IP</th><th>Interna IP</th>
+              <th>Aktivan</th><th></th>
+            </tr></thead>
+            <tbody id="n1-rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </main>
 
   <main id="view-wireguard" class="hidden">
@@ -287,7 +319,9 @@
         <p class="hint" id="wg-sync-info">—</p>
         <div class="form-actions" style="justify-content:flex-start">
           <button id="wg-apply" class="primary">Primijeni peerove</button>
+          <button id="wg-access" class="ghost">—</button>
         </div>
+        <p class="hint" id="wg-access-hint"></p>
         <p class="hint" id="wg-apply-result"></p>
       </div>
     </section>
@@ -371,6 +405,22 @@
         </table>
       </div>
       <p class="hint" id="wan-result"></p>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <h2>VLAN mreže</h2>
+        <button id="vlan-add" class="primary">Dodaj VLAN</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>VID</th><th>Naziv</th><th>Port</th><th>Adresa uređaja</th>
+            <th>DHCP</th><th>Pristup</th><th>Stanje</th><th></th>
+          </tr></thead>
+          <tbody id="vlan-rows"></tbody>
+        </table>
+      </div>
+      <p class="hint" id="vlan-result"></p>
     </section>
     <section class="card" style="max-width:560px">
       <h2>LAN adresa uređaja</h2>
@@ -456,6 +506,95 @@
       <p class="hint" id="tok-result"></p>
     </section>
   </main>
+
+  <dialog id="vlan-dialog">
+    <form id="vlan-form">
+      <h2>Novi VLAN</h2>
+      <div class="form-grid">
+        <label>VLAN ID<input name="vid" required placeholder="20" inputmode="numeric"></label>
+        <label>Fizički port<select name="port" id="vlan-port"></select></label>
+        <label>Naziv mreže<input name="name" required placeholder="guest"></label>
+        <label>Adresa uređaja (CIDR)<input name="cidr" required placeholder="192.168.20.1/24"></label>
+        <label>DHCP početak<input name="dhcp_start" placeholder="100"></label>
+        <label>DHCP veličina<input name="dhcp_limit" placeholder="150"></label>
+        <label>Lease<input name="dhcp_leasetime" placeholder="12h"></label>
+        <label>Pristup
+          <select name="access">
+            <option value="wan">Samo internet</option>
+            <option value="wan_lan">Internet + LAN</option>
+            <option value="isolated">Izolirano (samo unutar VLAN-a)</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" name="dhcp" checked>
+          Uključi DHCP poslužitelj za ovu mrežu</label>
+      </div>
+      <p class="hint">Jedan korak stvara: 802.1q sučelje na portu, podmrežu,
+        DHCP pool i firewall zonu s odabranim pristupom. Uređaji u VLAN-u
+        moraju biti spojeni preko switcha koji tagira taj VLAN na ovaj port.</p>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="vlan-cancel">Odustani</button>
+        <button type="submit" class="primary">Stvori VLAN</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="n1-dialog">
+    <form id="n1-form">
+      <h2 id="n1-dialog-title">1:1 NAT</h2>
+      <div class="form-grid">
+        <label>Naziv<input name="name" required placeholder="mail-server"></label>
+        <label>Zona<input name="zone" placeholder="wan"></label>
+        <label>Javna IP<input name="public_ip" required placeholder="203.0.113.5"></label>
+        <label>Interna IP<input name="internal_ip" required placeholder="192.168.50.25"></label>
+        <label class="wide">Napomene<textarea name="notes" rows="2"></textarea></label>
+        <label class="check"><input type="checkbox" name="enabled" checked>
+          Aktivan — uključi u primjenu</label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="n1-cancel">Odustani</button>
+        <button type="submit" class="primary">Spremi</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="vpn-rules-dialog">
+    <h2 id="vpn-rules-title">VPN pristup</h2>
+    <p class="hint">Što ovaj korisnik smije doseći kroz tunel (vrijedi u
+      ograničenom načinu; u punom načinu svi vide sve). Prazna adresa =
+      cijela zona; prazan port = svi portovi.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Zona</th><th>Adresa</th><th>Port</th><th>Proto</th><th></th></tr></thead>
+        <tbody id="vpn-rule-rows"></tbody>
+      </table>
+    </div>
+    <form id="vpn-rule-form">
+      <div class="form-grid">
+        <label>Zona
+          <select name="dest_zone">
+            <option value="lan">lan</option>
+            <option value="wan">wan (internet)</option>
+            <option value="*">bilo koja</option>
+          </select>
+        </label>
+        <label>Adresa (IP/CIDR)<input name="dest_ip" placeholder="192.168.50.25 ili prazno"></label>
+        <label>Port / raspon<input name="dest_port" placeholder="3389 ili 8000-8010"></label>
+        <label>Protokol
+          <select name="proto">
+            <option value="tcp udp">TCP + UDP</option>
+            <option value="tcp">TCP</option>
+            <option value="udp">UDP</option>
+            <option value="all">Svi</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="vpn-rules-close">Zatvori</button>
+        <button type="submit" class="primary">Dodaj pravilo</button>
+      </div>
+    </form>
+    <p class="hint">Promjene vrijede nakon gumba <b>Primijeni peerove</b>.</p>
+  </dialog>
 
   <dialog id="pf-dialog">
     <form id="pf-form">

@@ -173,16 +173,27 @@ func (s *server) handleWGStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// način pristupa: full ako postoje sagwg->lan/wan forwardinzi
+	accessMode := "restricted"
+	if fwCfg, err := uciGetConfig(r.Context(), "firewall"); err == nil {
+		if _, ok := fwCfg["sag_wg_lan"]; ok {
+			accessMode = "full"
+		} else if _, ok := fwCfg["sag_wg_wan"]; ok {
+			accessMode = "full"
+		}
+	}
+
 	stats, running := wgDump(r.Context())
 	if stats == nil {
 		stats = map[string]wgPeerStats{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"installed": lookErr == nil,
-		"server":    srv,
-		"running":   running,
-		"uci_peers": uciPeers,
-		"stats":     stats,
+		"installed":   lookErr == nil,
+		"server":      srv,
+		"running":     running,
+		"uci_peers":   uciPeers,
+		"access_mode": accessMode,
+		"stats":       stats,
 	})
 }
 
@@ -598,6 +609,191 @@ func (s *server) handleWGPeerConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+/* ---------- pristupna pravila po peeru ---------- */
+
+const vrPrefix = "sag_vr_"
+
+type WGPeerRule struct {
+	UUID      string `json:"uuid"`
+	PeerUUID  string `json:"peer_uuid"`
+	DestZone  string `json:"dest_zone"`
+	DestIP    string `json:"dest_ip"`
+	DestPort  string `json:"dest_port"`
+	Proto     string `json:"proto"`
+	Enabled   bool   `json:"enabled"`
+	Notes     string `json:"notes"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+const wgRuleCols = `uuid, peer_uuid, dest_zone, COALESCE(dest_ip,''),
+	COALESCE(dest_port,''), proto, enabled, COALESCE(notes,''),
+	created_at, updated_at`
+
+func scanWGRule(row interface{ Scan(...any) error }) (WGPeerRule, error) {
+	var x WGPeerRule
+	err := row.Scan(&x.UUID, &x.PeerUUID, &x.DestZone, &x.DestIP, &x.DestPort,
+		&x.Proto, &x.Enabled, &x.Notes, &x.CreatedAt, &x.UpdatedAt)
+	return x, err
+}
+
+func validateWGRule(w http.ResponseWriter, x *WGPeerRule) bool {
+	x.DestZone = strings.TrimSpace(x.DestZone)
+	x.DestIP = strings.TrimSpace(x.DestIP)
+	x.DestPort = strings.TrimSpace(x.DestPort)
+	x.Proto = strings.TrimSpace(x.Proto)
+	if x.DestZone == "" {
+		x.DestZone = "lan"
+	}
+	if x.Proto == "" {
+		x.Proto = "tcp udp"
+	}
+	protoOK := map[string]bool{"tcp": true, "udp": true, "tcp udp": true,
+		"icmp": true, "all": true}[x.Proto]
+	switch {
+	case x.DestZone != "*" && !reZone.MatchString(x.DestZone):
+		writeErr(w, http.StatusBadRequest, "neispravna odredišna zona")
+	case x.DestIP != "" && !validAddr(x.DestIP):
+		writeErr(w, http.StatusBadRequest, "neispravna odredišna adresa (IP ili CIDR)")
+	case x.DestPort != "" && !validPortSpec(x.DestPort):
+		writeErr(w, http.StatusBadRequest, "neispravan port (npr. 443 ili 8000-8010)")
+	case !protoOK:
+		writeErr(w, http.StatusBadRequest, "neispravan protokol")
+	default:
+		return true
+	}
+	return false
+}
+
+func (s *server) handleWGPeerRuleList(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.db.Query(`SELECT `+wgRuleCols+` FROM wg_peer_rules
+		WHERE peer_uuid=? ORDER BY created_at`, r.PathValue("uuid"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []WGPeerRule{}
+	for rows.Next() {
+		x, err := scanWGRule(rows)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		out = append(out, x)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rules": out})
+}
+
+type wgRuleIn struct {
+	WGPeerRule
+	Enabled *bool `json:"enabled"`
+}
+
+func (s *server) handleWGPeerRuleCreate(w http.ResponseWriter, r *http.Request) {
+	peerUUID := r.PathValue("uuid")
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM wg_peers WHERE uuid=?`,
+		peerUUID).Scan(&n); err != nil || n == 0 {
+		writeErr(w, http.StatusNotFound, "peer ne postoji")
+		return
+	}
+	var in wgRuleIn
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	x := &in.WGPeerRule
+	if !validateWGRule(w, x) {
+		return
+	}
+	x.UUID = newUUID()
+	_, err := s.db.Exec(`INSERT INTO wg_peer_rules
+		(uuid, peer_uuid, dest_zone, dest_ip, dest_port, proto, enabled, notes)
+		VALUES (?,?,?,?,?,?,?,?)`,
+		x.UUID, peerUUID, x.DestZone, x.DestIP, x.DestPort, x.Proto,
+		enabledIntOf(in.Enabled), x.Notes)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	xx, _ := scanWGRule(s.db.QueryRow(
+		`SELECT `+wgRuleCols+` FROM wg_peer_rules WHERE uuid=?`, x.UUID))
+	writeJSON(w, http.StatusCreated, xx)
+}
+
+func (s *server) handleWGRuleDelete(w http.ResponseWriter, r *http.Request) {
+	res, err := s.db.Exec(`DELETE FROM wg_peer_rules WHERE uuid=?`, r.PathValue("uuid"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusNotFound, "pravilo ne postoji")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("uuid")})
+}
+
+/* ---------- način pristupa (pun / ograničen) ---------- */
+
+// handleWGAccessSet: "full" = forwardinzi sagwg->lan i sagwg->wan postoje
+// (svi peerovi vide sve); "restricted" = forwardinzi se uklanjaju i vrijede
+// samo pristupna pravila po peeru (sag_vr_*).
+func (s *server) handleWGAccessSet(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var in struct {
+		Mode string `json:"mode"`
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	if in.Mode != "full" && in.Mode != "restricted" {
+		writeErr(w, http.StatusBadRequest, "mode mora biti full ili restricted")
+		return
+	}
+	backupName, err := s.backupConfig(firewallConfig)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "backup: "+err.Error())
+		return
+	}
+	cfg, err := uciGetConfig(ctx, "firewall")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	var b strings.Builder
+	if in.Mode == "full" {
+		b.WriteString("set firewall.sag_wg_lan=forwarding\n")
+		b.WriteString("set firewall.sag_wg_lan.src=sagwg\n")
+		b.WriteString("set firewall.sag_wg_lan.dest=lan\n")
+		b.WriteString("set firewall.sag_wg_wan=forwarding\n")
+		b.WriteString("set firewall.sag_wg_wan.src=sagwg\n")
+		b.WriteString("set firewall.sag_wg_wan.dest=wan\n")
+	} else {
+		for _, sect := range []string{"sag_wg_lan", "sag_wg_wan"} {
+			if _, ok := cfg[sect]; ok {
+				fmt.Fprintf(&b, "delete firewall.%s\n", sect)
+			}
+		}
+	}
+	if b.Len() == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"mode": in.Mode})
+		return
+	}
+	b.WriteString("commit firewall\n")
+	if err := uciBatch(ctx, b.String()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := serviceReload(ctx, "firewall", "reload"); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"mode": in.Mode, "backup": backupName,
+	})
+}
+
 /* ---------- primjena peerova ---------- */
 
 func (s *server) handleWGApply(w http.ResponseWriter, r *http.Request) {
@@ -676,9 +872,85 @@ func (s *server) handleWGApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// pristupna pravila po peeru -> sag_vr_* rule sekcije (src_ip = tunel adresa)
+	type vr struct {
+		uuid, ip, zone, dip, dport, proto string
+	}
+	vrRows, err := s.db.Query(`SELECT r.uuid, p.tunnel_ip, r.dest_zone,
+		COALESCE(r.dest_ip,''), COALESCE(r.dest_port,''), r.proto
+		FROM wg_peer_rules r JOIN wg_peers p ON p.uuid = r.peer_uuid
+		WHERE r.enabled = 1 AND p.enabled = 1 ORDER BY p.tunnel_ip`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	vrs := []vr{}
+	for vrRows.Next() {
+		var x vr
+		if err := vrRows.Scan(&x.uuid, &x.ip, &x.zone, &x.dip, &x.dport, &x.proto); err != nil {
+			vrRows.Close()
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		vrs = append(vrs, x)
+	}
+	vrRows.Close()
+
+	fwBackup, err := s.backupConfig(firewallConfig)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "backup: "+err.Error())
+		return
+	}
+	fwCfg, err := uciGetConfig(ctx, "firewall")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	var fb strings.Builder
+	removedRules := 0
+	for name, sec := range fwCfg {
+		if strings.HasPrefix(name, vrPrefix) && sectStr(sec, ".type") == "rule" {
+			fmt.Fprintf(&fb, "delete firewall.%s\n", name)
+			removedRules++
+		}
+	}
+	for _, x := range vrs {
+		sn := vrPrefix + strings.ReplaceAll(x.uuid, "-", "")[:8]
+		fmt.Fprintf(&fb, "set firewall.%s=rule\n", sn)
+		fmt.Fprintf(&fb, "set firewall.%s.name=%s\n", sn, uciQuote("VPN "+x.ip+" -> "+x.zone))
+		fmt.Fprintf(&fb, "set firewall.%s.src=sagwg\n", sn)
+		fmt.Fprintf(&fb, "set firewall.%s.src_ip=%s\n", sn, x.ip)
+		if x.zone != "*" {
+			fmt.Fprintf(&fb, "set firewall.%s.dest=%s\n", sn, x.zone)
+		} else {
+			fmt.Fprintf(&fb, "set firewall.%s.dest=*\n", sn)
+		}
+		if x.dip != "" {
+			fmt.Fprintf(&fb, "set firewall.%s.dest_ip=%s\n", sn, x.dip)
+		}
+		if x.dport != "" {
+			fmt.Fprintf(&fb, "set firewall.%s.dest_port=%s\n", sn, x.dport)
+		}
+		if x.proto != "all" {
+			fmt.Fprintf(&fb, "set firewall.%s.proto=%s\n", sn, uciQuote(x.proto))
+		}
+		fmt.Fprintf(&fb, "set firewall.%s.target=ACCEPT\n", sn)
+	}
+	fb.WriteString("commit firewall\n")
+	if err := uciBatch(ctx, fb.String()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := serviceReload(ctx, "firewall", "reload"); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"applied": len(peers),
-		"removed": removed,
-		"backup":  backupName,
+		"applied":       len(peers),
+		"applied_rules": len(vrs),
+		"removed":       removed + removedRules,
+		"backup":        backupName,
+		"backup_fw":     fwBackup,
 	})
 }

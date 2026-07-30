@@ -75,6 +75,21 @@ CREATE TABLE IF NOT EXISTS wg_peers (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Pristupna pravila po VPN peeru (vrijede u "ograničenom" načinu pristupa):
+-- što smije doseći korisnik spojen kroz tunel — zona/segment, IP/CIDR, port(ovi)
+CREATE TABLE IF NOT EXISTS wg_peer_rules (
+    uuid        TEXT PRIMARY KEY,
+    peer_uuid   TEXT NOT NULL REFERENCES wg_peers(uuid) ON DELETE CASCADE,
+    dest_zone   TEXT NOT NULL DEFAULT 'lan',  -- lan | wan | ime zone | '*'
+    dest_ip     TEXT,                         -- IP ili CIDR; prazno = cijela zona
+    dest_port   TEXT,                         -- port ili raspon; prazno = svi
+    proto       TEXT NOT NULL DEFAULT 'tcp udp',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Opće postavke platforme (ključ/vrijednost)
 CREATE TABLE IF NOT EXISTS settings (
     key         TEXT PRIMARY KEY,
@@ -110,6 +125,19 @@ CREATE TABLE IF NOT EXISTS fw_rules (
     dest_ip     TEXT,
     dest_port   TEXT,
     target      TEXT NOT NULL DEFAULT 'ACCEPT',  -- ACCEPT | REJECT | DROP
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- 1:1 NAT parovi (javna IP <-> interna IP) — sag_n1d_* (DNAT) + sag_n1s_* (SNAT)
+CREATE TABLE IF NOT EXISTS fw_nat11 (
+    uuid        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    public_ip   TEXT NOT NULL UNIQUE,
+    internal_ip TEXT NOT NULL,
+    zone        TEXT NOT NULL DEFAULT 'wan',
     enabled     INTEGER NOT NULL DEFAULT 1,
     notes       TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),

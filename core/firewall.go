@@ -247,9 +247,15 @@ func (s *server) handleFWStatus(w http.ResponseWriter, r *http.Request) {
 				Managed:  strings.HasPrefix(name, sagPrefix),
 			})
 		case "redirect":
+			if name == "sag_dmz" { // DMZ ima vlastiti pregled i primjenu
+				continue
+			}
 			redirects = append(redirects, sect{name, sectStr(sec, "name"),
-				strings.HasPrefix(name, pfPrefix)})
+				strings.HasPrefix(name, pfPrefix) || strings.HasPrefix(name, n1dPrefix)})
 		case "rule":
+			if strings.HasPrefix(name, vrPrefix) { // VPN pristupna pravila — WireGuard tab
+				continue
+			}
 			rules = append(rules, sect{name, sectStr(sec, "name"),
 				strings.HasPrefix(name, rlPrefix)})
 		}
@@ -455,6 +461,226 @@ func (s *server) handleFWRuleDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("uuid")})
 }
 
+/* ---------- DMZ ---------- */
+
+// DMZ: sav dolazni promet s WAN-a (koji nije uhvaćen drugim forwardima)
+// preusmjeri na jedan interni host. Singleton sekcija sag_dmz.
+func (s *server) handleDMZGet(w http.ResponseWriter, r *http.Request) {
+	cfg, err := uciGetConfig(r.Context(), "firewall")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	out := map[string]any{"enabled": false, "dest_ip": ""}
+	if sec, ok := cfg["sag_dmz"]; ok {
+		out["enabled"] = true
+		out["dest_ip"] = sectStr(sec, "dest_ip")
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *server) handleDMZSet(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var in struct {
+		Enabled *bool  `json:"enabled"`
+		DestIP  string `json:"dest_ip"`
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	if in.Enabled == nil {
+		writeErr(w, http.StatusBadRequest, "nedostaje polje enabled")
+		return
+	}
+	in.DestIP = strings.TrimSpace(in.DestIP)
+	if *in.Enabled && net.ParseIP(in.DestIP) == nil {
+		writeErr(w, http.StatusBadRequest, "neispravna DMZ IP adresa")
+		return
+	}
+	backupName, err := s.backupConfig(firewallConfig)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "backup: "+err.Error())
+		return
+	}
+	cfg, err := uciGetConfig(ctx, "firewall")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	var b strings.Builder
+	if *in.Enabled {
+		b.WriteString("set firewall.sag_dmz=redirect\n")
+		b.WriteString("set firewall.sag_dmz.target=DNAT\n")
+		b.WriteString("set firewall.sag_dmz.name=Saguaro-DMZ\n")
+		b.WriteString("set firewall.sag_dmz.src=wan\n")
+		b.WriteString("set firewall.sag_dmz.dest=lan\n")
+		fmt.Fprintf(&b, "set firewall.sag_dmz.dest_ip=%s\n", in.DestIP)
+		b.WriteString("set firewall.sag_dmz.proto='tcp udp'\n")
+	} else {
+		if _, ok := cfg["sag_dmz"]; !ok {
+			writeJSON(w, http.StatusOK, map[string]any{"enabled": false})
+			return
+		}
+		b.WriteString("delete firewall.sag_dmz\n")
+	}
+	b.WriteString("commit firewall\n")
+	if err := uciBatch(ctx, b.String()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := serviceReload(ctx, "firewall", "reload"); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled": *in.Enabled, "dest_ip": in.DestIP, "backup": backupName,
+	})
+}
+
+/* ---------- 1:1 NAT ---------- */
+
+const n1dPrefix = "sag_n1d_" // DNAT (redirect) polovica para
+const n1sPrefix = "sag_n1s_" // SNAT (nat) polovica para
+
+type NAT11 struct {
+	UUID       string `json:"uuid"`
+	Name       string `json:"name"`
+	PublicIP   string `json:"public_ip"`
+	InternalIP string `json:"internal_ip"`
+	Zone       string `json:"zone"`
+	Enabled    bool   `json:"enabled"`
+	Notes      string `json:"notes"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+const nat11Cols = `uuid, name, public_ip, internal_ip, zone, enabled,
+	COALESCE(notes,''), created_at, updated_at`
+
+func scanNAT11(row interface{ Scan(...any) error }) (NAT11, error) {
+	var n NAT11
+	err := row.Scan(&n.UUID, &n.Name, &n.PublicIP, &n.InternalIP, &n.Zone,
+		&n.Enabled, &n.Notes, &n.CreatedAt, &n.UpdatedAt)
+	return n, err
+}
+
+func validateNAT11(w http.ResponseWriter, n *NAT11) bool {
+	n.Name = strings.TrimSpace(n.Name)
+	n.PublicIP = strings.TrimSpace(n.PublicIP)
+	n.InternalIP = strings.TrimSpace(n.InternalIP)
+	n.Zone = strings.TrimSpace(n.Zone)
+	if n.Zone == "" {
+		n.Zone = "wan"
+	}
+	switch {
+	case n.Name == "":
+		writeErr(w, http.StatusBadRequest, "naziv je obavezan")
+	case net.ParseIP(n.PublicIP) == nil:
+		writeErr(w, http.StatusBadRequest, "neispravna javna IP adresa")
+	case net.ParseIP(n.InternalIP) == nil:
+		writeErr(w, http.StatusBadRequest, "neispravna interna IP adresa")
+	case !reZone.MatchString(n.Zone):
+		writeErr(w, http.StatusBadRequest, "neispravno ime zone")
+	default:
+		return true
+	}
+	return false
+}
+
+type nat11In struct {
+	NAT11
+	Enabled *bool `json:"enabled"`
+}
+
+func (s *server) handleNAT11List(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.db.Query(`SELECT ` + nat11Cols + ` FROM fw_nat11 ORDER BY public_ip`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []NAT11{}
+	for rows.Next() {
+		n, err := scanNAT11(rows)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		out = append(out, n)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"nat11": out})
+}
+
+func (s *server) handleNAT11Create(w http.ResponseWriter, r *http.Request) {
+	var in nat11In
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	n := &in.NAT11
+	if !validateNAT11(w, n) {
+		return
+	}
+	n.UUID = newUUID()
+	_, err := s.db.Exec(`INSERT INTO fw_nat11
+		(uuid, name, public_ip, internal_ip, zone, enabled, notes)
+		VALUES (?,?,?,?,?,?,?)`,
+		n.UUID, n.Name, n.PublicIP, n.InternalIP, n.Zone,
+		enabledIntOf(in.Enabled), n.Notes)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			writeErr(w, http.StatusConflict, "1:1 NAT za tu javnu adresu već postoji")
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	nn, _ := scanNAT11(s.db.QueryRow(`SELECT `+nat11Cols+` FROM fw_nat11 WHERE uuid=?`, n.UUID))
+	writeJSON(w, http.StatusCreated, nn)
+}
+
+func (s *server) handleNAT11Update(w http.ResponseWriter, r *http.Request) {
+	uuid := r.PathValue("uuid")
+	var in nat11In
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	n := &in.NAT11
+	if !validateNAT11(w, n) {
+		return
+	}
+	res, err := s.db.Exec(`UPDATE fw_nat11 SET name=?, public_ip=?, internal_ip=?,
+		zone=?, enabled=?, notes=?, updated_at=datetime('now') WHERE uuid=?`,
+		n.Name, n.PublicIP, n.InternalIP, n.Zone, enabledIntOf(in.Enabled),
+		n.Notes, uuid)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			writeErr(w, http.StatusConflict, "1:1 NAT za tu javnu adresu već postoji")
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if nRows, _ := res.RowsAffected(); nRows == 0 {
+		writeErr(w, http.StatusNotFound, "zapis ne postoji")
+		return
+	}
+	nn, _ := scanNAT11(s.db.QueryRow(`SELECT `+nat11Cols+` FROM fw_nat11 WHERE uuid=?`, uuid))
+	writeJSON(w, http.StatusOK, nn)
+}
+
+func (s *server) handleNAT11Delete(w http.ResponseWriter, r *http.Request) {
+	res, err := s.db.Exec(`DELETE FROM fw_nat11 WHERE uuid=?`, r.PathValue("uuid"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusNotFound, "zapis ne postoji")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("uuid")})
+}
+
 /* ---------- primjena ---------- */
 
 func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
@@ -496,6 +722,24 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 	}
 	rRows.Close()
 
+	nRows, err := s.db.Query(`SELECT ` + nat11Cols + ` FROM fw_nat11
+		WHERE enabled = 1 ORDER BY public_ip`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	nats := []NAT11{}
+	for nRows.Next() {
+		n, err := scanNAT11(nRows)
+		if err != nil {
+			nRows.Close()
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		nats = append(nats, n)
+	}
+	nRows.Close()
+
 	backupName, err := s.backupConfig(firewallConfig)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "backup: "+err.Error())
@@ -513,7 +757,9 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 	for name, sec := range cfg {
 		t := sectStr(sec, ".type")
 		if (strings.HasPrefix(name, pfPrefix) && t == "redirect") ||
-			(strings.HasPrefix(name, rlPrefix) && t == "rule") {
+			(strings.HasPrefix(name, rlPrefix) && t == "rule") ||
+			(strings.HasPrefix(name, n1dPrefix) && t == "redirect") ||
+			(strings.HasPrefix(name, n1sPrefix) && t == "nat") {
 			fmt.Fprintf(&b, "delete firewall.%s\n", name)
 			removed++
 		}
@@ -557,6 +803,25 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprintf(&b, "set firewall.%s.target=%s\n", sn, f.Target)
 	}
+	for _, n := range nats {
+		id := strings.ReplaceAll(n.UUID, "-", "")[:8]
+		// DNAT: sav promet na javnu adresu -> interni host
+		fmt.Fprintf(&b, "set firewall.%s%s=redirect\n", n1dPrefix, id)
+		fmt.Fprintf(&b, "set firewall.%s%s.target=DNAT\n", n1dPrefix, id)
+		fmt.Fprintf(&b, "set firewall.%s%s.name=%s\n", n1dPrefix, id, uciQuote(n.Name+" DNAT"))
+		fmt.Fprintf(&b, "set firewall.%s%s.src=%s\n", n1dPrefix, id, n.Zone)
+		fmt.Fprintf(&b, "set firewall.%s%s.src_dip=%s\n", n1dPrefix, id, n.PublicIP)
+		fmt.Fprintf(&b, "set firewall.%s%s.dest_ip=%s\n", n1dPrefix, id, n.InternalIP)
+		fmt.Fprintf(&b, "set firewall.%s%s.proto=all\n", n1dPrefix, id)
+		// SNAT: odlazni promet internog hosta izlazi s javne adrese
+		fmt.Fprintf(&b, "set firewall.%s%s=nat\n", n1sPrefix, id)
+		fmt.Fprintf(&b, "set firewall.%s%s.target=SNAT\n", n1sPrefix, id)
+		fmt.Fprintf(&b, "set firewall.%s%s.name=%s\n", n1sPrefix, id, uciQuote(n.Name+" SNAT"))
+		fmt.Fprintf(&b, "set firewall.%s%s.src=%s\n", n1sPrefix, id, n.Zone)
+		fmt.Fprintf(&b, "set firewall.%s%s.src_ip=%s\n", n1sPrefix, id, n.InternalIP)
+		fmt.Fprintf(&b, "set firewall.%s%s.snat_ip=%s\n", n1sPrefix, id, n.PublicIP)
+		fmt.Fprintf(&b, "set firewall.%s%s.proto=all\n", n1sPrefix, id)
+	}
 	b.WriteString("commit firewall\n")
 
 	if err := uciBatch(ctx, b.String()); err != nil {
@@ -571,6 +836,7 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"applied_forwards": len(forwards),
 		"applied_rules":    len(rules),
+		"applied_nat11":    len(nats),
 		"removed":          removed,
 		"backup":           backupName,
 	})

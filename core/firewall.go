@@ -122,7 +122,7 @@ func (s *server) validAddrOrAlias(v string) bool {
 	return validAddr(v)
 }
 
-func validateForward(w http.ResponseWriter, f *FWForward) bool {
+func (s *server) validateForward(w http.ResponseWriter, f *FWForward) bool {
 	f.Name = strings.TrimSpace(f.Name)
 	f.Proto = strings.TrimSpace(f.Proto)
 	f.SrcZone = strings.TrimSpace(f.SrcZone)
@@ -149,8 +149,12 @@ func validateForward(w http.ResponseWriter, f *FWForward) bool {
 		writeErr(w, http.StatusBadRequest, "neispravno ime zone")
 	case !validPortSpec(f.SrcDport):
 		writeErr(w, http.StatusBadRequest, "neispravan vanjski port (npr. 443 ili 8000-8010)")
-	case net.ParseIP(f.DestIP) == nil:
-		writeErr(w, http.StatusBadRequest, "neispravna odredišna IP adresa")
+	case !strings.HasPrefix(f.DestIP, "@") && net.ParseIP(f.DestIP) == nil:
+		writeErr(w, http.StatusBadRequest,
+			"neispravna odredišna IP adresa (IP ili @alias s jednom adresom)")
+	case strings.HasPrefix(f.DestIP, "@") && !s.aliasSingleIP(f.DestIP):
+		writeErr(w, http.StatusBadRequest,
+			"za forward alias mora postojati i imati točno jednu IP adresu")
 	case f.DestPort != "" && !validPortSpec(f.DestPort):
 		writeErr(w, http.StatusBadRequest, "neispravan odredišni port")
 	case f.SrcDIP != "" && net.ParseIP(f.SrcDIP) == nil:
@@ -355,7 +359,7 @@ func (s *server) handleFWForwardCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := &in.FWForward
-	if !validateForward(w, f) {
+	if !s.validateForward(w, f) {
 		return
 	}
 	f.UUID = newUUID()
@@ -381,7 +385,7 @@ func (s *server) handleFWForwardUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := &in.FWForward
-	if !validateForward(w, f) {
+	if !s.validateForward(w, f) {
 		return
 	}
 	res, err := s.db.Exec(`UPDATE fw_forwards SET name=?, proto=?, src_zone=?,
@@ -615,6 +619,12 @@ func (s *server) handleAliasDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("uuid")})
+}
+
+// aliasSingleIP: alias postoji i sadrži točno jednu IP adresu (za forwarde).
+func (s *server) aliasSingleIP(val string) bool {
+	addrs, err := s.resolveAlias(val)
+	return err == nil && len(addrs) == 1 && net.ParseIP(addrs[0]) != nil
 }
 
 // resolveAlias vraća adrese aliasa za "@naziv" (ili samu vrijednost ako nije alias).
@@ -943,7 +953,17 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&b, "set firewall.%s.src=%s\n", sn, f.SrcZone)
 		fmt.Fprintf(&b, "set firewall.%s.src_dport=%s\n", sn, f.SrcDport)
 		fmt.Fprintf(&b, "set firewall.%s.dest=%s\n", sn, f.DestZone)
-		fmt.Fprintf(&b, "set firewall.%s.dest_ip=%s\n", sn, f.DestIP)
+		destIP := f.DestIP
+		if strings.HasPrefix(destIP, "@") {
+			addrs, err := s.resolveAlias(destIP)
+			if err != nil || len(addrs) != 1 {
+				writeErr(w, http.StatusConflict,
+					"forward "+f.Name+": alias mora imati točno jednu adresu")
+				return
+			}
+			destIP = addrs[0]
+		}
+		fmt.Fprintf(&b, "set firewall.%s.dest_ip=%s\n", sn, destIP)
 		if f.DestPort != "" {
 			fmt.Fprintf(&b, "set firewall.%s.dest_port=%s\n", sn, f.DestPort)
 		}

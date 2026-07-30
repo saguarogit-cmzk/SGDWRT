@@ -651,7 +651,7 @@ func scanWGRule(row interface{ Scan(...any) error }) (WGPeerRule, error) {
 	return x, err
 }
 
-func validateWGRule(w http.ResponseWriter, x *WGPeerRule) bool {
+func (s *server) validateWGRule(w http.ResponseWriter, x *WGPeerRule) bool {
 	x.DestZone = strings.TrimSpace(x.DestZone)
 	x.DestIP = strings.TrimSpace(x.DestIP)
 	x.DestPort = strings.TrimSpace(x.DestPort)
@@ -667,8 +667,9 @@ func validateWGRule(w http.ResponseWriter, x *WGPeerRule) bool {
 	switch {
 	case x.DestZone != "*" && !reZone.MatchString(x.DestZone):
 		writeErr(w, http.StatusBadRequest, "neispravna odredišna zona")
-	case x.DestIP != "" && !validAddr(x.DestIP):
-		writeErr(w, http.StatusBadRequest, "neispravna odredišna adresa (IP ili CIDR)")
+	case x.DestIP != "" && !s.validAddrOrAlias(x.DestIP):
+		writeErr(w, http.StatusBadRequest,
+			"neispravna odredišna adresa (IP, CIDR ili postojeći @alias)")
 	case x.DestPort != "" && !validPortSpec(x.DestPort):
 		writeErr(w, http.StatusBadRequest, "neispravan port (npr. 443 ili 8000-8010)")
 	case !protoOK:
@@ -717,7 +718,7 @@ func (s *server) handleWGPeerRuleCreate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	x := &in.WGPeerRule
-	if !validateWGRule(w, x) {
+	if !s.validateWGRule(w, x) {
 		return
 	}
 	x.UUID = newUUID()
@@ -940,7 +941,14 @@ func (s *server) handleWGApply(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(&fb, "set firewall.%s.dest=*\n", sn)
 		}
 		if x.dip != "" {
-			fmt.Fprintf(&fb, "set firewall.%s.dest_ip=%s\n", sn, x.dip)
+			addrs, aerr := s.resolveAlias(x.dip)
+			if aerr != nil {
+				writeErr(w, http.StatusConflict, "VPN pravilo: "+aerr.Error())
+				return
+			}
+			for _, a := range addrs {
+				fmt.Fprintf(&fb, "add_list firewall.%s.dest_ip=%s\n", sn, a)
+			}
 		}
 		if x.dport != "" {
 			fmt.Fprintf(&fb, "set firewall.%s.dest_port=%s\n", sn, x.dport)

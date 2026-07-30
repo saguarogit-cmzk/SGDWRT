@@ -757,7 +757,7 @@ func (s *server) handleOvpnClientRuleCreate(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	x := &in.WGPeerRule
-	if !validateWGRule(w, x) {
+	if !s.validateWGRule(w, x) {
 		return
 	}
 	x.UUID = newUUID()
@@ -891,7 +891,14 @@ func (s *server) handleOvpnApply(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(&fb, "set firewall.%s.dest=%s\n", sn, x.zone)
 		}
 		if x.dip != "" {
-			fmt.Fprintf(&fb, "set firewall.%s.dest_ip=%s\n", sn, x.dip)
+			addrs, aerr := s.resolveAlias(x.dip)
+			if aerr != nil {
+				writeErr(w, http.StatusConflict, "VPN pravilo: "+aerr.Error())
+				return
+			}
+			for _, a := range addrs {
+				fmt.Fprintf(&fb, "add_list firewall.%s.dest_ip=%s\n", sn, a)
+			}
 		}
 		if x.dport != "" {
 			fmt.Fprintf(&fb, "set firewall.%s.dest_port=%s\n", sn, x.dport)

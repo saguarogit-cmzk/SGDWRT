@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const version = "0.8.0"
+const version = "0.9.0"
 
 type server struct {
 	tokenMu   sync.RWMutex
@@ -121,6 +121,19 @@ func main() {
 	mux.Handle("POST /api/v1/wireguard/apply", s.auth(s.handleWGApply))
 	mux.Handle("GET /api/v1/network/lan", s.auth(s.handleNetworkLanGet))
 	mux.Handle("POST /api/v1/network/lan", s.auth(s.handleNetworkLanSet))
+	mux.Handle("GET /api/v1/firewall/status", s.auth(s.handleFWStatus))
+	mux.Handle("GET /api/v1/firewall/forwards", s.auth(s.handleFWForwardList))
+	mux.Handle("POST /api/v1/firewall/forwards", s.auth(s.handleFWForwardCreate))
+	mux.Handle("PUT /api/v1/firewall/forwards/{uuid}", s.auth(s.handleFWForwardUpdate))
+	mux.Handle("DELETE /api/v1/firewall/forwards/{uuid}", s.auth(s.handleFWForwardDelete))
+	mux.Handle("GET /api/v1/firewall/rules", s.auth(s.handleFWRuleList))
+	mux.Handle("POST /api/v1/firewall/rules", s.auth(s.handleFWRuleCreate))
+	mux.Handle("PUT /api/v1/firewall/rules/{uuid}", s.auth(s.handleFWRuleUpdate))
+	mux.Handle("DELETE /api/v1/firewall/rules/{uuid}", s.auth(s.handleFWRuleDelete))
+	mux.Handle("POST /api/v1/firewall/apply", s.auth(s.handleFWApply))
+	mux.Handle("GET /api/v1/network/wans", s.auth(s.handleWANList))
+	mux.Handle("POST /api/v1/network/wans/{name}", s.auth(s.handleWANSet))
+	mux.Handle("DELETE /api/v1/network/wans/{name}", s.auth(s.handleWANDelete))
 	mux.Handle("GET /api/v1/backup/archives", s.auth(s.handleBackupList))
 	mux.Handle("POST /api/v1/backup/create", s.auth(s.handleBackupCreate))
 	mux.Handle("GET /api/v1/backup/download/{name}", s.auth(s.handleBackupDownload))

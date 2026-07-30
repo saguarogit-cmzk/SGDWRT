@@ -254,35 +254,56 @@ function alertErr(e) {
 /* ---------- dhcp ---------- */
 
 let editHostUUID = null;
-let dhcpEnabled = true;
 
 async function loadDhcp() {
   const [st, hs] = await Promise.all([api("/dhcp/status"), api("/inventory/hosts")]);
 
-  const kv = $("dhcp-server-kv");
-  kv.replaceChildren();
-  const sv = st.server || {};
-  const rows = [
-    ["Sučelje", sv.interface || "—"],
-    ["Početak raspona", sv.start || "—"],
-    ["Veličina raspona", sv.limit || "—"],
-    ["Trajanje leasea", sv.leasetime || "—"],
-    ["Stanje", sv.ignore ? "isključen" : "aktivan"],
-  ];
-  for (const [k, v] of rows) {
-    const dt = document.createElement("dt"); dt.textContent = k;
-    const dd = document.createElement("dd"); dd.textContent = v;
-    kv.append(dt, dd);
+  const pb = $("dhcp-pool-rows");
+  pb.replaceChildren();
+  let anyActive = false;
+  for (const sv of st.servers || []) {
+    if (!sv.ignore) anyActive = true;
+    const tr = document.createElement("tr");
+    for (const v of [sv.interface,
+      sv.start ? `${sv.start} +${sv.limit}` : "—", sv.leasetime || "—"]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdS = document.createElement("td");
+    tdS.append(sv.ignore ? stOff("Isključen") : stGood("Aktivan"));
+    tr.append(tdS);
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    const tog = document.createElement("button");
+    tog.className = "btn-sm" + (sv.ignore ? "" : " danger");
+    tog.textContent = sv.ignore ? "Uključi" : "Isključi";
+    tog.onclick = async () => {
+      const next = !!sv.ignore;
+      const q = next
+        ? `Uključiti DHCP pool na "${sv.interface}"?\n\nAko u toj mreži već ` +
+          "postoji router koji dijeli adrese, klijenti mogu dobivati krive adrese."
+        : `Isključiti DHCP pool na "${sv.interface}"?`;
+      if (!confirm(q)) return;
+      try {
+        const r = await api("/dhcp/server", "POST",
+          { interface: sv.interface, enabled: next });
+        $("dhcp-toggle-result").textContent =
+          (r.enabled ? "Uključeno." : "Isključeno.") + " Backup: " + r.backup;
+        await loadDhcp();
+      } catch (e) {
+        $("dhcp-toggle-result").textContent = "Greška: " + (e.message || e);
+      }
+    };
+    tdAct.append(tog);
+    tr.append(tdAct);
+    pb.append(tr);
   }
-
-  dhcpEnabled = !sv.ignore;
-  $("dhcp-toggle").textContent = dhcpEnabled
-    ? "Isključi DHCP poslužitelj" : "Uključi DHCP poslužitelj";
-  $("dhcp-srv-hint").textContent = dhcpEnabled
-    ? "⚠ Aktivan DHCP poslužitelj na mreži s postojećim routerom može dijeliti " +
-      "krive adrese klijentima (rogue DHCP). Isključi ga ako adrese dijeli router."
-    : "DHCP poslužitelj je isključen — rezervacije se primjenjuju, ali ne " +
-      "dijele dok ga ponovno ne uključiš.";
+  $("dhcp-srv-hint").textContent = anyActive
+    ? "⚠ Aktivan DHCP pool na mreži s postojećim routerom može dijeliti krive " +
+      "adrese (rogue DHCP)."
+    : "Svi DHCP poolovi su isključeni — rezervacije se primjenjuju, ali se ne " +
+      "dijele dok pool ne uključiš.";
 
   const managedDB = hs.hosts.filter((h) => h.managed).length;
   const sagOnDev = st.static_leases.filter((l) => l.managed_by_saguaro).length;
@@ -448,6 +469,124 @@ function openRecDialog(rec) {
   f.elements.notes.value = rec ? rec.notes || "" : "";
   f.elements.enabled.checked = rec ? !!rec.enabled : true;
   $("rec-dialog").showModal();
+}
+
+/* ---------- firewall ---------- */
+
+let editPfUUID = null;
+let editRlUUID = null;
+
+async function loadFirewall() {
+  const [st, fw, rl] = await Promise.all([
+    api("/firewall/status"), api("/firewall/forwards"), api("/firewall/rules"),
+  ]);
+
+  const zb = $("zone-rows");
+  zb.replaceChildren();
+  for (const z of st.zones) {
+    const tr = document.createElement("tr");
+    for (const v of [z.name, z.input, z.forward, z.masq ? "masq" : "—",
+      z.networks.join(", ") || "—"]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    zb.append(tr);
+  }
+
+  const enFw = fw.forwards.filter((f) => f.enabled).length;
+  const enRl = rl.rules.filter((f) => f.enabled).length;
+  const devFw = st.redirects.filter((x) => x.managed_by_saguaro).length;
+  const devRl = st.rules.filter((x) => x.managed_by_saguaro).length;
+  const foreign = st.redirects.length - devFw + st.rules.length - devRl;
+  let info = `U bazi: ${enFw} forwarda, ${enRl} pravila · na uređaju: ${devFw} + ${devRl}`;
+  if (foreign > 0) info += ` · ostalih (OpenWrt/ručnih): ${foreign}`;
+  if (enFw !== devFw || enRl !== devRl) info += " — ⚠ razlika, potrebna primjena";
+  $("fw-sync-info").textContent = info;
+
+  const pb = $("pf-rows");
+  pb.replaceChildren();
+  for (const f of fw.forwards) {
+    const tr = document.createElement("tr");
+    for (const v of [f.name, f.proto,
+      `${f.src_zone}:${f.src_dport}`,
+      `${f.dest_ip}${f.dest_port ? ":" + f.dest_port : ""} (${f.dest_zone})`]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdE = document.createElement("td");
+    tdE.append(f.enabled ? stGood("Da") : stOff("Ne"));
+    tr.append(tdE);
+    const tdN = document.createElement("td");
+    tdN.textContent = f.notes || "—";
+    tr.append(tdN);
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    tdAct.append(
+      btnSm("Uredi", false, () => openPfDialog(f)),
+      btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati forward "${f.name}"?`)) return;
+        await api("/firewall/forwards/" + f.uuid, "DELETE").catch(alertErr);
+        loadFirewall().catch(alertErr);
+      }));
+    tr.append(tdAct);
+    pb.append(tr);
+  }
+
+  const rb = $("rl-rows");
+  rb.replaceChildren();
+  for (const f of rl.rules) {
+    const tr = document.createElement("tr");
+    const src = f.src_zone + (f.src_ip ? " " + f.src_ip : "");
+    const dst = (f.dest_zone || "uređaj") + (f.dest_ip ? " " + f.dest_ip : "") +
+      (f.dest_port ? " :" + f.dest_port : "");
+    for (const v of [f.name, f.proto, src, dst, f.target]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdE = document.createElement("td");
+    tdE.append(f.enabled ? stGood("Da") : stOff("Ne"));
+    tr.append(tdE);
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    tdAct.append(
+      btnSm("Uredi", false, () => openRlDialog(f)),
+      btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati pravilo "${f.name}"?`)) return;
+        await api("/firewall/rules/" + f.uuid, "DELETE").catch(alertErr);
+        loadFirewall().catch(alertErr);
+      }));
+    tr.append(tdAct);
+    rb.append(tr);
+  }
+}
+
+function openPfDialog(f) {
+  const d = $("pf-form");
+  editPfUUID = f ? f.uuid : null;
+  $("pf-dialog-title").textContent = editPfUUID ? "Uredi port forward" : "Novi port forward";
+  for (const el of d.elements) {
+    if (!el.name) continue;
+    if (el.type === "checkbox") el.checked = f ? !!f[el.name] : true;
+    else el.value = f ? f[el.name] || "" : "";
+  }
+  if (!f) d.elements.proto.value = "tcp udp";
+  $("pf-dialog").showModal();
+}
+
+function openRlDialog(f) {
+  const d = $("rl-form");
+  editRlUUID = f ? f.uuid : null;
+  $("rl-dialog-title").textContent = editRlUUID ? "Uredi pravilo" : "Novo pravilo";
+  for (const el of d.elements) {
+    if (!el.name) continue;
+    if (el.type === "checkbox") el.checked = f ? !!f[el.name] : true;
+    else el.value = f ? f[el.name] || "" : "";
+  }
+  if (!f) { d.elements.proto.value = "tcp udp"; d.elements.target.value = "ACCEPT"; }
+  $("rl-dialog").showModal();
 }
 
 /* ---------- wireguard ---------- */
@@ -680,11 +819,88 @@ async function restoreBackup(name) {
 
 /* ---------- mreža ---------- */
 
+let editWanName = null; // null = novi (auto sag_wanN)
+let wanDevices = [];
+let wanNames = [];
+
 async function loadNetwork() {
-  const x = await api("/network/lan");
+  const [x, ws] = await Promise.all([api("/network/lan"), api("/network/wans")]);
   const f = $("net-form");
   for (const name of ["ipaddr", "netmask", "gateway", "dns"])
     f.elements[name].value = x[name] || "";
+
+  wanDevices = ws.devices || [];
+  wanNames = ws.wans.map((w) => w.name);
+  const tb = $("wan-rows");
+  tb.replaceChildren();
+  for (const wn of ws.wans) {
+    const tr = document.createElement("tr");
+    for (const v of [wn.name, wn.proto, wn.device || "—"]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdS = document.createElement("td");
+    tdS.append(wn.up ? stGood("Aktivno") : stOff("Neaktivno"));
+    tr.append(tdS);
+    for (const v of [
+      (wn.runtime_ipv4 && wn.runtime_ipv4.length ? wn.runtime_ipv4
+        : wn.ipaddrs).join(", ") || "—",
+      wn.gateway || "—"]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    tdAct.append(btnSm("Uredi", false, () => openWanDialog(wn)));
+    if (wn.name !== "wan") {
+      tdAct.append(btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati WAN "${wn.name}"?`)) return;
+        try {
+          await api("/network/wans/" + wn.name, "DELETE");
+          await loadNetwork();
+        } catch (e) { alertErr(e); }
+      }));
+    }
+    tr.append(tdAct);
+    tb.append(tr);
+  }
+}
+
+function wanProtoFields() {
+  const p = $("wan-proto").value;
+  for (const el of document.querySelectorAll("#wan-form .wan-static"))
+    el.classList.toggle("hidden", p !== "static" && !el.classList.contains("wan-dhcp"));
+  for (const el of document.querySelectorAll("#wan-form .wan-dhcp"))
+    el.classList.toggle("hidden", p === "pppoe");
+  for (const el of document.querySelectorAll("#wan-form .wan-pppoe"))
+    el.classList.toggle("hidden", p !== "pppoe");
+}
+
+function openWanDialog(wn) {
+  const f = $("wan-form");
+  editWanName = wn ? wn.name : null;
+  $("wan-dialog-title").textContent = wn ? "Uredi " + wn.name : "Novi WAN";
+  const devSel = $("wan-device");
+  devSel.replaceChildren();
+  for (const d of wanDevices) {
+    const o = document.createElement("option");
+    o.value = d.name;
+    let label = d.name + (d.carrier ? " (link)" : " (nema linka)");
+    if (d.used_by && (!wn || d.name !== wn.device)) label += " — koristi " + d.used_by;
+    o.textContent = label;
+    devSel.append(o);
+  }
+  f.elements.proto.value = wn ? wn.proto : "dhcp";
+  if (wn && wn.device) f.elements.device.value = wn.device;
+  f.elements.ipaddrs.value = wn ? (wn.ipaddrs || []).join(" ") : "";
+  f.elements.gateway.value = wn ? wn.gateway || "" : "";
+  f.elements.dns.value = wn ? (wn.dns || []).join(" ") : "";
+  f.elements.username.value = wn ? wn.username || "" : "";
+  f.elements.password.value = "";
+  wanProtoFields();
+  $("wan-dialog").showModal();
 }
 
 /* ---------- router ---------- */
@@ -693,12 +909,13 @@ function route() {
   const view = location.hash.startsWith("#/devices") ? "devices"
     : location.hash.startsWith("#/dhcp") ? "dhcp"
     : location.hash.startsWith("#/dns") ? "dns"
+    : location.hash.startsWith("#/firewall") ? "firewall"
     : location.hash.startsWith("#/wireguard") ? "wireguard"
     : location.hash.startsWith("#/backup") ? "backup"
     : location.hash.startsWith("#/settings") ? "settings"
     : location.hash.startsWith("#/network") ? "network" : "dashboard";
-  for (const v of ["dashboard", "devices", "dhcp", "dns", "wireguard", "backup",
-    "settings", "network"]) {
+  for (const v of ["dashboard", "devices", "dhcp", "dns", "firewall",
+    "wireguard", "backup", "settings", "network"]) {
     $("view-" + v).classList.toggle("hidden", v !== view);
     $("tab-" + v).classList.toggle("active", v === view);
   }
@@ -706,6 +923,7 @@ function route() {
   if (view === "devices") loadDevices().catch(alertErr);
   if (view === "dhcp") loadDhcp().catch(alertErr);
   if (view === "dns") loadDns().catch(alertErr);
+  if (view === "firewall") loadFirewall().catch(alertErr);
   if (view === "wireguard") loadWireguard().catch(alertErr);
   if (view === "backup") loadBackup().catch(alertErr);
   if (view === "settings") loadSettings().catch(alertErr);
@@ -884,6 +1102,91 @@ $("dns-apply").addEventListener("click", async () => {
   }
 });
 
+$("pf-add").addEventListener("click", () => openPfDialog(null));
+$("pf-cancel").addEventListener("click", () => $("pf-dialog").close());
+$("pf-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {};
+  for (const n of ["name", "proto", "src_zone", "src_dport", "dest_zone",
+    "dest_ip", "dest_port", "notes"]) body[n] = f.elements[n].value.trim();
+  body.enabled = f.elements.enabled.checked;
+  try {
+    if (editPfUUID) await api("/firewall/forwards/" + editPfUUID, "PUT", body);
+    else await api("/firewall/forwards", "POST", body);
+    $("pf-dialog").close();
+    await loadFirewall();
+  } catch (e) { alertErr(e); }
+});
+
+$("rl-add").addEventListener("click", () => openRlDialog(null));
+$("rl-cancel").addEventListener("click", () => $("rl-dialog").close());
+$("rl-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {};
+  for (const n of ["name", "proto", "src_zone", "src_ip", "dest_zone",
+    "dest_ip", "dest_port", "target", "notes"]) body[n] = f.elements[n].value.trim();
+  body.enabled = f.elements.enabled.checked;
+  try {
+    if (editRlUUID) await api("/firewall/rules/" + editRlUUID, "PUT", body);
+    else await api("/firewall/rules", "POST", body);
+    $("rl-dialog").close();
+    await loadFirewall();
+  } catch (e) { alertErr(e); }
+});
+
+$("fw-apply").addEventListener("click", async () => {
+  const btn = $("fw-apply");
+  btn.disabled = true;
+  $("fw-apply-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/firewall/apply", "POST", {});
+    $("fw-apply-result").textContent =
+      `Primijenjeno: ${r.applied_forwards} forwarda + ${r.applied_rules} pravila ` +
+      `(uklonjeno starih: ${r.removed}). Backup: ${r.backup}`;
+    await loadFirewall();
+  } catch (e) {
+    $("fw-apply-result").textContent = "Greška: " + (e.message || e);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("wan-add").addEventListener("click", () => openWanDialog(null));
+$("wan-cancel").addEventListener("click", () => $("wan-dialog").close());
+$("wan-proto").addEventListener("change", wanProtoFields);
+$("wan-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  let name = editWanName;
+  if (!name) {
+    for (let i = 2; i <= 9; i++) {
+      if (!wanNames.includes("sag_wan" + i)) { name = "sag_wan" + i; break; }
+    }
+    if (!name) { alert("Iskorišteni su svi WAN slotovi."); return; }
+  }
+  const body = {
+    proto: f.elements.proto.value,
+    device: f.elements.device.value,
+    ipaddrs: f.elements.ipaddrs.value.trim(),
+    gateway: f.elements.gateway.value.trim(),
+    dns: f.elements.dns.value.trim(),
+    username: f.elements.username.value.trim(),
+    password: f.elements.password.value,
+  };
+  if (name === "wan" && !confirm(
+    "Mijenjaš glavni WAN. Kriva postavka može prekinuti internet uređaja. Nastaviti?"))
+    return;
+  try {
+    const r = await api("/network/wans/" + name, "POST", body);
+    $("wan-dialog").close();
+    $("wan-result").textContent =
+      `Primijenjeno na ${r.applied}. Backupi: ${r.backups.join(", ")}`;
+    await loadNetwork();
+  } catch (e) { alertErr(e); }
+});
+
 $("wg-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const f = ev.target;
@@ -956,24 +1259,6 @@ $("wgconf-copy").addEventListener("click", async () => {
     $("wgconf-copy").textContent = "Kopirano ✓";
   }
   setTimeout(() => { $("wgconf-copy").textContent = "Kopiraj"; }, 1500);
-});
-
-$("dhcp-toggle").addEventListener("click", async () => {
-  const next = !dhcpEnabled;
-  const q = next
-    ? "Uključiti DHCP poslužitelj na ovom uređaju?\n\nAko u mreži već postoji " +
-      "router koji dijeli adrese, klijenti mogu dobivati krive adrese."
-    : "Isključiti DHCP poslužitelj? Klijenti će adrese dobivati od postojećeg routera.";
-  if (!confirm(q)) return;
-  $("dhcp-toggle-result").textContent = "Primjenjujem…";
-  try {
-    const r = await api("/dhcp/server", "POST", { enabled: next });
-    $("dhcp-toggle-result").textContent =
-      (r.enabled ? "Uključeno." : "Isključeno.") + " Backup: " + r.backup;
-    await loadDhcp();
-  } catch (e) {
-    $("dhcp-toggle-result").textContent = "Greška: " + (e.message || e);
-  }
 });
 
 $("pw-form").addEventListener("submit", async (ev) => {

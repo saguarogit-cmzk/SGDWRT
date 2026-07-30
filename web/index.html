@@ -39,6 +39,7 @@
     <a href="#/devices" id="tab-devices">Uređaji</a>
     <a href="#/dhcp" id="tab-dhcp">DHCP</a>
     <a href="#/dns" id="tab-dns">DNS</a>
+    <a href="#/firewall" id="tab-firewall">Firewall</a>
     <a href="#/wireguard" id="tab-wireguard">WireGuard</a>
     <a href="#/backup" id="tab-backup">Backup</a>
     <a href="#/network" id="tab-network">Mreža</a>
@@ -123,12 +124,16 @@
   <main id="view-dhcp" class="hidden">
     <section class="grid-2">
       <div class="card">
-        <h2>DHCP poslužitelj</h2>
-        <dl class="kv" id="dhcp-server-kv"></dl>
-        <p class="hint" id="dhcp-srv-hint"></p>
-        <div class="form-actions" style="justify-content:flex-start">
-          <button id="dhcp-toggle" class="ghost">—</button>
+        <h2>DHCP poolovi</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Sučelje</th><th>Raspon</th><th>Lease</th><th>Stanje</th><th></th>
+            </tr></thead>
+            <tbody id="dhcp-pool-rows"></tbody>
+          </table>
         </div>
+        <p class="hint" id="dhcp-srv-hint"></p>
         <p class="hint" id="dhcp-toggle-result"></p>
       </div>
       <div class="card">
@@ -195,6 +200,62 @@
             <th>Napomene</th><th></th>
           </tr></thead>
           <tbody id="rec-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <main id="view-firewall" class="hidden">
+    <section class="grid-2">
+      <div class="card">
+        <h2>Zone</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Zona</th><th>Ulaz</th><th>Forward</th><th>NAT</th><th>Mreže</th>
+            </tr></thead>
+            <tbody id="zone-rows"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Primjena na uređaj</h2>
+        <p class="hint" id="fw-sync-info">—</p>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button id="fw-apply" class="primary">Primijeni firewall</button>
+        </div>
+        <p class="hint" id="fw-apply-result"></p>
+        <p class="hint">Primjena upravlja samo Saguaro zapisima (sag_pf_*, sag_rl_*) —
+          postojeća OpenWrt pravila i zone se ne diraju.</p>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <h2>Port forwardi (DNAT)</h2>
+        <button id="pf-add" class="primary">Dodaj forward</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Naziv</th><th>Proto</th><th>Ulaz</th><th>Odredište</th>
+            <th>Aktivan</th><th>Napomene</th><th></th>
+          </tr></thead>
+          <tbody id="pf-rows"></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <h2>Pravila prometa</h2>
+        <button id="rl-add" class="primary">Dodaj pravilo</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Naziv</th><th>Proto</th><th>Izvor</th><th>Odredište</th>
+            <th>Akcija</th><th>Aktivan</th><th></th>
+          </tr></thead>
+          <tbody id="rl-rows"></tbody>
         </table>
       </div>
     </section>
@@ -295,6 +356,22 @@
   </main>
 
   <main id="view-network" class="hidden">
+    <section class="card">
+      <div class="card-head">
+        <h2>WAN sučelja</h2>
+        <button id="wan-add" class="primary">Dodaj WAN</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Naziv</th><th>Protokol</th><th>Port</th><th>Stanje</th>
+            <th>IPv4</th><th>Gateway</th><th></th>
+          </tr></thead>
+          <tbody id="wan-rows"></tbody>
+        </table>
+      </div>
+      <p class="hint" id="wan-result"></p>
+    </section>
     <section class="card" style="max-width:560px">
       <h2>LAN adresa uređaja</h2>
       <form id="net-form">
@@ -379,6 +456,102 @@
       <p class="hint" id="tok-result"></p>
     </section>
   </main>
+
+  <dialog id="pf-dialog">
+    <form id="pf-form">
+      <h2 id="pf-dialog-title">Port forward</h2>
+      <div class="form-grid">
+        <label>Naziv<input name="name" required placeholder="web-server"></label>
+        <label>Protokol
+          <select name="proto">
+            <option value="tcp udp">TCP + UDP</option>
+            <option value="tcp">TCP</option>
+            <option value="udp">UDP</option>
+          </select>
+        </label>
+        <label>Vanjski port<input name="src_dport" required placeholder="443 ili 8000-8010"></label>
+        <label>Izvorišna zona<input name="src_zone" placeholder="wan"></label>
+        <label>Odredišna IP<input name="dest_ip" required placeholder="192.168.50.10"></label>
+        <label>Odredišni port<input name="dest_port" placeholder="prazno = isti"></label>
+        <label>Odredišna zona<input name="dest_zone" placeholder="lan"></label>
+        <label class="wide">Napomene<textarea name="notes" rows="2"></textarea></label>
+        <label class="check"><input type="checkbox" name="enabled" checked>
+          Aktivan — uključi u primjenu</label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="pf-cancel">Odustani</button>
+        <button type="submit" class="primary">Spremi</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="rl-dialog">
+    <form id="rl-form">
+      <h2 id="rl-dialog-title">Pravilo</h2>
+      <div class="form-grid">
+        <label>Naziv<input name="name" required placeholder="blokiraj-goste-prema-lan"></label>
+        <label>Protokol
+          <select name="proto">
+            <option value="tcp udp">TCP + UDP</option>
+            <option value="tcp">TCP</option>
+            <option value="udp">UDP</option>
+            <option value="icmp">ICMP</option>
+            <option value="all">Svi</option>
+          </select>
+        </label>
+        <label>Izvorišna zona<input name="src_zone" placeholder="wan (* = bilo koja)"></label>
+        <label>Izvorišna IP/CIDR<input name="src_ip" placeholder="opcionalno"></label>
+        <label>Odredišna zona<input name="dest_zone" placeholder="prazno = ovaj uređaj"></label>
+        <label>Odredišna IP/CIDR<input name="dest_ip" placeholder="opcionalno"></label>
+        <label>Odredišni port<input name="dest_port" placeholder="npr. 22"></label>
+        <label>Akcija
+          <select name="target">
+            <option value="ACCEPT">Dopusti (ACCEPT)</option>
+            <option value="REJECT">Odbij (REJECT)</option>
+            <option value="DROP">Odbaci tiho (DROP)</option>
+          </select>
+        </label>
+        <label class="wide">Napomene<textarea name="notes" rows="2"></textarea></label>
+        <label class="check"><input type="checkbox" name="enabled" checked>
+          Aktivno — uključi u primjenu</label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="rl-cancel">Odustani</button>
+        <button type="submit" class="primary">Spremi</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="wan-dialog">
+    <form id="wan-form">
+      <h2 id="wan-dialog-title">WAN sučelje</h2>
+      <div class="form-grid">
+        <label>Protokol
+          <select name="proto" id="wan-proto">
+            <option value="dhcp">DHCP klijent</option>
+            <option value="static">Statička adresa</option>
+            <option value="pppoe">PPPoE</option>
+          </select>
+        </label>
+        <label>Fizički port
+          <select name="device" id="wan-device"></select>
+        </label>
+        <label class="wide wan-static">Adrese (CIDR, razmakom odvojene)
+          <input name="ipaddrs" placeholder="203.0.113.2/29 203.0.113.3/29"></label>
+        <label class="wan-static">Gateway<input name="gateway" placeholder="203.0.113.1"></label>
+        <label class="wan-static wan-dhcp">DNS (razmakom odvojeni)
+          <input name="dns" placeholder="prazno = od operatera"></label>
+        <label class="wan-pppoe">PPPoE korisnik<input name="username" autocomplete="off"></label>
+        <label class="wan-pppoe">PPPoE lozinka<input name="password" type="password" autocomplete="off"></label>
+      </div>
+      <p class="hint">Više javnih adresa na istom WAN-u: upiši ih sve u polje
+        adresa (static). Novi WAN se automatski dodaje u wan firewall zonu.</p>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="wan-cancel">Odustani</button>
+        <button type="submit" class="primary">Spremi</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="peer-dialog">
     <form id="peer-form">

@@ -82,6 +82,40 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Port forwardi (DNAT) — primjenjuju se kao sag_pf_* redirect sekcije u fw4
+CREATE TABLE IF NOT EXISTS fw_forwards (
+    uuid        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    proto       TEXT NOT NULL DEFAULT 'tcp udp', -- tcp | udp | tcp udp
+    src_zone    TEXT NOT NULL DEFAULT 'wan',
+    src_dport   TEXT NOT NULL,                   -- port ili raspon (8000-8010)
+    dest_zone   TEXT NOT NULL DEFAULT 'lan',
+    dest_ip     TEXT NOT NULL,
+    dest_port   TEXT,                            -- prazno = isti kao src_dport
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Firewall pravila — primjenjuju se kao sag_rl_* rule sekcije u fw4
+CREATE TABLE IF NOT EXISTS fw_rules (
+    uuid        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    family      TEXT NOT NULL DEFAULT 'any',     -- any | ipv4 | ipv6
+    proto       TEXT NOT NULL DEFAULT 'tcp udp', -- tcp | udp | tcp udp | icmp | all
+    src_zone    TEXT NOT NULL DEFAULT 'wan',     -- '*' = bilo koja zona
+    src_ip      TEXT,                            -- IP ili CIDR
+    dest_zone   TEXT,                            -- prazno = prema samom uređaju (input)
+    dest_ip     TEXT,
+    dest_port   TEXT,
+    target      TEXT NOT NULL DEFAULT 'ACCEPT',  -- ACCEPT | REJECT | DROP
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Korisnički računi za GUI login (pri prvom startu nastaje 'admin'
 -- s lozinkom jednakom tadašnjem API tokenu)
 CREATE TABLE IF NOT EXISTS users (

@@ -70,17 +70,28 @@ func (s *server) handleDHCPStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	server := map[string]any{}
-	if lan, ok := cfg["lan"]; ok {
-		server = map[string]any{
-			"interface": "lan",
-			"start":     sectStr(lan, "start"),
-			"limit":     sectStr(lan, "limit"),
-			"leasetime": sectStr(lan, "leasetime"),
-			"dhcpv4":    sectStr(lan, "dhcpv4"),
-			"ignore":    sectStr(lan, "ignore") == "1",
+	// svi DHCP poolovi (jedan po sučelju/podmreži), ne samo lan
+	servers := []map[string]any{}
+	for name, sec := range cfg {
+		if sectStr(sec, ".type") != "dhcp" {
+			continue
 		}
+		iface := sectStr(sec, "interface")
+		if iface == "" {
+			iface = name
+		}
+		servers = append(servers, map[string]any{
+			"section":   name,
+			"interface": iface,
+			"start":     sectStr(sec, "start"),
+			"limit":     sectStr(sec, "limit"),
+			"leasetime": sectStr(sec, "leasetime"),
+			"ignore":    sectStr(sec, "ignore") == "1",
+		})
 	}
+	sort.Slice(servers, func(i, j int) bool {
+		return servers[i]["section"].(string) < servers[j]["section"].(string)
+	})
 
 	leases := []staticLease{}
 	for name, sec := range cfg {
@@ -98,7 +109,7 @@ func (s *server) handleDHCPStatus(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(leases, func(i, j int) bool { return leases[i].IP < leases[j].IP })
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"server":        server,
+		"servers":       servers,
 		"static_leases": leases,
 		"active_leases": parseLeases(leaseFile),
 	})
@@ -205,11 +216,12 @@ func (s *server) handleDHCPApply(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleDHCPServerSet uključuje/isključuje DHCP poslužitelj na lan sučelju
-// (dhcp.lan.ignore). Izravna korisnička radnja nad jednom opcijom, uz backup.
+// handleDHCPServerSet uključuje/isključuje DHCP pool danog sučelja
+// (dhcp.<sekcija>.ignore). Izravna korisnička radnja nad jednom opcijom, uz backup.
 func (s *server) handleDHCPServerSet(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Enabled *bool `json:"enabled"`
+		Interface string `json:"interface"`
+		Enabled   *bool  `json:"enabled"`
 	}
 	if !decodeBody(w, r, &in) {
 		return
@@ -218,14 +230,28 @@ func (s *server) handleDHCPServerSet(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "nedostaje polje enabled")
 		return
 	}
+	if in.Interface == "" {
+		in.Interface = "lan"
+	}
 	cfg, err := uciGetConfig(r.Context(), "dhcp")
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	lan, ok := cfg["lan"]
-	if !ok {
-		writeErr(w, http.StatusNotFound, "lan DHCP sekcija ne postoji")
+	// sekcija po imenu (OpenWrt konvencija: sekcija = ime sučelja) ili po opciji interface
+	section := ""
+	if sec, ok := cfg[in.Interface]; ok && sectStr(sec, ".type") == "dhcp" {
+		section = in.Interface
+	} else {
+		for name, sec := range cfg {
+			if sectStr(sec, ".type") == "dhcp" && sectStr(sec, "interface") == in.Interface {
+				section = name
+				break
+			}
+		}
+	}
+	if section == "" {
+		writeErr(w, http.StatusNotFound, "DHCP pool za sučelje "+in.Interface+" ne postoji")
 		return
 	}
 	backupName, err := s.backupConfig(dhcpConfig)
@@ -235,11 +261,11 @@ func (s *server) handleDHCPServerSet(w http.ResponseWriter, r *http.Request) {
 	}
 	var batch strings.Builder
 	if *in.Enabled {
-		if sectStr(lan, "ignore") != "" {
-			batch.WriteString("delete dhcp.lan.ignore\n")
+		if sectStr(cfg[section], "ignore") != "" {
+			fmt.Fprintf(&batch, "delete dhcp.%s.ignore\n", section)
 		}
 	} else {
-		batch.WriteString("set dhcp.lan.ignore=1\n")
+		fmt.Fprintf(&batch, "set dhcp.%s.ignore=1\n", section)
 	}
 	batch.WriteString("commit dhcp\n")
 	if err := uciBatch(r.Context(), batch.String()); err != nil {

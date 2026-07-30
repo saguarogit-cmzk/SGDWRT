@@ -21,11 +21,13 @@ import (
 	"time"
 )
 
-const version = "0.6.0"
+const version = "0.7.0"
 
 type server struct {
 	token     string
 	webDir    string
+	etcDir    string
+	dataDir   string
 	backupDir string
 	started   time.Time
 	db        *sql.DB
@@ -59,8 +61,8 @@ func main() {
 	}
 	defer db.Close()
 
-	s := &server{token: token, webDir: *webDir, backupDir: *backupDir,
-		started: time.Now(), db: db}
+	s := &server{token: token, webDir: *webDir, etcDir: *etcDir,
+		dataDir: *dataDir, backupDir: *backupDir, started: time.Now(), db: db}
 
 	{
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -106,6 +108,12 @@ func main() {
 	mux.Handle("POST /api/v1/wireguard/apply", s.auth(s.handleWGApply))
 	mux.Handle("GET /api/v1/network/lan", s.auth(s.handleNetworkLanGet))
 	mux.Handle("POST /api/v1/network/lan", s.auth(s.handleNetworkLanSet))
+	mux.Handle("GET /api/v1/backup/archives", s.auth(s.handleBackupList))
+	mux.Handle("POST /api/v1/backup/create", s.auth(s.handleBackupCreate))
+	mux.Handle("GET /api/v1/backup/download/{name}", s.auth(s.handleBackupDownload))
+	mux.Handle("POST /api/v1/backup/upload", s.auth(s.handleBackupUpload))
+	mux.Handle("POST /api/v1/backup/restore", s.auth(s.handleBackupRestore))
+	mux.Handle("DELETE /api/v1/backup/archives/{name}", s.auth(s.handleBackupDelete))
 	mux.HandleFunc("/", s.handleRoot)
 
 	srv := &http.Server{

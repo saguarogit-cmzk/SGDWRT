@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
+	"os"
 
 	_ "modernc.org/sqlite"
 )
@@ -12,6 +13,15 @@ import (
 var schemaSQL string
 
 func openDB(path string) (*sql.DB, error) {
+	// dovrši odgođeni restore iz backupa (staged prije reboota u backup modulu)
+	if st, err := os.Stat(path + ".restore"); err == nil && st.Mode().IsRegular() {
+		os.Remove(path)
+		os.Remove(path + "-wal")
+		os.Remove(path + "-shm")
+		if err := os.Rename(path+".restore", path); err != nil {
+			return nil, fmt.Errorf("restore baze: %w", err)
+		}
+	}
 	dsn := "file:" + path +
 		"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
 	db, err := sql.Open("sqlite", dsn)

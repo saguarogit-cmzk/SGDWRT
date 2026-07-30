@@ -558,6 +558,94 @@ function openPeerDialog(p) {
   $("peer-dialog").showModal();
 }
 
+/* ---------- backup ---------- */
+
+async function apiBlob(path) {
+  const r = await fetch(API + path, {
+    headers: { Authorization: "Bearer " + token },
+  });
+  if (r.status === 401) throw { unauthorized: true };
+  if (!r.ok) throw new Error(path + ": HTTP " + r.status);
+  return r.blob();
+}
+
+async function downloadBackup(name) {
+  const blob = await apiBlob("/backup/download/" + encodeURIComponent(name));
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function backupRow(b, actions) {
+  const tr = document.createElement("tr");
+  for (const v of [b.name, fmtBytes(b.size_bytes),
+    new Date(b.modified_at * 1000).toLocaleString("hr-HR")]) {
+    const td = document.createElement("td");
+    td.textContent = v;
+    tr.append(td);
+  }
+  const tdAct = document.createElement("td");
+  tdAct.className = "row-actions";
+  tdAct.append(...actions);
+  tr.append(tdAct);
+  return tr;
+}
+
+function btnSm(label, danger, onclick) {
+  const b = document.createElement("button");
+  b.className = "btn-sm" + (danger ? " danger" : "");
+  b.textContent = label;
+  b.onclick = onclick;
+  return b;
+}
+
+async function loadBackup() {
+  const x = await api("/backup/archives");
+
+  const tb = $("bk-rows");
+  tb.replaceChildren();
+  for (const b of x.archives) {
+    tb.append(backupRow(b, [
+      btnSm("Preuzmi", false, () => downloadBackup(b.name).catch(alertErr)),
+      btnSm("Vrati", true, () => restoreBackup(b.name)),
+      btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati arhivu "${b.name}"?`)) return;
+        await api("/backup/archives/" + encodeURIComponent(b.name), "DELETE")
+          .catch(alertErr);
+        loadBackup().catch(alertErr);
+      }),
+    ]));
+  }
+
+  const cb = $("cfg-rows");
+  cb.replaceChildren();
+  for (const b of x.config_backups) {
+    cb.append(backupRow(b, [
+      btnSm("Preuzmi", false, () => downloadBackup(b.name).catch(alertErr)),
+    ]));
+  }
+}
+
+async function restoreBackup(name) {
+  if (!confirm(
+    `Vratiti backup "${name}"?\n\n` +
+    `Ovo PREPISUJE cijelu konfiguraciju uređaja (mrežu, DHCP, DNS, VPN, ` +
+    `Saguaro bazu) i PONOVNO POKREĆE uređaj.`)) return;
+  if (!confirm("Zadnja provjera: uređaj će se odmah rebootati. Nastaviti?")) return;
+  try {
+    await api("/backup/restore", "POST", { name });
+    stopTimers();
+    $("bk-create-result").textContent =
+      "Backup vraćen — uređaj se ponovno pokreće. Pričekaj ~2 minute pa " +
+      "osvježi stranicu (adresa uređaja može biti ona iz backupa).";
+  } catch (e) {
+    alertErr(e);
+  }
+}
+
 /* ---------- mreža ---------- */
 
 async function loadNetwork() {
@@ -574,8 +662,9 @@ function route() {
     : location.hash.startsWith("#/dhcp") ? "dhcp"
     : location.hash.startsWith("#/dns") ? "dns"
     : location.hash.startsWith("#/wireguard") ? "wireguard"
+    : location.hash.startsWith("#/backup") ? "backup"
     : location.hash.startsWith("#/network") ? "network" : "dashboard";
-  for (const v of ["dashboard", "devices", "dhcp", "dns", "wireguard", "network"]) {
+  for (const v of ["dashboard", "devices", "dhcp", "dns", "wireguard", "backup", "network"]) {
     $("view-" + v).classList.toggle("hidden", v !== view);
     $("tab-" + v).classList.toggle("active", v === view);
   }
@@ -584,6 +673,7 @@ function route() {
   if (view === "dhcp") loadDhcp().catch(alertErr);
   if (view === "dns") loadDns().catch(alertErr);
   if (view === "wireguard") loadWireguard().catch(alertErr);
+  if (view === "backup") loadBackup().catch(alertErr);
   if (view === "network") loadNetwork().catch(alertErr);
 }
 window.addEventListener("hashchange", route);
@@ -813,6 +903,44 @@ $("wgconf-copy").addEventListener("click", async () => {
     $("wgconf-copy").textContent = "Kopirano ✓";
   }
   setTimeout(() => { $("wgconf-copy").textContent = "Kopiraj"; }, 1500);
+});
+
+$("bk-create").addEventListener("click", async () => {
+  const btn = $("bk-create");
+  btn.disabled = true;
+  $("bk-create-result").textContent = "Izrađujem backup…";
+  try {
+    const r = await api("/backup/create", "POST", {});
+    $("bk-create-result").textContent =
+      `Izrađeno: ${r.archive} (${fmtBytes(r.size_bytes)})`;
+    await loadBackup();
+  } catch (e) {
+    $("bk-create-result").textContent = "Greška: " + (e.message || e);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("bk-upload").addEventListener("click", async () => {
+  const f = $("bk-file").files[0];
+  if (!f) { alert("Odaberi .tar.gz arhivu."); return; }
+  $("bk-upload-result").textContent = "Učitavam…";
+  try {
+    const r = await fetch(API + "/backup/upload?name=" + encodeURIComponent(f.name), {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token },
+      body: f,
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.status === 401) throw { unauthorized: true };
+    if (!r.ok) throw new Error(data.error || "HTTP " + r.status);
+    $("bk-upload-result").textContent = `Učitano: ${data.archive}`;
+    $("bk-file").value = "";
+    await loadBackup();
+  } catch (e) {
+    if (e && e.unauthorized) { logout(true); return; }
+    $("bk-upload-result").textContent = "Greška: " + (e.message || e);
+  }
 });
 
 $("net-form").addEventListener("submit", async (ev) => {

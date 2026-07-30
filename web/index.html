@@ -37,6 +37,7 @@
     <a href="#/dhcp" id="tab-dhcp">DHCP</a>
     <a href="#/dns" id="tab-dns">DNS</a>
     <a href="#/wireguard" id="tab-wireguard">WireGuard</a>
+    <a href="#/backup" id="tab-backup">Backup</a>
     <a href="#/network" id="tab-network">Mreža</a>
   </nav>
 
@@ -232,6 +233,53 @@
             <th>Zadnji handshake</th><th>Promet (rx/tx)</th><th></th>
           </tr></thead>
           <tbody id="peer-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <main id="view-backup" class="hidden">
+    <section class="grid-2">
+      <div class="card">
+        <h2>Puni backup uređaja</h2>
+        <p class="hint">Arhiva sadrži OpenWrt konfiguraciju (<code>/etc</code>),
+          Saguaro bazu (inventory, DHCP, DNS, WireGuard) te token i certifikat.
+          Čuva se zadnjih 10 arhiva na uređaju — preuzmi ih i na sigurno mjesto.</p>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button id="bk-create" class="primary">Izradi backup</button>
+        </div>
+        <p class="hint" id="bk-create-result"></p>
+      </div>
+      <div class="card">
+        <h2>Učitaj arhivu</h2>
+        <p class="hint">Učitaj prije preuzetu arhivu (i s drugog uređaja), pa je
+          vrati gumbom <b>Vrati</b> u tablici.</p>
+        <input type="file" id="bk-file" accept=".tar.gz,.tgz,application/gzip">
+        <div class="form-actions" style="justify-content:flex-start">
+          <button id="bk-upload" class="primary">Učitaj</button>
+        </div>
+        <p class="hint" id="bk-upload-result"></p>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Arhive punog backupa</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Naziv</th><th>Veličina</th><th>Vrijeme</th><th></th>
+          </tr></thead>
+          <tbody id="bk-rows"></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Automatski backupi konfiguracija (prije svake primjene)</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Naziv</th><th>Veličina</th><th>Vrijeme</th><th></th>
+          </tr></thead>
+          <tbody id="cfg-rows"></tbody>
         </table>
       </div>
     </section>

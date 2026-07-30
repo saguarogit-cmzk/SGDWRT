@@ -299,10 +299,13 @@
             <label>Adresa tunela (CIDR)<input name="address" required placeholder="10.6.0.1/24"></label>
             <label>Endpoint za klijente<input name="endpoint_host" placeholder="vpn.tvrtka.hr ili javni IP"></label>
             <label>DNS za klijente<input name="client_dns" placeholder="192.168.50.222"></label>
-            <label class="wide">AllowedIPs klijenata<input name="client_allowed_ips" placeholder="0.0.0.0/0"></label>
+            <label class="wide">Promet klijenata kroz tunel (AllowedIPs)
+          <input name="client_allowed_ips" placeholder="prazno = samo lokalna mreža (split tunnel)"></label>
           </div>
           <p class="hint">Privatni ključ poslužitelja generira se automatski i ne
-            napušta uređaj. Sprema se backup mrežne i firewall konfiguracije.</p>
+            napušta uređaj. Prazno polje prometa = <b>split tunnel</b>: korisnici
+            kroz tunel dosežu samo lokalnu mrežu, a na internet idu preko vlastite
+            veze. Za sav promet kroz tunel upiši <code>0.0.0.0/0</code>.</p>
           <p class="hint" id="wg-server-result"></p>
           <div class="form-actions" style="justify-content:flex-start">
             <button type="submit" class="primary">Spremi postavke</button>
@@ -338,6 +341,67 @@
     </section>
   </div>
 
+  <div class="view hidden" id="view-multiwan">
+    <section class="grid-2">
+      <div class="card">
+        <h2>Način rada</h2>
+        <div class="form-grid">
+          <label class="check" style="grid-column:auto"><input type="checkbox" id="mw-enabled">
+            Multi-WAN uključen</label>
+          <label>Način
+            <select id="mw-mode">
+              <option value="failover">Failover — pričuvna veza preuzima kad glavna padne</option>
+              <option value="balanced">Raspodjela — promet se dijeli po vezama</option>
+            </select>
+          </label>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>WAN</th><th>Koristi</th><th>Prioritet</th><th>Udio</th><th>Nadzorne IP</th>
+            </tr></thead>
+            <tbody id="mw-wan-rows"></tbody>
+          </table>
+        </div>
+        <p class="hint">Failover: manji prioritet = glavna veza. Raspodjela:
+          veći udio = više prometa. Veza se smatra palom kad nadzorne adrese
+          prestanu odgovarati na ping.</p>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button id="mw-save" class="primary">Spremi i primijeni</button>
+        </div>
+        <p class="hint" id="mw-result"></p>
+      </div>
+      <div class="card">
+        <h2>Stanje veza</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Veza</th><th>Stanje</th><th>Nadzor (ping)</th></tr></thead>
+            <tbody id="mw-status-rows"></tbody>
+          </table>
+        </div>
+        <p class="hint" id="mw-status-hint"></p>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <h2>Pravila usmjeravanja</h2>
+        <button id="mwr-add" class="primary">Dodaj pravilo</button>
+      </div>
+      <p class="hint">Usmjeri određeni promet preko određene veze (npr.
+        računovodstvo uvijek preko glavne). Pravila vrijede nakon
+        <b>Spremi i primijeni</b>.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Oznaka</th><th>Izvor</th><th>Odredište</th><th>Port</th>
+            <th>Proto</th><th>Preko veze</th><th></th>
+          </tr></thead>
+          <tbody id="mwr-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
   <div class="view hidden" id="view-openvpn">
     <section class="grid-2">
       <div class="card">
@@ -352,7 +416,8 @@
               Klijentima pošalji rutu prema LAN mreži</label>
           </div>
           <p class="hint">Certifikate (CA, server, klijenti) uređaj izdaje sam —
-            ništa se ne unosi ručno. Sprema se backup svih konfiguracija.</p>
+            ništa se ne unosi ručno. Veza je <b>split tunnel</b>: korisnici kroz
+            tunel dosežu samo lokalnu mrežu, a na internet idu preko vlastite veze.</p>
           <p class="hint" id="ov-server-result"></p>
           <div class="form-actions" style="justify-content:flex-start">
             <button type="submit" class="primary">Spremi postavke</button>
@@ -641,6 +706,30 @@
       </div>
     </form>
     <p class="hint">Promjene vrijede nakon gumba <b>Primijeni peerove</b>.</p>
+  </dialog>
+
+  <dialog id="mwr-dialog">
+    <form id="mwr-form">
+      <h2>Pravilo usmjeravanja</h2>
+      <div class="form-grid">
+        <label>Oznaka (kratka)<input name="label" required placeholder="racuni"></label>
+        <label>Preko veze<select name="use_wan" id="mwr-wan"></select></label>
+        <label>Izvor (IP/CIDR)<input name="src_ip" placeholder="192.168.50.0/28 ili prazno"></label>
+        <label>Odredište (IP/CIDR)<input name="dest_ip" placeholder="prazno = bilo koje"></label>
+        <label>Odredišni port<input name="dest_port" placeholder="443 ili 8000-8010"></label>
+        <label>Protokol
+          <select name="proto">
+            <option value="">Svi</option>
+            <option value="tcp">TCP</option>
+            <option value="udp">UDP</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="mwr-cancel">Odustani</button>
+        <button type="submit" class="primary">Dodaj</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="ovc-dialog">

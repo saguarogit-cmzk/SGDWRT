@@ -237,9 +237,23 @@ func (s *server) handleWGServerSet(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "neispravan DNS za klijente")
 		return
 	}
+	// prazno = split tunnel: kroz tunel ide samo mreža tunela i LAN,
+	// internet ostaje na klijentovoj vlastitoj vezi
 	in.ClientAllowedIPs = strings.TrimSpace(in.ClientAllowedIPs)
 	if in.ClientAllowedIPs == "" {
-		in.ClientAllowedIPs = "0.0.0.0/0"
+		parts := []string{ipnet.String()}
+		if lanCfg, err := uciGetConfig(ctx, "network"); err == nil {
+			if lan, ok := lanCfg["lan"]; ok {
+				lanIP := net.ParseIP(sectStr(lan, "ipaddr"))
+				lanMask := net.ParseIP(sectStr(lan, "netmask"))
+				if lanIP != nil && lanMask != nil && lanMask.To4() != nil {
+					m := net.IPMask(lanMask.To4())
+					parts = append(parts, (&net.IPNet{
+						IP: lanIP.Mask(m), Mask: m}).String())
+				}
+			}
+		}
+		in.ClientAllowedIPs = strings.Join(parts, ", ")
 	}
 	for _, c := range strings.Split(in.ClientAllowedIPs, ",") {
 		if _, _, err := net.ParseCIDR(strings.TrimSpace(c)); err != nil {

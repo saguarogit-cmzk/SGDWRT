@@ -791,6 +791,87 @@ function openPeerDialog(p) {
   $("peer-dialog").showModal();
 }
 
+/* ---------- multi-wan ---------- */
+
+let mwRules = [];
+let mwWanNames = [];
+
+async function loadMultiwan() {
+  const x = await api("/multiwan");
+  $("mw-enabled").checked = !!x.enabled;
+  $("mw-mode").value = x.mode || "failover";
+  mwRules = x.rules || [];
+  mwWanNames = (x.wans || []).map((w) => w.name);
+
+  const tb = $("mw-wan-rows");
+  tb.replaceChildren();
+  for (const wn of x.wans || []) {
+    const tr = document.createElement("tr");
+    tr.dataset.name = wn.name;
+    const tdN = document.createElement("td");
+    tdN.textContent = wn.name;
+    tr.append(tdN);
+    const tdE = document.createElement("td");
+    const en = document.createElement("input");
+    en.type = "checkbox"; en.className = "mw-en"; en.checked = !!wn.enabled;
+    tdE.append(en); tr.append(tdE);
+    for (const [cls, val, width] of [["mw-pri", wn.priority, 60],
+      ["mw-w", wn.weight, 60], ["mw-track", wn.track_ips, 170]]) {
+      const td = document.createElement("td");
+      const inp = document.createElement("input");
+      inp.className = cls; inp.value = val; inp.style.width = width + "px";
+      td.append(inp); tr.append(td);
+    }
+    tb.append(tr);
+  }
+
+  renderMwRules();
+
+  const sb = $("mw-status-rows");
+  sb.replaceChildren();
+  const ifaces = (x.status && x.status.interfaces) || {};
+  for (const [name, st] of Object.entries(ifaces)) {
+    if (!mwWanNames.includes(name)) continue;
+    const tr = document.createElement("tr");
+    const tdN = document.createElement("td"); tdN.textContent = name; tr.append(tdN);
+    const tdS = document.createElement("td");
+    tdS.append(st.status === "online" ? stGood("Radi")
+      : st.status === "offline" ? stCrit("Pala")
+      : stOff(st.status === "disabled" ? "Isključena" : st.status));
+    tr.append(tdS);
+    const tdP = document.createElement("td");
+    tdP.textContent = (st.track_ip || [])
+      .map((t) => `${t.ip}: ${t.status === "up" ? t.latency + " ms" : t.status}`)
+      .join(" · ") || "—";
+    tr.append(tdP);
+    sb.append(tr);
+  }
+  $("mw-status-hint").textContent = x.managed
+    ? "" : "Multi-WAN još nije konfiguriran kroz Saguaro — spremi postavke lijevo.";
+}
+
+function renderMwRules() {
+  const tb = $("mwr-rows");
+  tb.replaceChildren();
+  mwRules.forEach((r, i) => {
+    const tr = document.createElement("tr");
+    for (const v of [r.label, r.src_ip || "svi", r.dest_ip || "sva",
+      r.dest_port || "svi", r.proto || "svi", r.use_wan]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    tdAct.append(btnSm("Ukloni", true, () => {
+      mwRules.splice(i, 1);
+      renderMwRules();
+    }));
+    tr.append(tdAct);
+    tb.append(tr);
+  });
+}
+
 /* ---------- openvpn ---------- */
 
 let editOvcUUID = null;
@@ -1129,6 +1210,7 @@ function openWanDialog(wn) {
 const MODULES = {
   dashboard: ["Dashboard", "Pregled stanja uređaja i mreže", () => null],
   network:   ["Mreža", "LAN adresa, WAN veze i VLAN mreže", () => loadNetwork()],
+  multiwan:  ["Multi-WAN", "Više internet veza — failover, raspodjela i nadzor", () => loadMultiwan()],
   dhcp:      ["DHCP", "Dodjela IP adresa i rezervacije za uređaje u mreži", () => loadDhcp()],
   dns:       ["DNS", "Lokalna imena uređaja (npr. nas.lan umjesto IP adrese)", () => loadDns()],
   firewall:  ["Firewall", "Pravila prometa, port forwardi, DMZ i 1:1 NAT", () => loadFirewall()],
@@ -1140,7 +1222,7 @@ const MODULES = {
 };
 const NAV_GROUPS = [
   ["Status", ["dashboard"]],
-  ["Mreža", ["network", "dhcp", "dns"]],
+  ["Mreža", ["network", "multiwan", "dhcp", "dns"]],
   ["Zaštita", ["firewall"]],
   ["VPN", ["wireguard", "openvpn"]],
   ["Sustav", ["devices", "backup", "settings"]],
@@ -1643,6 +1725,61 @@ $("wgconf-copy").addEventListener("click", async () => {
     $("wgconf-copy").textContent = "Kopirano ✓";
   }
   setTimeout(() => { $("wgconf-copy").textContent = "Kopiraj"; }, 1500);
+});
+
+$("mw-save").addEventListener("click", async () => {
+  const wans = [];
+  for (const tr of $("mw-wan-rows").children) {
+    wans.push({
+      name: tr.dataset.name,
+      enabled: tr.querySelector(".mw-en").checked,
+      priority: parseInt(tr.querySelector(".mw-pri").value, 10) || 1,
+      weight: parseInt(tr.querySelector(".mw-w").value, 10) || 1,
+      track_ips: tr.querySelector(".mw-track").value.trim(),
+    });
+  }
+  const body = {
+    enabled: $("mw-enabled").checked,
+    mode: $("mw-mode").value,
+    wans, rules: mwRules,
+  };
+  $("mw-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/multiwan", "POST", body);
+    $("mw-result").textContent = (r.enabled
+      ? `Multi-WAN aktivan (${r.mode === "failover" ? "failover" : "raspodjela"}).`
+      : "Multi-WAN isključen.") + " Backup: " + r.backup;
+    await loadMultiwan();
+  } catch (e) {
+    $("mw-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("mwr-add").addEventListener("click", () => {
+  const sel = $("mwr-wan");
+  sel.replaceChildren();
+  for (const n of mwWanNames) {
+    const o = document.createElement("option");
+    o.value = n; o.textContent = n;
+    sel.append(o);
+  }
+  $("mwr-form").reset();
+  $("mwr-dialog").showModal();
+});
+$("mwr-cancel").addEventListener("click", () => $("mwr-dialog").close());
+$("mwr-form").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  mwRules.push({
+    label: f.elements.label.value.trim().toLowerCase(),
+    src_ip: f.elements.src_ip.value.trim(),
+    dest_ip: f.elements.dest_ip.value.trim(),
+    dest_port: f.elements.dest_port.value.trim(),
+    proto: f.elements.proto.value,
+    use_wan: f.elements.use_wan.value,
+  });
+  renderMwRules();
+  $("mwr-dialog").close();
 });
 
 $("ov-form").addEventListener("submit", async (ev) => {

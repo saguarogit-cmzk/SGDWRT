@@ -395,6 +395,7 @@ function openHostDialog(h) {
 
 let editRecUUID = null;
 let dnsDomain = "lan";
+let dnssecOn = false;
 
 async function loadDns() {
   const [st, rc] = await Promise.all([api("/dns/status"), api("/dns/records")]);
@@ -407,7 +408,13 @@ async function loadDns() {
     ["Lokalna domena", dm.domain || "—"],
     ["Lokalne zone", dm.local || "—"],
     ["Zaštita od DNS rebinda", dm.rebind_protection ? "uključena" : "isključena"],
+    ["Provjera potpisa (DNSSEC)", dm.dnssec ? "uključena"
+      : dm.dnssec_supported ? "isključena" : "nedostupna (treba dnsmasq-full)"],
   ];
+  dnssecOn = !!dm.dnssec;
+  $("dnssec-toggle").classList.toggle("hidden", !dm.dnssec_supported);
+  $("dnssec-toggle").textContent = dnssecOn
+    ? "Isključi DNSSEC" : "Uključi DNSSEC provjeru";
   for (const [k, v] of rows) {
     const dt = document.createElement("dt"); dt.textContent = k;
     const dd = document.createElement("dd"); dd.textContent = v;
@@ -789,6 +796,58 @@ function openPeerDialog(p) {
   f.elements.notes.value = p ? p.notes || "" : "";
   f.elements.enabled.checked = p ? !!p.enabled : true;
   $("peer-dialog").showModal();
+}
+
+/* ---------- blokade (banIP + adblock-fast) ---------- */
+
+async function loadProtection() {
+  const x = await api("/protection");
+
+  const bi = x.banip || {};
+  $("bi-enabled").checked = !!bi.enabled;
+  $("bi-countries").value = bi.countries || "";
+  const feedBox = $("bi-feeds");
+  feedBox.replaceChildren();
+  const active = new Set(bi.feeds || []);
+  for (const f of bi.available_feeds || []) {
+    const lab = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.value = f.id; cb.checked = active.has(f.id);
+    lab.append(cb, document.createTextNode(" " + f.label));
+    feedBox.append(lab);
+  }
+  const rt = bi.runtime || {};
+  $("bi-status").textContent = !bi.installed
+    ? "Paket banip nije instaliran."
+    : bi.enabled
+      ? "Stanje: " + (rt.status === "active" ? "aktivno" : rt.status || "pokreće se") +
+        (rt.element_count ? " · blokiranih zapisa: " + rt.element_count : "") +
+        (rt.last_run ? " · zadnja obrada: " + rt.last_run : "")
+      : "Blokada IP adresa je isključena.";
+
+  const ad = x.adblock || {};
+  $("ad-enabled").checked = !!ad.enabled;
+  const entBox = $("ad-entries");
+  entBox.replaceChildren();
+  for (const e of ad.entries || []) {
+    const lab = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.value = e.section; cb.checked = e.enabled;
+    const mb = e.size ? " (" + (e.size / 1048576).toFixed(1) + " MB)" : "";
+    const span = document.createElement("span");
+    span.append(document.createTextNode(e.name));
+    const sub = document.createElement("span");
+    sub.className = "sub";
+    sub.textContent = mb;
+    span.append(sub);
+    lab.append(cb, span);
+    entBox.append(lab);
+  }
+  $("ad-status").textContent = !ad.installed
+    ? "Paket adblock-fast nije instaliran."
+    : ad.active_size
+      ? "Aktivna lista blokiranih domena: " + fmtBytes(ad.active_size)
+      : ad.enabled ? "Uključeno — liste se preuzimaju…" : "Blokada domena je isključena.";
 }
 
 /* ---------- multi-wan ---------- */
@@ -1214,6 +1273,7 @@ const MODULES = {
   dhcp:      ["DHCP", "Dodjela IP adresa i rezervacije za uređaje u mreži", () => loadDhcp()],
   dns:       ["DNS", "Lokalna imena uređaja (npr. nas.lan umjesto IP adrese)", () => loadDns()],
   firewall:  ["Firewall", "Pravila prometa, port forwardi, DMZ i 1:1 NAT", () => loadFirewall()],
+  protection: ["Blokade", "Blokiranje zloćudnih IP adresa i reklamnih/malware domena", () => loadProtection()],
   wireguard: ["WireGuard", "Udaljeni pristup — moderni VPN s ključevima", () => loadWireguard()],
   openvpn:   ["OpenVPN", "Udaljeni pristup — klasični VPN s certifikatima", () => loadOpenvpn()],
   devices:   ["Uređaji", "Inventar opreme — ovaj uređaj i susjedni", () => loadDevices()],
@@ -1223,7 +1283,7 @@ const MODULES = {
 const NAV_GROUPS = [
   ["Status", ["dashboard"]],
   ["Mreža", ["network", "multiwan", "dhcp", "dns"]],
-  ["Zaštita", ["firewall"]],
+  ["Zaštita", ["firewall", "protection"]],
   ["VPN", ["wireguard", "openvpn"]],
   ["Sustav", ["devices", "backup", "settings"]],
 ];
@@ -1725,6 +1785,53 @@ $("wgconf-copy").addEventListener("click", async () => {
     $("wgconf-copy").textContent = "Kopirano ✓";
   }
   setTimeout(() => { $("wgconf-copy").textContent = "Kopiraj"; }, 1500);
+});
+
+$("dnssec-toggle").addEventListener("click", async () => {
+  const next = !dnssecOn;
+  if (next && !confirm("Uključiti DNSSEC provjeru potpisa?\n\nDomene s krivo " +
+    "postavljenim potpisima prestat će se otvarati (to je i svrha zaštite).")) return;
+  try {
+    const r = await api("/dns/dnssec", "POST", { dnssec: next });
+    $("dnssec-result").textContent =
+      (r.dnssec ? "DNSSEC uključen." : "DNSSEC isključen.") + " Backup: " + r.backup;
+    await loadDns();
+  } catch (e) {
+    $("dnssec-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("bi-save").addEventListener("click", async () => {
+  const feeds = [...$("bi-feeds").querySelectorAll("input:checked")].map((c) => c.value);
+  $("bi-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/protection/banip", "POST", {
+      enabled: $("bi-enabled").checked,
+      feeds,
+      countries: $("bi-countries").value.trim(),
+    });
+    $("bi-result").textContent = (r.enabled
+      ? "Uključeno — " + r.note + "." : "Isključeno.") + " Backup: " + r.backup;
+    setTimeout(() => loadProtection().catch(() => {}), 4000);
+  } catch (e) {
+    $("bi-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("ad-save").addEventListener("click", async () => {
+  const sections = [...$("ad-entries").querySelectorAll("input:checked")].map((c) => c.value);
+  $("ad-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/protection/adblock", "POST", {
+      enabled: $("ad-enabled").checked,
+      sections,
+    });
+    $("ad-result").textContent = (r.enabled
+      ? "Uključeno — " + r.note + "." : "Isključeno.") + " Backup: " + r.backup;
+    setTimeout(() => loadProtection().catch(() => {}), 4000);
+  } catch (e) {
+    $("ad-result").textContent = "Greška: " + (e.message || e);
+  }
 });
 
 $("mw-save").addEventListener("click", async () => {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 )
@@ -211,10 +212,14 @@ func (s *server) handleDNSStatus(w http.ResponseWriter, r *http.Request) {
 	for name, sec := range cfg {
 		switch sectStr(sec, ".type") {
 		case "dnsmasq":
+			// DNSSEC provjera radi samo s dnsmasq-full (trust anchori uz paket)
+			_, anchors := os.Stat("/usr/share/dnsmasq/trust-anchors.conf")
 			settings = map[string]any{
 				"domain":            sectStr(sec, "domain"),
 				"local":             sectStr(sec, "local"),
 				"rebind_protection": sectStr(sec, "rebind_protection") != "0",
+				"dnssec":            sectStr(sec, "dnssec") == "1",
+				"dnssec_supported":  anchors == nil,
 			}
 		case "domain":
 			entries = append(entries, dnsEntry{
@@ -237,6 +242,91 @@ func (s *server) handleDNSStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"dnsmasq": settings,
 		"entries": entries,
+	})
+}
+
+// handleDNSSECSet uključuje/isključuje DNSSEC provjeru potpisa u dnsmasq-u.
+func (s *server) handleDNSSECSet(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var in struct {
+		DNSSEC *bool `json:"dnssec"`
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	if in.DNSSEC == nil {
+		writeErr(w, http.StatusBadRequest, "nedostaje polje dnssec")
+		return
+	}
+	if *in.DNSSEC {
+		if _, err := os.Stat("/usr/share/dnsmasq/trust-anchors.conf"); err != nil {
+			writeErr(w, http.StatusConflict,
+				"DNSSEC traži paket dnsmasq-full (trust anchori nedostaju)")
+			return
+		}
+	}
+	cfg, err := uciGetConfig(ctx, "dhcp")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	section := ""
+	for name, sec := range cfg {
+		if sectStr(sec, ".type") == "dnsmasq" {
+			section = name
+			break
+		}
+	}
+	if section == "" {
+		writeErr(w, http.StatusNotFound, "dnsmasq sekcija ne postoji")
+		return
+	}
+	backupName, err := s.backupConfig(dhcpConfig)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "backup: "+err.Error())
+		return
+	}
+	var b strings.Builder
+	sec := cfg[section]
+	if *in.DNSSEC {
+		fmt.Fprintf(&b, "set dhcp.%s.dnssec=1\n", section)
+		// DNSSEC traži upstream koji prosljeđuje DNSSEC zapise; kućni/ISP
+		// routeri to često ne rade pa bi SVE domene padale. Ako korisnik
+		// nema vlastite upstreame, postavljamo javne (i pamtimo da smo mi).
+		if len(sectList(sec, "server")) == 0 {
+			fmt.Fprintf(&b, "add_list dhcp.%s.server=1.1.1.1\n", section)
+			fmt.Fprintf(&b, "add_list dhcp.%s.server=8.8.8.8\n", section)
+			fmt.Fprintf(&b, "set dhcp.%s.noresolv=1\n", section)
+			s.setSetting("dnssec_servers_added", "1")
+		}
+	} else {
+		if sectStr(sec, "dnssec") != "" {
+			fmt.Fprintf(&b, "delete dhcp.%s.dnssec\n", section)
+		}
+		if s.getSetting("dnssec_servers_added", "0") == "1" {
+			fmt.Fprintf(&b, "del_list dhcp.%s.server=1.1.1.1\n", section)
+			fmt.Fprintf(&b, "del_list dhcp.%s.server=8.8.8.8\n", section)
+			if sectStr(sec, "noresolv") != "" {
+				fmt.Fprintf(&b, "delete dhcp.%s.noresolv\n", section)
+			}
+			s.setSetting("dnssec_servers_added", "0")
+		}
+	}
+	if sectStr(sec, "dnsseccheckunsigned") != "" {
+		fmt.Fprintf(&b, "delete dhcp.%s.dnsseccheckunsigned\n", section)
+	}
+	b.WriteString("commit dhcp\n")
+	if err := uciBatch(ctx, b.String()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// promjena DNSSEC-a traži restart, reload nije dovoljan
+	if err := serviceReload(ctx, "dnsmasq", "restart"); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"dnssec": *in.DNSSEC, "backup": backupName,
 	})
 }
 

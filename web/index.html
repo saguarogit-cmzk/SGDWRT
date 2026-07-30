@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saguaro Infrastructure</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌵</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="login" class="login hidden">
+  <form id="login-form" class="login-card">
+    <div class="brand"><span class="brand-mark">SAGUARO</span><span class="brand-sub">Infrastructure</span></div>
+    <label for="token-input">API token</label>
+    <input id="token-input" type="password" autocomplete="off" spellcheck="false"
+           placeholder="zalijepi token s uređaja" required>
+    <p class="hint">Token se nalazi na uređaju u <code>/opt/saguaro/etc/token</code></p>
+    <p id="login-error" class="login-error hidden">Neispravan token ili uređaj nedostupan.</p>
+    <button type="submit">Prijava</button>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <div class="brand"><span class="brand-mark">SAGUARO</span><span class="brand-sub">Infrastructure</span></div>
+    <div class="head-right">
+      <span id="hostname" class="host-chip">—</span>
+      <span id="health-badge" class="st">—</span>
+      <button id="logout" class="ghost" title="Odjava">Odjava</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="tiles">
+      <div class="tile">
+        <div class="tile-label">CPU opterećenje</div>
+        <div class="tile-value" id="t-cpu">—</div>
+        <div class="tile-sub" id="t-cpu-sub">1 min prosjek</div>
+        <div class="meter"><div class="meter-fill" id="m-cpu"></div></div>
+      </div>
+      <div class="tile">
+        <div class="tile-label">Memorija</div>
+        <div class="tile-value" id="t-ram">—</div>
+        <div class="tile-sub" id="t-ram-sub">—</div>
+        <div class="meter"><div class="meter-fill" id="m-ram"></div></div>
+      </div>
+      <div class="tile">
+        <div class="tile-label">Disk /</div>
+        <div class="tile-value" id="t-disk">—</div>
+        <div class="tile-sub" id="t-disk-sub">—</div>
+        <div class="meter"><div class="meter-fill" id="m-disk"></div></div>
+      </div>
+      <div class="tile">
+        <div class="tile-label">Uptime</div>
+        <div class="tile-value" id="t-uptime">—</div>
+        <div class="tile-sub">od zadnjeg pokretanja</div>
+      </div>
+    </section>
+
+    <section class="grid-2">
+      <div class="card">
+        <h2>Sustav</h2>
+        <dl class="kv" id="system-kv"></dl>
+      </div>
+      <div class="card">
+        <h2>Povezivost</h2>
+        <ul class="checks" id="health-checks"></ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Portovi</h2>
+      <div class="ports" id="ports"></div>
+    </section>
+
+    <section class="card">
+      <h2>Mrežna sučelja</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Sučelje</th><th>Stanje</th><th>Protokol</th><th>Uređaj</th>
+            <th>IPv4</th><th>Gateway</th><th>DNS</th><th>Aktivno</th>
+          </tr></thead>
+          <tbody id="iface-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span id="versions">—</span>
+    <span id="refreshed">—</span>
+  </footer>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

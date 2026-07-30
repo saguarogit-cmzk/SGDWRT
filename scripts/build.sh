@@ -6,4 +6,8 @@ mkdir -p dist
 cd core
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 	go build -trimpath -ldflags "-s -w" -o ../dist/saguaro-core .
-ls -lh ../dist/saguaro-core
+cd ..
+rm -rf dist/web
+cp -r web dist/web
+ls -lh dist/saguaro-core
+ls dist/web

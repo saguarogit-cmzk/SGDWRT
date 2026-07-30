@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -107,6 +108,7 @@ func (s *server) handleSystem(w http.ResponseWriter, r *http.Request) {
 		"hostname":        b.Hostname,
 		"model":           model,
 		"cpu":             b.System,
+		"cpu_cores":       runtime.NumCPU(),
 		"kernel":          b.Kernel,
 		"firmware":        b.Release.Description,
 		"openwrt_version": b.Release.Version,

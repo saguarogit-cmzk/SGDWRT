@@ -13,7 +13,7 @@ ssh "$TARGET" "mkdir -p $DEST/bin $DEST/web $DEST/etc $DEST/data $DEST/log"
 
 # scp -O = legacy SCP protokol — dropbear na OpenWrt-u nema sftp-server
 [ -f dist/saguaro-core ] && scp -O dist/saguaro-core "$TARGET:$DEST/bin/saguaro-core.new"
-[ -d dist/web ] && scp -O -r dist/web/. "$TARGET:$DEST/web/"
+[ -d dist/web ] && scp -O -r dist/web/* "$TARGET:$DEST/web/"
 [ -f image/files/etc/init.d/saguaro-core ] && scp -O image/files/etc/init.d/saguaro-core "$TARGET:/etc/init.d/saguaro-core"
 
 ssh "$TARGET" "

@@ -49,12 +49,14 @@
         <div class="tile-value" id="t-cpu">—</div>
         <div class="tile-sub" id="t-cpu-sub">1 min prosjek</div>
         <div class="meter"><div class="meter-fill" id="m-cpu"></div></div>
+        <svg class="spark" id="spark-cpu" viewBox="0 0 100 24" preserveAspectRatio="none"></svg>
       </div>
       <div class="tile">
         <div class="tile-label">Memorija</div>
         <div class="tile-value" id="t-ram">—</div>
         <div class="tile-sub" id="t-ram-sub">—</div>
         <div class="meter"><div class="meter-fill" id="m-ram"></div></div>
+        <svg class="spark" id="spark-ram" viewBox="0 0 100 24" preserveAspectRatio="none"></svg>
       </div>
       <div class="tile">
         <div class="tile-label">Disk /</div>
@@ -355,6 +357,8 @@
         <div id="bi-feeds" class="checklist"></div>
         <label class="stack-label">Blokiraj zemlje (dvoslovne oznake, razmakom odvojene)
           <input id="bi-countries" placeholder="npr. ru cn kp — prazno = bez blokade po zemlji"></label>
+        <label class="stack-label">Iznimke — IP adrese/CIDR koje se nikad ne blokiraju
+          <input id="bi-allow" placeholder="npr. 203.0.113.5 198.51.100.0/24"></label>
         <div class="form-actions" style="justify-content:flex-start">
           <button id="bi-save" class="primary">Spremi i primijeni</button>
         </div>
@@ -368,6 +372,8 @@
           ovaj uređaj kao DNS.</p>
         <label class="check-row"><input type="checkbox" id="ad-enabled"> Uključeno</label>
         <div id="ad-entries" class="checklist"></div>
+        <label class="stack-label">Iznimke — domene koje se nikad ne blokiraju
+          <input id="ad-allow" placeholder="npr. mojadomena.hr stats.partner.com"></label>
         <div class="form-actions" style="justify-content:flex-start">
           <button id="ad-save" class="primary">Spremi i primijeni</button>
         </div>
@@ -524,6 +530,25 @@
         </table>
       </div>
     </section>
+    <section class="card" style="max-width:560px">
+      <h2>Automatski raspored</h2>
+      <p class="hint">Uređaj sam izrađuje puni backup (čuva zadnjih 10 na
+        uređaju). Redovito ih preuzmi i na sigurno mjesto izvan uređaja.</p>
+      <div class="form-grid">
+        <label class="check" style="grid-column:auto"><input type="checkbox" id="bs-enabled">
+          Uključen</label>
+        <label>Učestalost
+          <select id="bs-freq">
+            <option value="daily">Svaki dan u 03:00</option>
+            <option value="weekly">Nedjeljom u 03:00</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="bs-save" class="primary">Spremi raspored</button>
+      </div>
+      <p class="hint" id="bs-result"></p>
+    </section>
     <section class="card">
       <h2>Automatski backupi konfiguracija (prije svake primjene)</h2>
       <div class="table-wrap">
@@ -609,6 +634,142 @@
     </form>
   </dialog>
 
+  <div class="view hidden" id="view-update">
+    <section class="grid-2">
+      <div class="card">
+        <h2>Stanje verzija</h2>
+        <dl class="kv" id="up-kv"></dl>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button id="up-github" class="primary hidden">Nadogradi s GitHuba</button>
+        </div>
+        <p class="hint" id="up-github-note"></p>
+      </div>
+      <div class="card">
+        <h2>Ručna nadogradnja</h2>
+        <p class="hint">Učitaj release paket
+          (<code>saguaro-…-linux-amd64.tar.gz</code>). Prije primjene radi se
+          puni backup, a servis se nakon zamjene sam ponovno pokreće.</p>
+        <input type="file" id="up-file" accept=".tar.gz,.tgz">
+        <div class="form-actions" style="justify-content:flex-start">
+          <button id="up-upload" class="ghost">Učitaj paket</button>
+          <button id="up-apply" class="primary hidden">Primijeni nadogradnju</button>
+        </div>
+        <p class="hint" id="up-result"></p>
+      </div>
+    </section>
+  </div>
+
+  <div class="view hidden" id="view-help">
+    <section class="card" style="max-width:860px">
+      <h2>Kako koristiti Saguaro — upute po modulima</h2>
+      <p class="hint">Klikni naslov za upute. Zajedničko pravilo svih modula:
+        promjene se najprije spremaju u bazu, a na uređaj se primjenjuju tek
+        gumbom <b>Primijeni</b>. Prije svake primjene uređaj sam sprema backup
+        konfiguracije, a Saguaro nikad ne dira postavke koje nije sam stvorio.</p>
+
+      <details class="help"><summary>Dashboard — pregled stanja</summary><div>
+        Pločice pokazuju opterećenje procesora, memoriju, disk i vrijeme rada,
+        s malim grafom zadnjih sat vremena. "Internet veza" provjerava tri
+        stvari: izlaz prema mreži (gateway), pretvorbu imena u adrese (DNS —
+        npr. google.com → IP) i stvaran pristup internetu. "Portovi" pokazuju
+        koji mrežni priključci imaju kabel.
+      </div></details>
+
+      <details class="help"><summary>Mreža — LAN, WAN i VLAN</summary><div>
+        <b>LAN adresa</b>: promjena adrese samog uređaja — nakon primjene
+        browser te preusmjeri na novu adresu. <b>WAN</b>: veze prema internetu;
+        podržani su automatski (DHCP), statički (može više javnih adresa
+        odjednom) i PPPoE. Dodatni WAN-ovi služe za failover. <b>VLAN</b>:
+        jedan korak stvara odvojenu mrežu (npr. za goste) — podmrežu, DHCP i
+        pravila pristupa (samo internet / internet + LAN / izolirano). Uređaji
+        u VLAN-u spajaju se preko switcha koji tagira taj VLAN.
+      </div></details>
+
+      <details class="help"><summary>Multi-WAN — više internet veza</summary><div>
+        <b>Failover</b>: veza s manjim prioritetom je glavna; kad njene
+        nadzorne adrese prestanu odgovarati na ping, promet prelazi na
+        pričuvnu. <b>Raspodjela</b>: promet se dijeli po udjelima. <b>Pravila
+        usmjeravanja</b>: određeni promet (npr. računovodstvo) uvijek ide
+        preko određene veze.
+      </div></details>
+
+      <details class="help"><summary>DHCP — dodjela adresa</summary><div>
+        Poolovi određuju koji raspon adresa se dijeli po mreži; svaki se može
+        uključiti/isključiti (isključi ako adrese već dijeli drugi router!).
+        <b>Rezervacije</b>: uređaj s upisanim MAC-om uvijek dobije istu
+        adresu — dodaješ ručno ili gumbom "U rezervacije" kod aktivnih
+        leaseova. Vrijede nakon gumba Primijeni.
+      </div></details>
+
+      <details class="help"><summary>DNS — lokalna imena i DNSSEC</summary><div>
+        Lokalni zapisi daju uređajima imena (npr. <code>nas.lan</code> umjesto
+        192.168.1.50). Tip A = ime → adresa; CNAME = dodatno ime (alias) za
+        postojeće ime. <b>DNSSEC</b> provjerava kriptografske potpise DNS
+        odgovora — domene s krivotvorenim odgovorima se odbijaju.
+      </div></details>
+
+      <details class="help"><summary>Firewall — pravila i port forwardi</summary><div>
+        <b>Port forward</b>: usluga iz lokalne mreže (npr. web server) postaje
+        dostupna izvana na odabranom portu. <b>Pravila prometa</b>: dopusti ili
+        zabrani promet po zonama, adresama i portovima; prazno odredište znači
+        "prema samom uređaju". <b>DMZ</b>: sav neuhvaćeni promet s interneta
+        ide na jedan interni host (oprez — host je potpuno izložen).
+        <b>1:1 NAT</b>: cijela javna adresa preslikava se na interni server.
+      </div></details>
+
+      <details class="help"><summary>Blokade — zaštita mreže</summary><div>
+        <b>banIP</b> blokira promet prema/od poznatih zloćudnih adresa i po
+        želji cijelih zemalja — radi u firewallu, bez usporavanja. <b>Blokada
+        domena</b> na DNS razini uklanja reklame i zloćudne domene za sve u
+        mreži. <b>Iznimke</b>: upiši domene ili adrese koje se nikad ne smiju
+        blokirati (npr. vlastita domena) — imaju prednost pred listama.
+      </div></details>
+
+      <details class="help"><summary>WireGuard i OpenVPN — udaljeni pristup</summary><div>
+        Oba VPN-a rade isto, razlika je u klijentima: WireGuard je brži i
+        jednostavniji, OpenVPN radi i na starijoj opremi. Dodaš korisnika s
+        adresom u tunelu, gumb <b>Config</b> daje gotovu datoteku za njegovu
+        aplikaciju. Veze su <b>split tunnel</b>: korisnik kroz tunel vidi samo
+        lokalnu mrežu, na internet ide svojom vezom. <b>Pristup</b>: u
+        ograničenom načinu svaki korisnik doseže samo ono što mu izričito
+        dopustiš (segment, adresu, port). Isključen korisnik gubi pristup
+        nakon primjene.
+      </div></details>
+
+      <details class="help"><summary>Uređaji — inventar</summary><div>
+        Popis opreme: ovaj uređaj se upisuje sam (hardver, verzije), susjedne
+        i klijentske uređaje dodaješ ručno s lokacijom i napomenama.
+      </div></details>
+
+      <details class="help"><summary>Backup — kopije i vraćanje</summary><div>
+        Puni backup sadrži svu konfiguraciju uređaja, Saguaro bazu i
+        certifikate. <b>Preuzmi</b> arhivu na računalo — backup koji živi samo
+        na uređaju nije pravi backup. <b>Vraćanje</b> prepiše sve i ponovno
+        pokrene uređaj (radi i s arhivom drugog uređaja — kloniranje).
+        <b>Raspored</b> radi backup automatski svaki dan ili tjedan.
+      </div></details>
+
+      <details class="help"><summary>Ažuriranje — nova verzija sustava</summary><div>
+        Uređaj provjerava ima li novo izdanje na GitHubu; nadogradnja se može
+        i ručno učitati kao paket. Prije svake nadogradnje automatski se radi
+        puni backup, pa se u slučaju problema stanje vrati kroz Backup modul.
+      </div></details>
+
+      <details class="help"><summary>Postavke — račun i sustav</summary><div>
+        Promjena lozinke (odjavljuje ostale sesije), pregled aktivnih sesija,
+        API token za skripte te slanje logova na vanjski syslog poslužitelj.
+      </div></details>
+
+      <details class="help"><summary>Instalacija na novi uređaj</summary><div>
+        Na svježem OpenWrt 25.x uređaju pokreni:
+        <code>wget -O - https://raw.githubusercontent.com/saguarogit-cmzk/SGDWRT/main/scripts/install.sh | sh</code>
+        — skripta instalira pakete, preuzme zadnje izdanje i pokrene Saguaro.
+        Prva prijava: korisnik <code>admin</code>, lozinka = sadržaj
+        <code>/opt/saguaro/etc/token</code> na uređaju.
+      </div></details>
+    </section>
+  </div>
+
   <div class="view hidden" id="view-settings">
     <section class="grid-2">
       <div class="card">
@@ -640,6 +801,24 @@
         </div>
         <p class="hint" id="sess-result"></p>
       </div>
+    </section>
+    <section class="card" style="max-width:720px">
+      <h2>Slanje logova na vanjski poslužitelj (syslog)</h2>
+      <p class="hint">Kopija sustavskih logova šalje se na syslog poslužitelj —
+        korisno kad se više uređaja nadzire s jednog mjesta.</p>
+      <div class="form-grid">
+        <label class="check" style="grid-column:1/-1"><input type="checkbox" id="sl-enabled">
+          Uključeno</label>
+        <label>Poslužitelj (IP)<input id="sl-host" placeholder="192.168.50.10"></label>
+        <label>Port<input id="sl-port" placeholder="514"></label>
+        <label>Protokol
+          <select id="sl-proto"><option value="udp">UDP</option><option value="tcp">TCP</option></select>
+        </label>
+      </div>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="sl-save" class="primary">Spremi</button>
+      </div>
+      <p class="hint" id="sl-result"></p>
     </section>
     <section class="card" style="max-width:720px">
       <h2>API token</h2>

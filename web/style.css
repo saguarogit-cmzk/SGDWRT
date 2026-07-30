@@ -175,6 +175,21 @@ dialog h2{margin:0 0 16px;font-size:17px;font-weight:700}
 .checklist .sub{color:var(--faint);font-size:12px}
 .stack-label{display:grid;gap:5px;color:var(--muted);font-size:12.5px;font-weight:600;margin:10px 0}
 
+/* ---------- sparkline grafovi ---------- */
+.spark{width:100%;height:24px;margin-top:8px;display:block}
+.spark polyline{fill:none;stroke:var(--brand);stroke-width:1.6}
+
+/* ---------- pomoć (harmonika) ---------- */
+.help{margin:8px 0;border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:#f8fafc;padding:0 14px}
+.help>summary{cursor:pointer;color:var(--accent);font-size:13.5px;font-weight:600;
+  padding:11px 0;list-style:none}
+.help>summary::-webkit-details-marker{display:none}
+.help>summary::before{content:"▸ ";color:var(--faint)}
+.help[open]>summary::before{content:"▾ "}
+.help[open]>summary{border-bottom:1px solid var(--line)}
+.help>div{color:var(--muted);font-size:13px;line-height:1.6;padding:10px 0 14px}
+
 footer{margin-top:auto;padding-top:18px;display:flex;justify-content:space-between;
   color:var(--faint);font-size:12px}
 

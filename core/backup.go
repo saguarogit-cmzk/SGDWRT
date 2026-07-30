@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,30 +27,27 @@ const restoreMaxBytes = 200 << 20
 
 /* ---------- izrada ---------- */
 
-func (s *server) handleBackupCreate(w http.ResponseWriter, r *http.Request) {
+// createFullBackup izradi punu arhivu; koristi je i Update modul prije nadogradnje.
+func (s *server) createFullBackup(ctx context.Context) (string, int64, error) {
 	ts := time.Now().Format("20060102-150405")
 	tmp, err := os.MkdirTemp("", "sagbk-*")
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
+		return "", 0, err
 	}
 	defer os.RemoveAll(tmp)
 
 	// kanonski OpenWrt backup /etc datoteka
 	etcTar := filepath.Join(tmp, "etc.tar.gz")
-	if out, err := exec.CommandContext(r.Context(), "sysupgrade", "-b", etcTar).
+	if out, err := exec.CommandContext(ctx, "sysupgrade", "-b", etcTar).
 		CombinedOutput(); err != nil {
-		writeErr(w, http.StatusInternalServerError,
-			fmt.Sprintf("sysupgrade -b: %v: %s", err, out))
-		return
+		return "", 0, fmt.Errorf("sysupgrade -b: %v: %s", err, out)
 	}
 
 	// konzistentan snapshot žive SQLite baze
 	dbSnap := filepath.Join(tmp, "saguaro.db")
 	if _, err := s.db.Exec("VACUUM INTO '" +
 		strings.ReplaceAll(dbSnap, "'", "''") + "'"); err != nil {
-		writeErr(w, http.StatusInternalServerError, "snapshot baze: "+err.Error())
-		return
+		return "", 0, fmt.Errorf("snapshot baze: %w", err)
 	}
 
 	host, _ := os.Hostname()
@@ -64,18 +62,118 @@ func (s *server) handleBackupCreate(w http.ResponseWriter, r *http.Request) {
 	outPath := filepath.Join(s.backupDir, name)
 	if err := writeBackupArchive(outPath, manifest, etcTar, dbSnap, s.etcDir); err != nil {
 		os.Remove(outPath)
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
+		return "", 0, err
 	}
 	s.rotateBackups(fullPrefix, fullKeep)
 
 	fi, err := os.Stat(outPath)
 	if err != nil {
+		return "", 0, err
+	}
+	return name, fi.Size(), nil
+}
+
+func (s *server) handleBackupCreate(w http.ResponseWriter, r *http.Request) {
+	name, size, err := s.createFullBackup(r.Context())
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"archive": name, "size_bytes": fi.Size(),
+		"archive": name, "size_bytes": size,
+	})
+}
+
+/* ---------- raspored automatskog backupa (cron) ---------- */
+
+const cronFile = "/etc/crontabs/root"
+const cronMarker = "# sag-backup"
+
+func (s *server) backupCronScript() string {
+	return filepath.Join(s.etcDir, "backup-cron.sh")
+}
+
+func readBackupSchedule() (enabled bool, freq string) {
+	b, err := os.ReadFile(cronFile)
+	if err != nil {
+		return false, "daily"
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if !strings.Contains(line, cronMarker) {
+			continue
+		}
+		if strings.HasPrefix(line, "0 3 * * 0") {
+			return true, "weekly"
+		}
+		return true, "daily"
+	}
+	return false, "daily"
+}
+
+func (s *server) handleBackupScheduleGet(w http.ResponseWriter, r *http.Request) {
+	enabled, freq := readBackupSchedule()
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": enabled, "freq": freq})
+}
+
+func (s *server) handleBackupScheduleSet(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Enabled *bool  `json:"enabled"`
+		Freq    string `json:"freq"`
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	if in.Enabled == nil {
+		writeErr(w, http.StatusBadRequest, "nedostaje polje enabled")
+		return
+	}
+	if in.Freq == "" {
+		in.Freq = "daily"
+	}
+	if in.Freq != "daily" && in.Freq != "weekly" {
+		writeErr(w, http.StatusBadRequest, "freq mora biti daily ili weekly")
+		return
+	}
+
+	// pomoćna skripta zove vlastiti API (server je već autoritet za izradu)
+	script := "#!/bin/sh\n" +
+		"# Saguaro raspoređeni backup — poziva lokalni API\n" +
+		"curl -sk -H \"Authorization: Bearer $(cat " +
+		filepath.Join(s.etcDir, "token") + ")\" -X POST -d '{}' " +
+		"https://127.0.0.1:8443/api/v1/backup/create >/dev/null 2>&1\n"
+	if err := os.WriteFile(s.backupCronScript(), []byte(script), 0o700); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	old, _ := os.ReadFile(cronFile)
+	var lines []string
+	for _, l := range strings.Split(string(old), "\n") {
+		if l != "" && !strings.Contains(l, cronMarker) {
+			lines = append(lines, l)
+		}
+	}
+	if *in.Enabled {
+		spec := "0 3 * * *"
+		if in.Freq == "weekly" {
+			spec = "0 3 * * 0"
+		}
+		lines = append(lines, spec+" "+s.backupCronScript()+" "+cronMarker)
+	}
+	content := strings.Join(lines, "\n")
+	if content != "" {
+		content += "\n"
+	}
+	if err := os.WriteFile(cronFile, []byte(content), 0o600); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := serviceReload(r.Context(), "cron", "restart"); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled": *in.Enabled, "freq": in.Freq,
 	})
 }
 

@@ -16,6 +16,7 @@ import (
 const banipConfig = "/etc/config/banip"
 const adblockConfig = "/etc/config/adblock-fast"
 const banipRuntime = "/var/run/banIP/banIP.runtime.json"
+const banipAllowlist = "/etc/banip/banip.allowlist"
 
 var reCountry = regexp.MustCompile(`^[a-z]{2}$`)
 
@@ -52,6 +53,16 @@ func (s *server) handleProtectionGet(w http.ResponseWriter, r *http.Request) {
 	banip := map[string]any{"installed": false}
 	if _, err := os.Stat("/etc/init.d/banip"); err == nil {
 		banip["installed"] = true
+		if b, err := os.ReadFile(banipAllowlist); err == nil {
+			ips := []string{}
+			for _, l := range strings.Split(string(b), "\n") {
+				l = strings.TrimSpace(l)
+				if l != "" && !strings.HasPrefix(l, "#") {
+					ips = append(ips, l)
+				}
+			}
+			banip["allow_ips"] = strings.Join(ips, " ")
+		}
 		cfg, err := uciGetConfig(r.Context(), "banip")
 		if err == nil {
 			if g, ok := cfg["global"]; ok {
@@ -85,6 +96,7 @@ func (s *server) handleProtectionGet(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			if g, ok := cfg["config"]; ok {
 				ad["enabled"] = sectStr(g, "enabled") == "1"
+				ad["allowed_domains"] = strings.Join(sectList(g, "allowed_domain"), " ")
 			}
 			type entry struct {
 				Section string `json:"section"`
@@ -131,6 +143,7 @@ func (s *server) handleBanipSet(w http.ResponseWriter, r *http.Request) {
 		Enabled   *bool    `json:"enabled"`
 		Feeds     []string `json:"feeds"`
 		Countries string   `json:"countries"`
+		AllowIPs  string   `json:"allow_ips"`
 	}
 	if !decodeBody(w, r, &in) {
 		return
@@ -142,6 +155,13 @@ func (s *server) handleBanipSet(w http.ResponseWriter, r *http.Request) {
 	for _, f := range in.Feeds {
 		if !validBanipFeed(f) {
 			writeErr(w, http.StatusBadRequest, "nepoznat feed: "+f)
+			return
+		}
+	}
+	allowIPs := strings.Fields(in.AllowIPs)
+	for _, a := range allowIPs {
+		if !validAddr(a) {
+			writeErr(w, http.StatusBadRequest, "neispravna iznimka (IP ili CIDR): "+a)
 			return
 		}
 	}
@@ -198,6 +218,18 @@ func (s *server) handleBanipSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// iznimke: adrese koje se nikad ne blokiraju (banip.allowlist datoteka,
+	// predviđena za uređivanje)
+	var al strings.Builder
+	al.WriteString("# Saguaro iznimke — adrese koje se nikad ne blokiraju\n")
+	for _, a := range allowIPs {
+		al.WriteString(a + "\n")
+	}
+	if err := os.WriteFile(banipAllowlist, []byte(al.String()), 0o644); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	action := "restart"
 	if !*in.Enabled {
 		action = "stop"
@@ -217,8 +249,9 @@ func (s *server) handleBanipSet(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleAdblockSet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var in struct {
-		Enabled  *bool    `json:"enabled"`
-		Sections []string `json:"sections"` // uključene file_url sekcije
+		Enabled        *bool    `json:"enabled"`
+		Sections       []string `json:"sections"` // uključene file_url sekcije
+		AllowedDomains string   `json:"allowed_domains"`
 	}
 	if !decodeBody(w, r, &in) {
 		return
@@ -226,6 +259,14 @@ func (s *server) handleAdblockSet(w http.ResponseWriter, r *http.Request) {
 	if in.Enabled == nil {
 		writeErr(w, http.StatusBadRequest, "nedostaje polje enabled")
 		return
+	}
+	allowed := []string{}
+	for _, d := range strings.Fields(strings.ToLower(in.AllowedDomains)) {
+		if !validDNSName(d) {
+			writeErr(w, http.StatusBadRequest, "neispravna domena u iznimkama: "+d)
+			return
+		}
+		allowed = append(allowed, d)
 	}
 	cfg, err := uciGetConfig(ctx, "adblock-fast")
 	if err != nil {
@@ -257,6 +298,14 @@ func (s *server) handleAdblockSet(w http.ResponseWriter, r *http.Request) {
 		en = "1"
 	}
 	b.WriteString("set adblock-fast.config.enabled=" + en + "\n")
+	if g, ok := cfg["config"]; ok {
+		if _, has := g["allowed_domain"]; has {
+			b.WriteString("delete adblock-fast.config.allowed_domain\n")
+		}
+	}
+	for _, d := range allowed {
+		b.WriteString("add_list adblock-fast.config.allowed_domain=" + d + "\n")
+	}
 	for name, sec := range cfg {
 		if sectStr(sec, ".type") != "file_url" {
 			continue

@@ -806,6 +806,7 @@ async function loadProtection() {
   const bi = x.banip || {};
   $("bi-enabled").checked = !!bi.enabled;
   $("bi-countries").value = bi.countries || "";
+  $("bi-allow").value = bi.allow_ips || "";
   const feedBox = $("bi-feeds");
   feedBox.replaceChildren();
   const active = new Set(bi.feeds || []);
@@ -827,6 +828,7 @@ async function loadProtection() {
 
   const ad = x.adblock || {};
   $("ad-enabled").checked = !!ad.enabled;
+  $("ad-allow").value = ad.allowed_domains || "";
   const entBox = $("ad-entries");
   entBox.replaceChildren();
   for (const e of ad.entries || []) {
@@ -1033,12 +1035,70 @@ function openOvcDialog(c) {
   $("ovc-dialog").showModal();
 }
 
+/* ---------- ažuriranje ---------- */
+
+let upHasStaged = false;
+let upHasLatest = false;
+
+async function loadUpdate() {
+  const x = await api("/update/status");
+  const kv = $("up-kv");
+  kv.replaceChildren();
+  const rows = [["Instalirana verzija", "v" + x.current]];
+  if (x.latest && x.latest.tag) {
+    rows.push(["Zadnje izdanje na GitHubu", x.latest.tag +
+      (x.latest.asset ? ` (${x.latest.asset})` : "")]);
+    upHasLatest = !!x.latest.asset;
+  } else if (x.github_error) {
+    rows.push(["GitHub", "provjera nije uspjela"]);
+    upHasLatest = false;
+  } else {
+    rows.push(["Zadnje izdanje na GitHubu", "još nema objavljenih izdanja"]);
+    upHasLatest = false;
+  }
+  if (x.staged) {
+    rows.push(["Učitan paket", fmtBytes(x.staged.size_bytes) + " · " +
+      new Date(x.staged.uploaded_at * 1000).toLocaleString("hr-HR")]);
+  }
+  upHasStaged = !!x.staged;
+  for (const [k, v] of rows) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    kv.append(dt, dd);
+  }
+  $("up-github").classList.toggle("hidden", !upHasLatest);
+  $("up-apply").classList.toggle("hidden", !upHasStaged);
+  $("up-github-note").textContent = upHasLatest
+    ? "Nadogradnja preuzima paket, radi puni backup i ponovno pokreće servis."
+    : "";
+}
+
+async function applyUpdate(source) {
+  $("up-result").textContent = "Nadograđujem (backup + zamjena)…";
+  try {
+    const r = await api("/update/apply", "POST", { source });
+    stopTimers();
+    $("up-result").textContent =
+      `Nadogradnja primijenjena (backup: ${r.backup}). Servis se ponovno ` +
+      "pokreće — osvježi stranicu za ~10 sekundi.";
+  } catch (e) {
+    $("up-result").textContent = "Greška: " + (e.message || e);
+  }
+}
+
 /* ---------- postavke ---------- */
 
 let tokVisible = false;
 
 async function loadSettings() {
-  const s = await api("/auth/session");
+  const [s, sys] = await Promise.all([
+    api("/auth/session"), api("/settings/system"),
+  ]);
+  const sl = sys.syslog || {};
+  $("sl-enabled").checked = !!sl.enabled;
+  $("sl-host").value = sl.host || "";
+  $("sl-port").value = sl.port || "514";
+  $("sl-proto").value = sl.proto || "udp";
   const kv = $("sess-kv");
   kv.replaceChildren();
   for (const [k, v] of [["Prijavljen kao", s.username],
@@ -1100,7 +1160,11 @@ function btnSm(label, danger, onclick) {
 }
 
 async function loadBackup() {
-  const x = await api("/backup/archives");
+  const [x, sch] = await Promise.all([
+    api("/backup/archives"), api("/backup/schedule"),
+  ]);
+  $("bs-enabled").checked = !!sch.enabled;
+  $("bs-freq").value = sch.freq || "daily";
 
   const tb = $("bk-rows");
   tb.replaceChildren();
@@ -1278,14 +1342,16 @@ const MODULES = {
   openvpn:   ["OpenVPN", "Udaljeni pristup — klasični VPN s certifikatima", () => loadOpenvpn()],
   devices:   ["Uređaji", "Inventar opreme — ovaj uređaj i susjedni", () => loadDevices()],
   backup:    ["Backup", "Sigurnosne kopije uređaja i vraćanje", () => loadBackup()],
-  settings:  ["Postavke", "Korisnički račun, sesije i API token", () => loadSettings()],
+  update:    ["Ažuriranje", "Nadogradnja Saguaro sustava uz automatski backup", () => loadUpdate()],
+  settings:  ["Postavke", "Korisnički račun, sesije, API token i logovi", () => loadSettings()],
+  help:      ["Pomoć", "Upute za rad — kako koristiti svaki modul", () => null],
 };
 const NAV_GROUPS = [
   ["Status", ["dashboard"]],
   ["Mreža", ["network", "multiwan", "dhcp", "dns"]],
   ["Zaštita", ["firewall", "protection"]],
   ["VPN", ["wireguard", "openvpn"]],
-  ["Sustav", ["devices", "backup", "settings"]],
+  ["Sustav", ["devices", "backup", "update", "settings", "help"]],
 ];
 const groupOf = (id) => NAV_GROUPS.findIndex((g) => g[1].includes(id));
 const lastByGroup = {};
@@ -1354,6 +1420,27 @@ async function tickFast() {
 
 async function tickSlow() {
   renderHealth(await api("/health"));
+  drawSparks().catch(() => {});
+}
+
+// drawSparks crta male grafove zadnjih sat vremena u pločicama CPU/RAM
+async function drawSparks() {
+  const x = await api("/metrics/history");
+  const samples = x.samples || [];
+  const draw = (id, vals, max) => {
+    const svg = $(id);
+    if (!svg) return;
+    svg.replaceChildren();
+    if (vals.length < 2) return;
+    const top = Math.max(max, ...vals) || 1;
+    const pts = vals.map((v, i) =>
+      `${(i / (vals.length - 1)) * 100},${23 - (v / top) * 22}`).join(" ");
+    const pl = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    pl.setAttribute("points", pts);
+    svg.append(pl);
+  };
+  draw("spark-cpu", samples.map((s) => s.load1), cores);
+  draw("spark-ram", samples.map((s) => s.mem_pct), 100);
 }
 
 function stopTimers() { timers.forEach(clearInterval); timers = []; }
@@ -1809,6 +1896,7 @@ $("bi-save").addEventListener("click", async () => {
       enabled: $("bi-enabled").checked,
       feeds,
       countries: $("bi-countries").value.trim(),
+      allow_ips: $("bi-allow").value.trim(),
     });
     $("bi-result").textContent = (r.enabled
       ? "Uključeno — " + r.note + "." : "Isključeno.") + " Backup: " + r.backup;
@@ -1825,6 +1913,7 @@ $("ad-save").addEventListener("click", async () => {
     const r = await api("/protection/adblock", "POST", {
       enabled: $("ad-enabled").checked,
       sections,
+      allowed_domains: $("ad-allow").value.trim(),
     });
     $("ad-result").textContent = (r.enabled
       ? "Uključeno — " + r.note + "." : "Isključeno.") + " Backup: " + r.backup;
@@ -1957,6 +2046,66 @@ $("ovc-form").addEventListener("submit", async (ev) => {
     $("ovc-dialog").close();
     await loadOpenvpn();
   } catch (e) { alertErr(e); }
+});
+
+$("bs-save").addEventListener("click", async () => {
+  try {
+    const r = await api("/backup/schedule", "POST", {
+      enabled: $("bs-enabled").checked, freq: $("bs-freq").value,
+    });
+    $("bs-result").textContent = r.enabled
+      ? "Raspored uključen (" + (r.freq === "weekly" ? "tjedno" : "dnevno") + ")."
+      : "Raspored isključen.";
+  } catch (e) {
+    $("bs-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("sl-save").addEventListener("click", async () => {
+  try {
+    const r = await api("/settings/syslog", "POST", {
+      enabled: $("sl-enabled").checked,
+      host: $("sl-host").value.trim(),
+      port: parseInt($("sl-port").value, 10) || 0,
+      proto: $("sl-proto").value,
+    });
+    $("sl-result").textContent = r.enabled
+      ? "Logovi se šalju. Backup: " + r.backup : "Slanje logova isključeno.";
+  } catch (e) {
+    $("sl-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("up-upload").addEventListener("click", async () => {
+  const f = $("up-file").files[0];
+  if (!f) { alert("Odaberi .tar.gz paket."); return; }
+  $("up-result").textContent = "Učitavam…";
+  try {
+    const r = await fetch(API + "/update/upload", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token },
+      body: f,
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.status === 401) throw { unauthorized: true };
+    if (!r.ok) throw new Error(data.error || "HTTP " + r.status);
+    $("up-result").textContent = "Paket učitan (" + fmtBytes(data.size_bytes) + ").";
+    $("up-file").value = "";
+    await loadUpdate();
+  } catch (e) {
+    if (e && e.unauthorized) { logout(true); return; }
+    $("up-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("up-apply").addEventListener("click", () => {
+  if (!confirm("Primijeniti učitani paket? Radi se backup pa restart servisa.")) return;
+  applyUpdate("staged");
+});
+$("up-github").addEventListener("click", () => {
+  if (!confirm("Preuzeti i primijeniti zadnje izdanje s GitHuba?\n\n" +
+    "Radi se backup pa restart servisa.")) return;
+  applyUpdate("github");
 });
 
 $("pw-form").addEventListener("submit", async (ev) => {

@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const version = "0.13.0"
+const version = "0.14.0"
 
 type server struct {
 	tokenMu   sync.RWMutex
@@ -78,6 +78,8 @@ func main() {
 		}
 		cancel()
 	}
+
+	go collectMetrics()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
@@ -171,6 +173,14 @@ func main() {
 	mux.Handle("POST /api/v1/backup/upload", s.auth(s.handleBackupUpload))
 	mux.Handle("POST /api/v1/backup/restore", s.auth(s.handleBackupRestore))
 	mux.Handle("DELETE /api/v1/backup/archives/{name}", s.auth(s.handleBackupDelete))
+	mux.Handle("GET /api/v1/backup/schedule", s.auth(s.handleBackupScheduleGet))
+	mux.Handle("POST /api/v1/backup/schedule", s.auth(s.handleBackupScheduleSet))
+	mux.Handle("GET /api/v1/settings/system", s.auth(s.handleSystemSettingsGet))
+	mux.Handle("POST /api/v1/settings/syslog", s.auth(s.handleSyslogSet))
+	mux.Handle("GET /api/v1/metrics/history", s.auth(s.handleMetricsHistory))
+	mux.Handle("GET /api/v1/update/status", s.auth(s.handleUpdateStatus))
+	mux.Handle("POST /api/v1/update/upload", s.auth(s.handleUpdateUpload))
+	mux.Handle("POST /api/v1/update/apply", s.auth(s.handleUpdateApply))
 	mux.HandleFunc("/", s.handleRoot)
 
 	srv := &http.Server{

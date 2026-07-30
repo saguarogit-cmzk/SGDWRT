@@ -11,15 +11,18 @@ DEST=/opt/saguaro
 
 ssh "$TARGET" "mkdir -p $DEST/bin $DEST/web $DEST/etc $DEST/data $DEST/log"
 
-# scp umjesto rsynca — rsync nije garantiran na svježem OpenWrt-u
-[ -f dist/saguaro-core ] && scp dist/saguaro-core "$TARGET:$DEST/bin/saguaro-core.new"
-[ -d dist/web ] && scp -r dist/web/. "$TARGET:$DEST/web/"
+# scp -O = legacy SCP protokol — dropbear na OpenWrt-u nema sftp-server
+[ -f dist/saguaro-core ] && scp -O dist/saguaro-core "$TARGET:$DEST/bin/saguaro-core.new"
+[ -d dist/web ] && scp -O -r dist/web/. "$TARGET:$DEST/web/"
+[ -f image/files/etc/init.d/saguaro-core ] && scp -O image/files/etc/init.d/saguaro-core "$TARGET:/etc/init.d/saguaro-core"
 
 ssh "$TARGET" "
+  chmod +x /etc/init.d/saguaro-core 2>/dev/null || true
   if [ -f $DEST/bin/saguaro-core.new ]; then
     chmod +x $DEST/bin/saguaro-core.new
     mv $DEST/bin/saguaro-core.new $DEST/bin/saguaro-core
-    /etc/init.d/saguaro-core restart 2>/dev/null || true
+    /etc/init.d/saguaro-core enable
+    /etc/init.d/saguaro-core restart
   fi
 "
 echo "Deploy na $TARGET gotov."

@@ -38,9 +38,9 @@ type server struct {
 
 func main() {
 	listen := flag.String("listen", ":8443", "adresa:port za slušanje")
-	etcDir := flag.String("etc", "/opt/saguaro/etc", "direktorij konfiguracije (token, certifikat)")
+	etcDir := flag.String("etc", defaultEtcDir, "direktorij konfiguracije (token, certifikat)")
 	webDir := flag.String("web", "/opt/saguaro/web", "direktorij statičkog weba")
-	dataDir := flag.String("data", "/opt/saguaro/data", "direktorij podataka (SQLite)")
+	dataDir := flag.String("data", defaultDataDir, "direktorij podataka (SQLite)")
 	backupDir := flag.String("backup", "/opt/saguaro/backup", "direktorij backupa konfiguracija")
 	noTLS := flag.Bool("no-tls", false, "posluži bez TLS-a (samo za razvoj)")
 	resetAdmin := flag.String("reset-admin", "",
@@ -114,8 +114,13 @@ func main() {
 		cancel()
 	}
 
-	if err := ensureKeepList(*etcDir, *dataDir); err != nil {
-		log.Printf("upozorenje: popis za sysupgrade nije zapisan: %v", err)
+	// popis za sysupgrade se pise samo kad servis radi nad stvarnim
+	// direktorijima; testna instanca s vlastitim putanjama ne smije
+	// prepisati sistemsku datoteku svojim privremenim putanjama
+	if *etcDir == defaultEtcDir && *dataDir == defaultDataDir {
+		if err := ensureKeepList(*etcDir, *dataDir); err != nil {
+			log.Printf("upozorenje: popis za sysupgrade nije zapisan: %v", err)
+		}
 	}
 
 	go collectMetrics()

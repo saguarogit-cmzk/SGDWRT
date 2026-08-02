@@ -563,6 +563,11 @@ func replaceCronLine(marker, line string) error {
 // odnosno nepotrebno velike.
 const keepListFile = "/lib/upgrade/keep.d/saguaro"
 
+// zadani direktoriji; sluze i za provjeru radi li servis nad stvarnom
+// instalacijom ili je rijec o testnoj instanci
+const defaultEtcDir = "/opt/saguaro/etc"
+const defaultDataDir = "/opt/saguaro/data"
+
 func ensureKeepList(etcDir, dataDir string) error {
 	body := "# Saguaro — datoteke koje moraju preživjeti nadogradnju firmwarea\n" +
 		sysctlFile + "\n" +

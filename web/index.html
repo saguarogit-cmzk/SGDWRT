@@ -725,13 +725,13 @@
     </section>
     <section class="card">
       <div class="card-head">
-        <h2>VLAN mreže</h2>
-        <button id="vlan-add" class="primary">Dodaj VLAN</button>
+        <h2>Dodatne mreže (VLAN i mreže na portu)</h2>
+        <button id="vlan-add" class="primary">Dodaj mrežu</button>
       </div>
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>VID</th><th>Naziv</th><th>Port</th><th>Adresa uređaja</th>
+            <th>Vrsta</th><th>Naziv</th><th>Port</th><th>Adresa uređaja</th>
             <th>DHCP</th><th>Pristup</th><th>Stanje</th><th></th>
           </tr></thead>
           <tbody id="vlan-rows"></tbody>
@@ -840,10 +840,14 @@
         <b>LAN adresa</b>: promjena adrese samog uređaja — nakon primjene
         browser te preusmjeri na novu adresu. <b>WAN</b>: veze prema internetu;
         podržani su automatski (DHCP), statički (može više javnih adresa
-        odjednom) i PPPoE. Dodatni WAN-ovi služe za failover. <b>VLAN</b>:
-        jedan korak stvara odvojenu mrežu (npr. za goste) — podmrežu, DHCP i
-        pravila pristupa (samo internet / internet + LAN / izolirano). Uređaji
-        u VLAN-u spajaju se preko switcha koji tagira taj VLAN.
+        odjednom) i PPPoE. Dodatni WAN-ovi služe za failover.
+        <b>Dodatne mreže</b>: jedan korak stvara odvojenu mrežu s podmrežom,
+        DHCP-om i pravilima pristupa (samo internet / internet + LAN /
+        izolirano). Dvije vrste: <i>VLAN</i> (tagirano — više mreža jednim
+        kabelom preko switcha) i <i>cijeli port</i> (slobodan port postaje
+        zasebna mreža — za DMZ sa serverom, WiFi pristupnu točku ili
+        gostinsku mrežu). Za klasičan DMZ odaberi pristup "samo internet", pa
+        serveru objavi usluge port forwardima.
       </div></details>
 
       <details class="help"><summary>OSPF — automatska razmjena ruta</summary><div>
@@ -892,7 +896,9 @@
         <b>1:1 NAT</b>: cijela javna adresa preslikava se na interni server.
         <b>Čarobnjak "Objavi server"</b>: odabereš interni server (ili ga
         izabereš iz inventara), označiš usluge (web, mail, RDP…) i po želji
-        javnu adresu — čarobnjak složi sve forwarde odjednom. <b>NAT
+        javnu adresu — čarobnjak složi sve forwarde odjednom, a uz kvačicu
+        "dopusti pristup iz svih internih mreža" i pravila da serveru mogu
+        pristupiti korisnici iz LAN-a, VLAN-ova, DMZ-a i s VPN-a. <b>NAT
         reflection (hairpin)</b>: uz svaki forward, uključeno znači da serveru
         preko javne adrese pristupaju i korisnici iznutra — iz LAN-a, svih
         VLAN-ova i s VPN-a. Ako korisnici pristupaju <i>imenom</i> (a ne
@@ -1096,9 +1102,15 @@
 
   <dialog id="vlan-dialog">
     <form id="vlan-form">
-      <h2>Novi VLAN</h2>
+      <h2>Nova mreža</h2>
       <div class="form-grid">
-        <label>VLAN ID<input name="vid" required placeholder="20" inputmode="numeric"></label>
+        <label class="wide">Vrsta mreže
+          <select name="kind" id="vlan-kind">
+            <option value="tagged">VLAN (tagirano na portu — više mreža po kabelu)</option>
+            <option value="port">Cijeli port (bez VLAN-a) — DMZ, WiFi, gostinska mreža</option>
+          </select>
+        </label>
+        <label id="vlan-vid-wrap">VLAN ID<input name="vid" placeholder="20" inputmode="numeric"></label>
         <label>Fizički port<select name="port" id="vlan-port"></select></label>
         <label>Naziv mreže<input name="name" required placeholder="guest"></label>
         <label>Adresa uređaja (CIDR)<input name="cidr" required placeholder="192.168.20.1/24"></label>
@@ -1115,9 +1127,15 @@
         <label class="check"><input type="checkbox" name="dhcp" checked>
           Uključi DHCP poslužitelj za ovu mrežu</label>
       </div>
-      <p class="hint">Jedan korak stvara: 802.1q sučelje na portu, podmrežu,
-        DHCP pool i firewall zonu s odabranim pristupom. Uređaji u VLAN-u
-        moraju biti spojeni preko switcha koji tagira taj VLAN na ovaj port.</p>
+      <p class="hint" id="vlan-hint-tagged">Jedan korak stvara: 802.1q sučelje na
+        portu, podmrežu, DHCP pool i firewall zonu s odabranim pristupom. Uređaji
+        u VLAN-u moraju biti spojeni preko switcha koji tagira taj VLAN na ovaj
+        port.</p>
+      <p class="hint hidden" id="vlan-hint-port">Cijeli odabrani port postaje
+        zasebna mreža (vlastita podmreža, DHCP i firewall zona) — za DMZ sa
+        serverom, WiFi pristupnu točku ili gostinsku mrežu. Port mora biti
+        slobodan (ne smije biti dio LAN-a). Za klasični DMZ odaberi pristup
+        <b>Samo internet</b>, pa serveru objavi usluge port forwardima.</p>
       <div class="form-actions">
         <button type="button" class="ghost" id="vlan-cancel">Odustani</button>
         <button type="submit" class="primary">Stvori VLAN</button>
@@ -1281,6 +1299,8 @@
         <label>Javna IP (opcionalno)<input name="src_dip" placeholder="prazno = sve adrese WAN-a"></label>
         <label class="check"><input type="checkbox" name="reflection" checked>
           Dostupno i iz lokalne mreže preko javne adrese (NAT reflection)</label>
+        <label class="check"><input type="checkbox" name="allow_internal" checked>
+          Dopusti pristup ovom serveru iz svih internih mreža (LAN, VLAN-ovi, VPN)</label>
       </div>
       <p class="hint">Čarobnjak stvara po jedan port forward za svaku odabranu
         uslugu. Ako server ima vlastitu javnu adresu, upiši je — objava tada

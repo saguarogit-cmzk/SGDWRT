@@ -1522,7 +1522,7 @@ async function loadNetwork() {
   vb.replaceChildren();
   for (const v of vl.vlans) {
     const tr = document.createElement("tr");
-    for (const c of [v.vid, v.name || "—", v.port,
+    for (const c of [v.tagged ? "VLAN " + v.vid : "cijeli port", v.name || "—", v.port,
       v.ipaddr ? `${v.ipaddr} (${v.netmask})` : "—",
       v.dhcp ? `${v.dhcp_start} +${v.dhcp_limit}` : "isključen",
       ACCESS_LABEL[v.access] || v.access]) {
@@ -1536,11 +1536,15 @@ async function loadNetwork() {
     const tdAct = document.createElement("td");
     tdAct.className = "row-actions";
     tdAct.append(btnSm("Obriši", true, async () => {
-      if (!confirm(`Obrisati VLAN ${v.vid} (${v.name})?\n\nUklanja sučelje, ` +
+      const opis = v.tagged ? `VLAN ${v.vid}` : `mrežu na portu ${v.port}`;
+      if (!confirm(`Obrisati ${opis} (${v.name})?\n\nUklanja sučelje, ` +
         "DHCP pool i firewall zonu te mreže.")) return;
       try {
-        await api("/network/vlans/" + v.vid, "DELETE");
-        $("vlan-result").textContent = `VLAN ${v.vid} obrisan.`;
+        // mreže na portu imaju interni ID izveden iz porta
+        const id = v.tagged ? v.vid : 5000 + parseInt(v.port.replace(/\D/g, ""), 10);
+        await api("/network/vlans/" + id, "DELETE");
+        $("vlan-result").textContent = opis.charAt(0).toUpperCase() +
+          opis.slice(1) + " obrisana.";
         await loadNetwork();
       } catch (e) { alertErr(e); }
     }));
@@ -2138,16 +2142,28 @@ $("pub-form").addEventListener("submit", async (ev) => {
     jobs.push({ name: prefix + "-port" + p.replace("-", "do"), proto: "tcp udp", src_dport: p });
   }
   if (!jobs.length) { alert("Odaberi bar jednu uslugu ili port."); return; }
+  const allowInternal = f.elements.allow_internal.checked;
   try {
     for (const j of jobs) {
       await api("/firewall/forwards", "POST", {
         ...j, dest_ip: ip, src_dip: srcDip, reflection: refl,
         notes: "čarobnjak: objava servera " + prefix,
       });
+      // pristup iznutra: promet iz bilo koje interne mreže prema serveru
+      if (allowInternal) {
+        await api("/firewall/rules", "POST", {
+          name: j.name + "-interno", proto: j.proto,
+          src_zone: "*", dest_zone: "*", dest_ip: ip, dest_port: j.src_dport,
+          target: "ACCEPT",
+          notes: "čarobnjak: pristup serveru " + prefix + " iz internih mreža",
+        }).catch(() => {});
+      }
     }
     $("pub-dialog").close();
     $("fw-apply-result").textContent =
-      `Čarobnjak je stvorio ${jobs.length} forwarda — klikni "Primijeni firewall".`;
+      `Čarobnjak je stvorio ${jobs.length} forwarda` +
+      (allowInternal ? " i pripadna pravila pristupa" : "") +
+      ` — klikni "Primijeni firewall".`;
     await loadFirewall();
   } catch (e) { alertErr(e); }
 });
@@ -2262,14 +2278,24 @@ $("vlan-add").addEventListener("click", () => {
     sel.append(o);
   }
   $("vlan-form").reset();
+  vlanKindFields();
   $("vlan-dialog").showModal();
 });
+function vlanKindFields() {
+  const tagged = $("vlan-kind").value === "tagged";
+  $("vlan-vid-wrap").classList.toggle("hidden", !tagged);
+  $("vlan-form").elements.vid.required = tagged;
+  $("vlan-hint-tagged").classList.toggle("hidden", !tagged);
+  $("vlan-hint-port").classList.toggle("hidden", tagged);
+}
+$("vlan-kind").addEventListener("change", vlanKindFields);
 $("vlan-cancel").addEventListener("click", () => $("vlan-dialog").close());
 $("vlan-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const f = ev.target;
+  const tagged = $("vlan-kind").value === "tagged";
   const body = {
-    vid: parseInt(f.elements.vid.value, 10) || 0,
+    vid: tagged ? (parseInt(f.elements.vid.value, 10) || 0) : 0,
     port: f.elements.port.value,
     name: f.elements.name.value.trim(),
     cidr: f.elements.cidr.value.trim(),
@@ -2282,8 +2308,9 @@ $("vlan-form").addEventListener("submit", async (ev) => {
   try {
     const r = await api("/network/vlans", "POST", body);
     $("vlan-dialog").close();
-    $("vlan-result").textContent =
-      `Stvoreno: ${r.created} na ${r.device}. Backupi: ${r.backups.join(", ")}`;
+    $("vlan-result").textContent = (r.tagged
+      ? `Stvoren VLAN na ${r.device}.` : `Mreža na portu ${r.device} stvorena.`) +
+      ` Backupi: ${r.backups.join(", ")}`;
     await loadNetwork();
   } catch (e) { alertErr(e); }
 });

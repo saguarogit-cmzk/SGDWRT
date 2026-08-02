@@ -46,10 +46,14 @@ imena u adrese (DNS — npr. `google.com` → IP) i stvaran dohvat interneta.
 - **WAN sučelja**: veze prema internetu. Protokoli: DHCP klijent, statička
   adresa (podržano **više javnih adresa** na istom WAN-u — sve u polje adresa)
   i PPPoE. Dodatni WAN-ovi (za failover) automatski ulaze u wan firewall zonu.
-- **VLAN mreže**: čarobnjak u jednom koraku stvara 802.1q sučelje na odabranom
-  portu, podmrežu, DHCP pool i firewall zonu s pristupom:
-  *samo internet* (gosti), *internet + LAN* ili *izolirano*. Uređaji u VLAN-u
-  spajaju se preko switcha koji tagira taj VLAN prema IN100 portu.
+- **Dodatne mreže**: čarobnjak u jednom koraku stvara sučelje, podmrežu, DHCP
+  pool i firewall zonu s pristupom *samo internet* (gosti/DMZ),
+  *internet + LAN* ili *izolirano*. Dvije vrste:
+  - **VLAN (tagirano)** — 802.1q na portu; uređaji se spajaju preko switcha
+    koji tagira taj VLAN prema portu uređaja. Više mreža dijeli jedan kabel.
+  - **Cijeli port** — slobodan fizički port postaje zasebna mreža (DMZ sa
+    serverom, WiFi pristupna točka, gostinski port). Port mora biti slobodan;
+    ako je član LAN bridgea, prvo ga treba osloboditi.
 
 ## Multi-WAN
 

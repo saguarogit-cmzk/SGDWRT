@@ -21,8 +21,13 @@ var reLease = regexp.MustCompile(`^[0-9]{1,4}[smhd]$`)
 
 /* ---------- pregled ---------- */
 
+// Mreže bez VLAN tagiranja (cijeli port: DMZ, WiFi pristupna točka, gost port)
+// dobivaju interni ID iznad VLAN raspona pa dijele svu logiku s VLAN-ovima.
+const portNetBase = 5000
+
 type vlanOut struct {
-	VID     int    `json:"vid"`
+	VID     int    `json:"vid"` // 0 = mreža na cijelom portu (bez VLAN-a)
+	Tagged  bool   `json:"tagged"`
 	Port    string `json:"port"`
 	Name    string `json:"name"` // ime zone/mreže
 	IPAddr  string `json:"ipaddr"`
@@ -64,9 +69,13 @@ func (s *server) handleVlanList(w http.ResponseWriter, r *http.Request) {
 		}
 		vid, _ := strconv.Atoi(m[1])
 		o := vlanOut{
-			VID: vid, IPAddr: sectStr(sec, "ipaddr"),
+			VID: vid, Tagged: vid < portNetBase, IPAddr: sectStr(sec, "ipaddr"),
 			Netmask: sectStr(sec, "netmask"), Access: "isolated",
 			Up: up[name],
+		}
+		if !o.Tagged {
+			o.VID = 0
+			o.Port = sectStr(sec, "device") // mreža zauzima cijeli port
 		}
 		if dev, ok := netCfg[name+"_dev"]; ok {
 			o.Port = sectStr(dev, "ifname")
@@ -95,7 +104,7 @@ func (s *server) handleVlanList(w http.ResponseWriter, r *http.Request) {
 /* ---------- wizard: stvaranje ---------- */
 
 type vlanIn struct {
-	VID       int    `json:"vid"`
+	VID       int    `json:"vid"` // 0 = mreža na cijelom portu (bez VLAN-a)
 	Port      string `json:"port"`
 	Name      string `json:"name"`
 	CIDR      string `json:"cidr"` // adresa uređaja u mreži, npr. 192.168.20.1/24
@@ -116,13 +125,20 @@ func (s *server) handleVlanCreate(w http.ResponseWriter, r *http.Request) {
 	in.Name = strings.ToLower(strings.TrimSpace(in.Name))
 	in.Access = strings.TrimSpace(in.Access)
 	in.Leasetime = strings.TrimSpace(in.Leasetime)
-	if in.VID < 2 || in.VID > 4094 {
+	tagged := in.VID != 0
+	if tagged && (in.VID < 2 || in.VID > 4094) {
 		writeErr(w, http.StatusBadRequest, "VLAN ID mora biti 2-4094")
 		return
 	}
 	if !reDevName.MatchString(in.Port) || strings.Contains(in.Port, ".") {
 		writeErr(w, http.StatusBadRequest, "neispravan port (npr. eth0)")
 		return
+	}
+	if !tagged {
+		// mreža zauzima cijeli port — port mora biti slobodan
+		var pn int
+		fmt.Sscanf(in.Port, "eth%d", &pn)
+		in.VID = portNetBase + pn
 	}
 	if !reVlanSlug.MatchString(in.Name) {
 		writeErr(w, http.StatusBadRequest,
@@ -172,8 +188,36 @@ func (s *server) handleVlanCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, exists := netCfg[iface]; exists {
-		writeErr(w, http.StatusConflict, fmt.Sprintf("VLAN %d već postoji", in.VID))
+		if tagged {
+			writeErr(w, http.StatusConflict, fmt.Sprintf("VLAN %d već postoji", in.VID))
+		} else {
+			writeErr(w, http.StatusConflict, "port "+in.Port+" već ima svoju mrežu")
+		}
 		return
+	}
+	if !tagged {
+		// port ne smije biti zauzet drugim sučeljem ni članom bridgea
+		for name, sec := range netCfg {
+			switch sectStr(sec, ".type") {
+			case "interface":
+				if sectStr(sec, "device") == in.Port {
+					writeErr(w, http.StatusConflict,
+						"port "+in.Port+" već koristi sučelje "+name)
+					return
+				}
+			case "device":
+				if sectStr(sec, "type") == "bridge" {
+					for _, p := range sectList(sec, "ports") {
+						if p == in.Port {
+							writeErr(w, http.StatusConflict, "port "+in.Port+
+								" je član mreže "+sectStr(sec, "name")+
+								" — prvo ga oslobodi")
+							return
+						}
+					}
+				}
+			}
+		}
 	}
 	// zauzetost imena zone i preklapanje podmreže
 	fwCfg, err := uciGetConfig(ctx, "firewall")
@@ -209,15 +253,18 @@ func (s *server) handleVlanCreate(w http.ResponseWriter, r *http.Request) {
 		backups = append(backups, bn)
 	}
 
-	vdev := fmt.Sprintf("%s.%d", in.Port, in.VID)
+	vdev := in.Port // mreža na cijelom portu koristi sam port
 	mask := net.IP(ipnet.Mask).String()
 
 	var nb strings.Builder
-	fmt.Fprintf(&nb, "set network.%s_dev=device\n", iface)
-	fmt.Fprintf(&nb, "set network.%s_dev.type=8021q\n", iface)
-	fmt.Fprintf(&nb, "set network.%s_dev.ifname=%s\n", iface, in.Port)
-	fmt.Fprintf(&nb, "set network.%s_dev.vid=%d\n", iface, in.VID)
-	fmt.Fprintf(&nb, "set network.%s_dev.name=%s\n", iface, vdev)
+	if tagged {
+		vdev = fmt.Sprintf("%s.%d", in.Port, in.VID)
+		fmt.Fprintf(&nb, "set network.%s_dev=device\n", iface)
+		fmt.Fprintf(&nb, "set network.%s_dev.type=8021q\n", iface)
+		fmt.Fprintf(&nb, "set network.%s_dev.ifname=%s\n", iface, in.Port)
+		fmt.Fprintf(&nb, "set network.%s_dev.vid=%d\n", iface, in.VID)
+		fmt.Fprintf(&nb, "set network.%s_dev.name=%s\n", iface, vdev)
+	}
 	fmt.Fprintf(&nb, "set network.%s=interface\n", iface)
 	fmt.Fprintf(&nb, "set network.%s.proto=static\n", iface)
 	fmt.Fprintf(&nb, "set network.%s.device=%s\n", iface, vdev)
@@ -280,7 +327,7 @@ func (s *server) handleVlanCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"created": iface, "device": vdev, "backups": backups,
+		"created": iface, "device": vdev, "tagged": tagged, "backups": backups,
 	})
 }
 
@@ -288,9 +335,11 @@ func (s *server) handleVlanCreate(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleVlanDelete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	// prihvaća VLAN ID (2-4094) i interni ID mreže na portu (5000+)
 	vid, err := strconv.Atoi(r.PathValue("vid"))
-	if err != nil || vid < 2 || vid > 4094 {
-		writeErr(w, http.StatusBadRequest, "neispravan VLAN ID")
+	if err != nil || vid < 2 || (vid > 4094 && vid < portNetBase) ||
+		vid > portNetBase+99 {
+		writeErr(w, http.StatusBadRequest, "neispravan ID mreže")
 		return
 	}
 	iface := fmt.Sprintf("sag_vlan%d", vid)

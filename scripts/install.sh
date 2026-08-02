@@ -16,7 +16,12 @@ apk update >/dev/null
 # dnsmasq-full mijenja osnovni dnsmasq (potreban za DNSSEC)
 apk del dnsmasq >/dev/null 2>&1 || true
 apk add dnsmasq-full wireguard-tools kmod-wireguard openvpn-openssl mwan3 \
-    banip adblock-fast grep sed coreutils-sort curl
+    banip adblock-fast grep sed coreutils-sort curl \
+    bird2 bird2c sqm-scripts ddns-scripts ddns-scripts-services nlbwmon \
+    ppp kmod-pppoe
+# nlbwmon (mjerenje prometa po uređaju) radi u pozadini
+/etc/init.d/nlbwmon enable >/dev/null 2>&1 || true
+/etc/init.d/nlbwmon start >/dev/null 2>&1 || true
 /etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
 
 echo ">> direktoriji"

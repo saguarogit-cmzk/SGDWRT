@@ -696,6 +696,16 @@ func (s *server) handleDMZSet(w http.ResponseWriter, r *http.Request) {
 		b.WriteString("set firewall.sag_dmz.dest=lan\n")
 		fmt.Fprintf(&b, "set firewall.sag_dmz.dest_ip=%s\n", in.DestIP)
 		b.WriteString("set firewall.sag_dmz.proto='tcp udp'\n")
+		// hairpin i za DMZ host (pristup preko javne adrese iznutra)
+		b.WriteString("set firewall.sag_dmz.reflection=1\n")
+		for _, sec := range cfg {
+			if sectStr(sec, ".type") != "zone" {
+				continue
+			}
+			if zn := sectStr(sec, "name"); zn != "" && zn != "wan" {
+				fmt.Fprintf(&b, "add_list firewall.sag_dmz.reflection_zone=%s\n", zn)
+			}
+		}
 	} else {
 		if _, ok := cfg["sag_dmz"]; !ok {
 			writeJSON(w, http.StatusOK, map[string]any{"enabled": false})
@@ -1055,6 +1065,11 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&b, "set firewall.%s%s.src_dip=%s\n", n1dPrefix, id, n.PublicIP)
 		fmt.Fprintf(&b, "set firewall.%s%s.dest_ip=%s\n", n1dPrefix, id, n.InternalIP)
 		fmt.Fprintf(&b, "set firewall.%s%s.proto=all\n", n1dPrefix, id)
+		// hairpin: javna adresa radi i iz svih internih mreža
+		fmt.Fprintf(&b, "set firewall.%s%s.reflection=1\n", n1dPrefix, id)
+		for _, z := range internalZones {
+			fmt.Fprintf(&b, "add_list firewall.%s%s.reflection_zone=%s\n", n1dPrefix, id, z)
+		}
 		// SNAT: odlazni promet internog hosta izlazi s javne adrese
 		fmt.Fprintf(&b, "set firewall.%s%s=nat\n", n1sPrefix, id)
 		fmt.Fprintf(&b, "set firewall.%s%s.target=SNAT\n", n1sPrefix, id)

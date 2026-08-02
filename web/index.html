@@ -1064,6 +1064,26 @@
         vanjski syslog poslužitelj.
       </div></details>
 
+      <details class="help"><summary>Očvršćivanje — što svaka kvačica radi</summary><div>
+        <b>Postavke → Očvršćivanje</b> nudi mjere koje OpenWrt zadano ne pali.
+        Kvačice pokazuju stvarno stanje uređaja, pa se vidi i ako je nešto
+        naknadno promijenjeno izvan Saguara.
+        <ul>
+          <li><b>Krivotvorene adrese</b> — jezgra odbacuje pakete koji su došli
+            "krivim putem". Namjerno se postavlja labavo, jer bi strogo razbilo
+            prebacivanje između više internet veza.</li>
+          <li><b>Ograniči ping</b> — uređaj i dalje odgovara, ali najviše 10×/s.</li>
+          <li><b>Privatne adrese s interneta</b> — <b>ne pali ako je uređaj iza
+            drugog routera</b>; sučelje to samo prepozna i odbije uključiti, da
+            si ne prekineš vezu.</li>
+          <li><b>DNS ne sluša na WAN-u</b> — firewall to ionako blokira, ali
+            servis koji uopće ne sluša ne može postati odskočna daska.</li>
+          <li><b>LuCI na HTTPS</b> — inače root lozinka putuje čitljiva.</li>
+          <li><b>Zadana IPsec pravila</b> — bez instaliranog IPseca to su
+            otvorena vrata koja ništa ne koriste.</li>
+        </ul>
+      </div></details>
+
       <details class="help"><summary>Upozorenja e-mailom — što uređaj javlja</summary><div>
         Uređaj sam prati stanje i javlja kad se nešto promijeni: pad i povratak
         internet veze, promjena javne IP adrese, rad iza tuđeg NAT-a, pad VPN
@@ -1228,6 +1248,18 @@
         <button id="sm-test" class="ghost">Pošalji probnu poruku</button>
       </div>
       <p class="hint" id="sm-result"></p>
+    </section>
+    <section class="card">
+      <h2>Očvršćivanje</h2>
+      <p class="hint">Sitne mjere koje OpenWrt zadano ne uključuje. Svaka je
+        zasebna jer neke ovise o tome kako je uređaj spojen — pored svake piše
+        što radi i kad je <b>ne</b> treba paliti. Kvačice pokazuju stvarno
+        stanje na uređaju, ne što je netko namjeravao.</p>
+      <div id="hd-items"></div>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="hd-save" class="primary">Primijeni</button>
+      </div>
+      <p class="hint" id="hd-result"></p>
     </section>
     <section class="card" style="max-width:720px">
       <h2>Trajno spremanje logova</h2>

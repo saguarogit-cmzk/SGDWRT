@@ -401,7 +401,9 @@ func (s *server) handleVlanDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, svc := range [][2]string{{"firewall", "reload"}, {"dnsmasq", "reload"},
+	// kod brisanja zone treba restart: fw4 reload ne uklanja lance zona koje
+	// su nestale iz konfiguracije, pa bi u nftablesu ostajalo smeće
+	for _, svc := range [][2]string{{"firewall", "restart"}, {"dnsmasq", "reload"},
 		{"network", "reload"}} {
 		if err := serviceReload(ctx, svc[0], svc[1]); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())

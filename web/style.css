@@ -207,3 +207,8 @@ footer{margin-top:auto;padding-top:18px;display:flex;justify-content:space-betwe
 .check-list{display:grid;grid-template-columns:1fr;gap:2px;margin:10px 0 14px}
 @media (min-width:900px){.check-list{grid-template-columns:1fr 1fr;gap:2px 22px}}
 .check-list .check-row{font-weight:500}
+
+/* stavke očvršćivanja — kvačica plus objašnjenje ispod */
+.hd-item{padding:10px 0;border-bottom:1px solid var(--line)}
+.hd-item:last-child{border-bottom:0}
+.hd-item .hint{margin:4px 0 0 25px}

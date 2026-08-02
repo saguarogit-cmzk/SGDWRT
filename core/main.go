@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"crypto/tls"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -22,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.20.0"
+const version = "0.21.0"
 
 type server struct {
 	tokenMu   sync.RWMutex
@@ -132,6 +133,8 @@ func main() {
 	mux.Handle("POST /api/v1/system/logstore", s.auth(s.handleLogStoreSet))
 	mux.Handle("GET /api/v1/system/logfiles", s.auth(s.handleLogFiles))
 	mux.Handle("GET /api/v1/system/logfiles/{name}", s.auth(s.handleLogDownload))
+	mux.Handle("GET /api/v1/hardening", s.auth(s.handleHardeningGet))
+	mux.Handle("POST /api/v1/hardening", s.auth(s.handleHardeningSet))
 	mux.Handle("GET /api/v1/alerts", s.auth(s.handleAlertsGet))
 	mux.Handle("POST /api/v1/alerts", s.auth(s.handleAlertsSet))
 	mux.Handle("POST /api/v1/alerts/run", s.auth(s.handleWatchdogRun))
@@ -257,8 +260,10 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              *listen,
-		Handler:           mux,
+		Handler:           securityHeaders(mux),
 		ReadHeaderTimeout: 10 * time.Second,
+		// TLS 1.0 i 1.1 su odavno probijeni; sučelje za upravljanje ih ne treba
+		TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12},
 	}
 
 	go func() {
@@ -365,4 +370,23 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
+}
+
+// securityHeaders dodaje zaglavlja koja preglednik koristi za ograničavanje
+// štete: stranica se ne smije ugraditi u tuđi okvir, skripte i stilovi smiju
+// doći samo s ovog uređaja, a adresa sučelja ne curi u vanjske poveznice.
+// Sesijski token je u localStorage (nema kolačića, pa ni CSRF rizika), ali
+// stroga politika sadržaja bitno smanjuje domet eventualnog XSS-a.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; img-src 'self' data:; "+
+				"style-src 'self' 'unsafe-inline'; script-src 'self'; "+
+				"connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
+		next.ServeHTTP(w, r)
+	})
 }

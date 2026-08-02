@@ -180,6 +180,25 @@ nepoznat uređaj u mreži.
   ne nudi — lozinka SMTP računa ne smije putovati u čistom obliku. Koristi
   zaseban račun i lozinku aplikacije (Gmail, Microsoft 365).
 
+## Očvršćivanje (Postavke)
+
+Sitne mjere koje OpenWrt zadano ne uključuje. Svaka je zasebna kvačica jer
+neke ovise o tome kako je uređaj spojen, a kvačice pokazuju **stvarno stanje na
+uređaju** — ne što je netko namjeravao.
+
+| Mjera | Što radi | Kad je *ne* paliti |
+|---|---|---|
+| Odbaci krivotvorene izvorišne adrese | Jezgra provjerava dolazi li paket sučeljem kojim bi se odgovorilo pošiljatelju (`rp_filter=2`, labavo) | — postavlja se labavo baš zato da ne razbije više internet veza |
+| Ograniči ping s interneta | Uređaj i dalje odgovara na ping, ali najviše 10×/s | ako mjeriš dostupnost alatom koji šalje češće |
+| Odbaci privatne adrese s interneta | Paket koji na WAN dolazi s 192.168.x.x ili 10.x.x.x je krivotvoren | **ako je uređaj iza drugog routera** — tada je takav promet normalan i pravilo bi prekinulo vezu (sučelje to samo prepozna i odbije uključiti) |
+| DNS ne osluškuje na WAN-u | Servis koji ne sluša prema internetu ne može postati odskočna daska ni ako se firewall jednom pogrešno podesi | — |
+| LuCI preusmjeri na HTTPS | Bez toga root lozinka pri prijavi na LuCI putuje mrežom čitljiva | — (preglednik će upozoriti na samopotpisani certifikat, to je očekivano) |
+| Ukloni zadana IPsec pravila | OpenWrt zadano propušta IPsec s interneta prema LAN-u; bez instaliranog IPseca to su otvorena vrata koja ništa ne koriste | ako IPsec koristiš (sučelje to prepozna i odbije) |
+
+Sučelje Saguara uz to uvijek traži **TLS 1.2 ili noviji** i šalje zaglavlja koja
+pregledniku zabranjuju ugrađivanje stranice u tuđi okvir i učitavanje skripti s
+drugih adresa.
+
 ## Trajno spremanje logova
 
 Uređaj zadano drži logove samo u malom spremniku u memoriji (128 kB), pa nakon

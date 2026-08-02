@@ -1370,6 +1370,7 @@ async function loadSettings() {
   $("tz-servers").value = tz.ntp_servers || "";
 
   loadLogStore(sys).catch(() => {});
+  loadHardening().catch(() => {});
 
   const acl = sys.mgmt_acl || {};
   $("acl-enabled").checked = !!acl.enabled;
@@ -3084,5 +3085,54 @@ $("os-test").addEventListener("click", async () => {
     await loadOffsite();
   } catch (e) {
     $("os-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+/* ---------- očvršćivanje (Postavke) ---------- */
+
+async function loadHardening() {
+  const h = await api("/hardening");
+  const box = $("hd-items");
+  box.replaceChildren();
+  for (const it of h.items) {
+    const wrap = document.createElement("div");
+    wrap.className = "hd-item";
+
+    const lab = document.createElement("label");
+    lab.className = "check-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = it.enabled;
+    cb.dataset.id = it.id;
+    cb.dataset.was = it.enabled ? "1" : "0";
+    lab.append(cb, document.createTextNode(" " + it.label));
+
+    const det = document.createElement("p");
+    det.className = "hint";
+    det.textContent = it.detail + (it.note ? " (" + it.note + ")" : "");
+
+    wrap.append(lab, det);
+    box.append(wrap);
+  }
+}
+
+$("hd-save").addEventListener("click", async () => {
+  const items = {};
+  for (const cb of $("hd-items").querySelectorAll("input[type=checkbox]")) {
+    // šalju se samo promijenjene stavke — da se ne dira ono što je već dobro
+    if ((cb.dataset.was === "1") !== cb.checked) items[cb.dataset.id] = cb.checked;
+  }
+  if (!Object.keys(items).length) {
+    $("hd-result").textContent = "Nema promjena.";
+    return;
+  }
+  $("hd-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/hardening", "POST", { items });
+    $("hd-result").textContent = "Primijenjeno: " + r.applied.join(", ");
+    await loadHardening();
+  } catch (e) {
+    $("hd-result").textContent = "Greška: " + (e.message || e);
+    await loadHardening();
   }
 });

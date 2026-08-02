@@ -174,7 +174,27 @@ backup; nakon zamjene servis se sam ponovno pokreće. Objava izdanja:
 
 ## Postavke
 
-- **Lozinka**: promjena traži trenutnu; ostale sesije se odjavljuju.
+Na uređaju postoje **dvije odvojene lozinke** i lako ih je pomiješati:
+
+| Lozinka | Za što služi | Gdje se mijenja |
+|---|---|---|
+| **Saguaro** (`admin`) | prijava u ovo sučelje | Postavke → Promjena lozinke |
+| **Uređaj** (`root`) | SSH i LuCI | Postavke → Lozinka uređaja |
+
+- **Lozinka Saguara**: promjena traži trenutnu; ostale sesije se odjavljuju.
+  Zadana lozinka s instalacije (`Sgs#2026`) ista je na svakom uređaju i javno
+  je poznata, pa sučelje pri prvoj prijavi **ne dopušta ništa drugo** dok se
+  ne promijeni.
+- **Lozinka uređaja**: najmanje 10 znakova; stara se ne traži jer si već
+  prijavljen. Prije promjene sprema se kopija `/etc/shadow` u backup.
+- **Zaboravljena lozinka Saguara** — vraća se sa SSH-a:
+  ```sh
+  /etc/init.d/saguaro-core stop
+  /opt/saguaro/bin/saguaro-core -reset-admin 'NovaLozinka'
+  /etc/init.d/saguaro-core start
+  ```
+  Sve sesije se odjavljuju, a pri prvoj prijavi sučelje traži novu lozinku —
+  jer ova ostaje zapisana u povijesti naredbi.
 - **Sesije**: pregled + odjava svih ostalih sesija.
 - **API token**: za skripte i integracije (`Authorization: Bearer <token>`);
   regeneracija odmah poništava stari.

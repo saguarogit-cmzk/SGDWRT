@@ -991,8 +991,25 @@
       </div></details>
 
       <details class="help"><summary>Postavke — račun i sustav</summary><div>
-        Promjena lozinke (odjavljuje ostale sesije), pregled aktivnih sesija,
-        API token za skripte te slanje logova na vanjski syslog poslužitelj.
+        Ovdje su <b>dvije različite lozinke</b>:
+        <ul>
+          <li><b>Lozinka za prijavu u Saguaro</b> — samo za ovo sučelje.
+            Promjena odjavljuje ostale sesije.</li>
+          <li><b>Lozinka uređaja</b> (korisnik <code>root</code>) — koristi se za
+            SSH i za LuCI. Mijenja se u istoj kartici; prije promjene uređaj
+            sprema kopiju <code>/etc/shadow</code>.</li>
+        </ul>
+        Uz to: pregled aktivnih sesija, API token za skripte i slanje logova na
+        vanjski syslog poslužitelj.
+      </div></details>
+
+      <details class="help"><summary>Zaboravljena lozinka za Saguaro</summary><div>
+        Ako se više ne možeš prijaviti u sučelje, lozinka se vraća sa SSH-a:
+        <code>/etc/init.d/saguaro-core stop &amp;&amp;
+        /opt/saguaro/bin/saguaro-core -reset-admin 'NovaLozinka' &amp;&amp;
+        /etc/init.d/saguaro-core start</code>
+        Sve postojeće sesije se odjavljuju, a pri prvoj prijavi sučelje odmah
+        traži novu lozinku — jer je ova ostala zapisana u povijesti naredbi.
       </div></details>
 
       <details class="help"><summary>Instalacija na novi uređaj</summary><div>
@@ -1000,8 +1017,9 @@
         <code>wget -O - https://raw.githubusercontent.com/saguarogit-cmzk/SGSWRT/main/scripts/install.sh | sh</code>
         — skripta instalira pakete, preuzme zadnje izdanje i pokrene Saguaro.
         Prva prijava: korisnik <code>admin</code>, lozinka <code>Sgs#2026</code>.
-        Odmah je promijeni (Sustav → Postavke) i regeneriraj API token —
-        zadane vrijednosti su iste na svakoj novoj instalaciji.
+        Ta je lozinka ista na svakoj instalaciji i javno je poznata, pa sučelje
+        <b>odmah traži da je promijeniš</b> — do tada ostale funkcije nisu
+        dostupne. Nakon prijave regeneriraj i API token.
       </div></details>
     </section>
   </div>
@@ -1027,6 +1045,27 @@
           </div>
         </form>
       </div>
+      <div class="card">
+        <h2>Lozinka uređaja (SSH i LuCI)</h2>
+        <form id="devpw-form">
+          <div class="form-grid">
+            <label>Nova lozinka<input type="password" name="new1" required
+              minlength="10" autocomplete="new-password"></label>
+            <label>Ponovi novu lozinku<input type="password" name="new2" required
+              minlength="10" autocomplete="new-password"></label>
+          </div>
+          <p class="hint">Ovo je lozinka korisnika <code>root</code> — ista za
+            prijavu na SSH i na LuCI. Nije ista kao lozinka za prijavu u Saguaro.
+            Najmanje 10 znakova. Stara se ne traži jer si već prijavljen.
+            Kopija <code>/etc/shadow</code> sprema se prije promjene.</p>
+          <p class="hint" id="devpw-result"></p>
+          <div class="form-actions" style="justify-content:flex-start">
+            <button type="submit" class="primary">Promijeni lozinku uređaja</button>
+          </div>
+        </form>
+      </div>
+    </section>
+    <section class="grid-2">
       <div class="card">
         <h2>Sesije</h2>
         <dl class="kv" id="sess-kv"></dl>

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -445,4 +446,85 @@ func (s *server) handleMetricsHistory(w http.ResponseWriter, r *http.Request) {
 	copy(out, metricsRing)
 	metricsMu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"samples": out})
+}
+
+/* ---------- lozinka uređaja (root: SSH i LuCI) ---------- */
+
+const shadowFile = "/etc/shadow"
+
+// rootShadowLine vraća redak korisnika root iz /etc/shadow — po njemu se
+// provjerava je li promjena lozinke stvarno prošla.
+func rootShadowLine() (string, error) {
+	b, err := os.ReadFile(shadowFile)
+	if err != nil {
+		return "", err
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(l, "root:") {
+			return l, nil
+		}
+	}
+	return "", fmt.Errorf("korisnik root nije pronađen u %s", shadowFile)
+}
+
+// handleDevicePasswordSet mijenja lozinku uređaja (root) — istu koja se koristi
+// za SSH i LuCI. Radi se preko busybox passwd naredbe; ona ispisuje upozorenja
+// i kad uspije, pa se uspjeh provjerava usporedbom zapisa u /etc/shadow.
+func (s *server) handleDevicePasswordSet(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		New     string `json:"new"`
+		Confirm string `json:"confirm"`
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	switch {
+	case len([]rune(in.New)) < 10:
+		writeErr(w, http.StatusBadRequest,
+			"lozinka uređaja mora imati bar 10 znakova")
+		return
+	case hasCtrl(in.New):
+		writeErr(w, http.StatusBadRequest,
+			"lozinka ne smije sadržavati prijelom retka ni tabulator")
+		return
+	case in.Confirm != "" && in.Confirm != in.New:
+		writeErr(w, http.StatusBadRequest, "lozinke se ne podudaraju")
+		return
+	}
+
+	before, err := rootShadowLine()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	backupName, err := s.backupConfig(shadowFile)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "backup: "+err.Error())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "passwd", "root")
+	cmd.Stdin = strings.NewReader(in.New + "\n" + in.New + "\n")
+	out, runErr := cmd.CombinedOutput()
+
+	after, err := rootShadowLine()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if after == before {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" && runErr != nil {
+			msg = runErr.Error()
+		}
+		writeErr(w, http.StatusInternalServerError,
+			"lozinka nije promijenjena: "+msg)
+		return
+	}
+	addEvent(s, "warning", "Promijenjena je lozinka uređaja (root — SSH i LuCI)")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"changed": true, "backup": backupName,
+	})
 }

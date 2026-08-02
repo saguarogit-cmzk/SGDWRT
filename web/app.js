@@ -2762,6 +2762,27 @@ $("pw-form").addEventListener("submit", async (ev) => {
   }
 });
 
+$("devpw-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  if (f.elements.new1.value !== f.elements.new2.value) {
+    $("devpw-result").textContent = "Nove lozinke se ne podudaraju.";
+    return;
+  }
+  $("devpw-result").textContent = "Mijenjam…";
+  try {
+    const r = await api("/system/device-password", "POST", {
+      new: f.elements.new1.value,
+      confirm: f.elements.new2.value,
+    });
+    f.reset();
+    $("devpw-result").textContent =
+      "Lozinka uređaja promijenjena. Kopija prethodnog stanja: " + r.backup;
+  } catch (e) {
+    $("devpw-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
 $("sess-logout-others").addEventListener("click", async () => {
   try {
     const r = await api("/auth/logout-others", "POST", {});

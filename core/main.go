@@ -42,6 +42,8 @@ func main() {
 	dataDir := flag.String("data", "/opt/saguaro/data", "direktorij podataka (SQLite)")
 	backupDir := flag.String("backup", "/opt/saguaro/backup", "direktorij backupa konfiguracija")
 	noTLS := flag.Bool("no-tls", false, "posluži bez TLS-a (samo za razvoj)")
+	resetAdmin := flag.String("reset-admin", "",
+		"postavi novu lozinku za prijavu u Saguaro i izađi (izlaz iz nužde sa SSH-a)")
 	flag.Parse()
 
 	if err := os.MkdirAll(*etcDir, 0o755); err != nil {
@@ -69,6 +71,17 @@ func main() {
 		log.Fatalf("admin korisnik: %v", err)
 	}
 
+	// izlaz iz nužde: zaboravljena lozinka za prijavu u Saguaro vraća se sa
+	// SSH-a, bez dizanja servisa i bez diranja ostalih podataka
+	if *resetAdmin != "" {
+		if err := s.resetAdminPassword(*resetAdmin); err != nil {
+			log.Fatalf("reset lozinke: %v", err)
+		}
+		fmt.Println("Lozinka korisnika 'admin' je postavljena.")
+		fmt.Println("Sve postojeće sesije su odjavljene; pri prvoj prijavi tražit će se nova lozinka.")
+		return
+	}
+
 	{
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		if err := s.ensureSelf(ctx); err != nil {
@@ -94,6 +107,7 @@ func main() {
 	mux.Handle("POST /api/v1/dhcp/server", s.auth(s.handleDHCPServerSet))
 	mux.Handle("GET /api/v1/system", s.auth(s.handleSystem))
 	mux.Handle("GET /api/v1/system/status", s.auth(s.handleStatus))
+	mux.Handle("POST /api/v1/system/device-password", s.auth(s.handleDevicePasswordSet))
 	mux.Handle("GET /api/v1/storage", s.auth(s.handleStorage))
 	mux.Handle("GET /api/v1/interfaces", s.auth(s.handleInterfaces))
 	mux.Handle("GET /api/v1/identity", s.auth(s.handleIdentity))
@@ -285,8 +299,9 @@ func (s *server) auth(next http.HandlerFunc) http.Handler {
 			if mustChange && !allowedWithDefaultPassword(r.URL.Path) {
 				writeJSON(w, http.StatusForbidden, map[string]string{
 					"error": "password_change_required",
-					"detail": "Zadana lozinka s instalacije javno je poznata. " +
-						"Promijeni je prije korištenja ostalih funkcija.",
+					"detail": "Ova lozinka je privremena (zadana s instalacije ili " +
+						"postavljena sa SSH-a) i mora se promijeniti prije " +
+						"korištenja ostalih funkcija.",
 				})
 				return
 			}

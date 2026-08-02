@@ -86,6 +86,31 @@ func (s *server) ensureAdmin(initialPassword string) error {
 	return nil
 }
 
+// resetAdminPassword postavlja novu lozinku korisniku admin s naredbenog retka
+// (zastavica -reset-admin). Sve sesije padaju, a nova lozinka se mora
+// promijeniti pri prvoj prijavi — jer je vidljiva u povijesti ljuske.
+func (s *server) resetAdminPassword(pw string) error {
+	if len([]rune(pw)) < 8 {
+		return fmt.Errorf("lozinka mora imati bar 8 znakova")
+	}
+	h, err := hashPassword(pw)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.Exec(`UPDATE users SET pass_hash=?, must_change_pw=1,
+		updated_at=datetime('now') WHERE username='admin'`, h)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("korisnik 'admin' ne postoji")
+	}
+	if _, err := s.db.Exec(`DELETE FROM sessions`); err != nil {
+		return err
+	}
+	return nil
+}
+
 /* ---------- API token (promjenjiv u radu) ---------- */
 
 func (s *server) apiToken() string {

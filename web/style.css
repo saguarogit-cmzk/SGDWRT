@@ -36,17 +36,17 @@ code{background:#eef2f6;border:1px solid var(--line);border-radius:5px;padding:1
 /* ---------- forme ---------- */
 input,select,textarea{
   background:#fff;border:1px solid var(--line2);color:var(--ink);
-  border-radius:var(--radius-sm);padding:9px 11px;font:inherit;font-size:14px;width:100%;
+  border-radius:var(--radius-sm);padding:7px 10px;font:inherit;font-size:13.5px;width:100%;
   transition:border-color .15s, box-shadow .15s}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand);
   box-shadow:0 0 0 3px #12a87026}
 input:disabled{opacity:.5}
 textarea{resize:vertical}
-.hint{color:var(--muted);font-size:13px;line-height:1.5;margin:8px 0}
+.hint{color:var(--muted);font-size:12.5px;line-height:1.5;margin:6px 0;max-width:100ch}
 
 /* ---------- gumbi ---------- */
-button{border:0;border-radius:var(--radius-sm);padding:9px 15px;font:inherit;font-weight:600;
-  font-size:13.5px;cursor:pointer;background:var(--brand);color:var(--brand-ink);
+button{border:0;border-radius:var(--radius-sm);padding:7px 13px;font:inherit;font-weight:600;
+  font-size:13px;cursor:pointer;background:var(--brand);color:var(--brand-ink);
   display:inline-flex;align-items:center;gap:7px;transition:filter .15s,transform .05s}
 button:hover{filter:brightness(1.06)}
 button:active{transform:translateY(1px)}
@@ -60,13 +60,13 @@ button.ghost:hover{background:#f2f5f8;border-color:var(--brand);filter:none}
 .btn-sm.danger:hover{border-color:var(--crit);background:#fdecee;color:var(--crit)}
 
 /* ---------- shell: lijeva navigacija + sadržaj ---------- */
-.shell{display:grid;grid-template-columns:230px 1fr;min-height:100vh}
+.shell{display:grid;grid-template-columns:208px 1fr;min-height:100vh}
 aside{background:var(--panel);border-right:1px solid var(--line);
-  padding:20px 14px;display:flex;flex-direction:column;gap:3px;position:sticky;top:0;height:100vh}
-aside .subtitle{color:var(--faint);font-size:12px;margin:2px 0 18px 2px}
+  padding:14px 11px;display:flex;flex-direction:column;gap:3px;position:sticky;top:0;height:100vh}
+aside .subtitle{color:var(--faint);font-size:11.5px;margin:2px 0 10px 2px}
 #nav{display:grid;gap:2px;overflow:auto;align-content:start}
 #nav .nav-cat{background:transparent;color:var(--muted);justify-content:flex-start;
-  width:100%;padding:9px 12px;border-radius:8px;font-weight:500;font-size:13.5px;
+  width:100%;padding:7px 11px;border-radius:8px;font-weight:500;font-size:13px;
   border-left:3px solid transparent}
 #nav .nav-cat:hover{background:#eef2f6;color:var(--ink);filter:none}
 #nav .nav-cat.active{background:var(--brand-dim);color:var(--brand);font-weight:600;
@@ -74,18 +74,18 @@ aside .subtitle{color:var(--faint);font-size:12px;margin:2px 0 18px 2px}
 .logout{margin-top:auto;background:#fff;border:1px solid var(--line2);color:var(--muted);justify-content:center}
 .logout:hover{border-color:var(--crit);color:var(--crit);background:#fdecee;filter:none}
 
-.content{padding:24px 28px;min-width:0;display:flex;flex-direction:column}
-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;gap:16px}
-header h1{margin:0 0 4px;font-size:22px;font-weight:700}
-header p{margin:0;color:var(--muted);font-size:14px}
+.content{padding:16px 22px;min-width:0;display:flex;flex-direction:column}
+header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;gap:16px}
+header h1{margin:0 0 2px;font-size:19px;font-weight:700}
+header p{margin:0;color:var(--muted);font-size:13px}
 .head-right{display:flex;align-items:center;gap:10px;flex:0 0 auto}
 .host-chip{border:1px solid var(--line2);border-radius:99px;padding:4px 11px;color:var(--muted);
   background:#f4f7fa;font-size:12px;font-weight:600;white-space:nowrap}
 
 /* ---------- pod-navigacija (tabovi grupe) ---------- */
-.subnav{display:flex;gap:2px;flex-wrap:wrap;border-bottom:1px solid var(--line2);margin:0 0 18px;overflow-x:auto}
+.subnav{display:flex;gap:2px;flex-wrap:wrap;border-bottom:1px solid var(--line2);margin:0 0 12px;overflow-x:auto}
 .subtab{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);
-  padding:10px 15px;font-weight:600;font-size:13.5px;cursor:pointer;border-radius:0;margin-bottom:-1px;white-space:nowrap}
+  padding:7px 12px;font-weight:600;font-size:13px;cursor:pointer;border-radius:0;margin-bottom:-1px;white-space:nowrap}
 .subtab:hover{color:var(--ink);background:#f6f8fa;filter:none}
 .subtab.active{color:var(--brand);border-bottom-color:var(--brand)}
 
@@ -99,22 +99,24 @@ header p{margin:0;color:var(--muted);font-size:14px}
 .st-off{color:var(--faint);background:#f2f5f8}
 
 /* ---------- kartice / paneli ---------- */
-.view{display:flex;flex-direction:column;gap:16px}
-.tiles{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:14px}
+/* Sirina je ogranicena da se na vrlo sirokim ekranima tekst ne razvlaci
+   preko cijele plohe; tablice i dalje koriste svu raspolozivu sirinu. */
+.view{display:flex;flex-direction:column;gap:12px;max-width:1680px}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px}
 .tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
-  padding:16px 18px;box-shadow:var(--shadow)}
+  padding:12px 14px;box-shadow:var(--shadow)}
 .tile-label{color:var(--faint);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
-.tile-value{font-size:28px;font-weight:750;letter-spacing:-.5px;margin-top:6px}
+.tile-value{font-size:23px;font-weight:750;letter-spacing:-.5px;margin-top:4px}
 .tile-sub{color:var(--muted);font-size:12px;margin-top:2px}
 .meter{background:#e7ecf1;border-radius:6px;height:7px;overflow:hidden;margin-top:10px}
 .meter-fill{display:block;height:100%;border-radius:6px;background:var(--ok);transition:width .4s ease;width:0}
 .meter-fill.warn{background:var(--warn)}
 .meter-fill.crit{background:var(--crit)}
 
-.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
-  padding:18px;box-shadow:var(--shadow);min-width:0}
-.card h2{margin:0 0 10px;font-size:16px;font-weight:700}
+  padding:14px 16px;box-shadow:var(--shadow);min-width:0}
+.card h2{margin:0 0 8px;font-size:15px;font-weight:700}
 .card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px}
 .card-head h2{margin:0}
 
@@ -138,11 +140,11 @@ header p{margin:0;color:var(--muted);font-size:14px}
 
 /* ---------- tablice ---------- */
 .table-wrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:13px}
-thead th{text-align:left;padding:8px 12px;color:var(--faint);font-weight:700;
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{text-align:left;padding:6px 10px;color:var(--faint);font-weight:700;
   text-transform:uppercase;letter-spacing:.04em;font-size:11px;border-bottom:1px solid var(--line2);
   background:#f6f8fa;white-space:nowrap}
-tbody td{padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody td{padding:6px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
 tbody tr:nth-child(even){background:#f8fafc}
 tbody tr:hover{background:#eef4fb}
 tbody tr:last-child td{border-bottom:0}
@@ -212,3 +214,38 @@ footer{margin-top:auto;padding-top:18px;display:flex;justify-content:space-betwe
 .hd-item{padding:10px 0;border-bottom:1px solid var(--line)}
 .hd-item:last-child{border-bottom:0}
 .hd-item .hint{margin:4px 0 0 25px}
+
+/* ---------- tražilica modula ---------- */
+.navsearch{position:relative;margin:0 0 8px}
+.navsearch input{padding:6px 10px;font-size:12.5px;background:#f6f8fa}
+.navsearch input:focus{background:#fff}
+.navresults{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:40;
+  background:var(--panel);border:1px solid var(--line2);border-radius:var(--radius-sm);
+  box-shadow:0 6px 20px #0000001f;overflow:hidden;display:grid}
+.navresult{background:transparent;color:var(--ink);justify-content:space-between;
+  border-radius:0;padding:7px 10px;font-size:12.5px;font-weight:600;gap:8px;width:100%}
+.navresult:hover,.navresult.sel{background:var(--brand-dim);color:var(--brand);filter:none}
+.nr-group{color:var(--faint);font-size:11px;font-weight:600;flex:0 0 auto}
+.navresult:hover .nr-group,.navresult.sel .nr-group{color:var(--brand)}
+
+/* ---------- gušći prikaz na nižim ekranima (prijenosnici 13–14") ---------- */
+@media (max-height:820px), (max-width:1500px){
+  body{font-size:13px}
+  .shell{grid-template-columns:194px 1fr}
+  .content{padding:12px 16px}
+  header h1{font-size:17.5px}
+  header p{font-size:12.5px}
+  .view{gap:10px}
+  .card{padding:12px 14px}
+  .card h2{font-size:14px;margin-bottom:6px}
+  .tiles{gap:8px}
+  .tile{padding:10px 12px}
+  .tile-value{font-size:20px}
+  .grid-2{gap:10px}
+  .subnav{margin-bottom:10px}
+  .subtab{padding:6px 10px;font-size:12.5px}
+  .hint{font-size:12px;margin:5px 0}
+  table{font-size:12px}
+  thead th{padding:5px 8px}
+  tbody td{padding:5px 8px}
+}

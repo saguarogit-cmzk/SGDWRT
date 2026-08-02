@@ -841,18 +841,20 @@ async function loadWireguard() {
     const tdAct = document.createElement("td");
     tdAct.className = "row-actions";
     if (p.has_private) {
-      const conf = document.createElement("button");
-      conf.className = "btn-sm";
-      conf.textContent = "Config";
-      conf.onclick = async () => {
-        try {
-          const c = await api("/wireguard/peers/" + p.uuid + "/config");
-          $("wgconf-title").textContent = "Klijentski config — " + c.name;
-          $("wgconf-text").value = c.config;
-          $("wgconf-dialog").showModal();
-        } catch (e) { alertErr(e); }
-      };
-      tdAct.append(conf);
+      tdAct.append(
+        btnSm("Preuzmi .conf", false, async () => {
+          try {
+            const c = await api("/wireguard/peers/" + p.uuid + "/config");
+            downloadText(c.name + ".conf", c.config);
+          } catch (e) { alertErr(e); }
+        }),
+        btnSm("Prikaži", false, async () => {
+          try {
+            const c = await api("/wireguard/peers/" + p.uuid + "/config");
+            showVpnConfig("WireGuard config — " + c.name + ".conf",
+              c.name + ".conf", c.config);
+          } catch (e) { alertErr(e); }
+        }));
     }
     const acc = document.createElement("button");
     acc.className = "btn-sm";
@@ -1259,12 +1261,17 @@ async function loadOpenvpn() {
     const tdAct = document.createElement("td");
     tdAct.className = "row-actions";
     tdAct.append(
-      btnSm("Config", false, async () => {
+      btnSm("Preuzmi .ovpn", false, async () => {
         try {
           const x = await api("/openvpn/clients/" + c.uuid + "/config");
-          $("wgconf-title").textContent = "OpenVPN config — " + x.name + ".ovpn";
-          $("wgconf-text").value = x.config;
-          $("wgconf-dialog").showModal();
+          downloadText(x.name + ".ovpn", x.config);
+        } catch (e) { alertErr(e); }
+      }),
+      btnSm("Prikaži", false, async () => {
+        try {
+          const x = await api("/openvpn/clients/" + c.uuid + "/config");
+          showVpnConfig("OpenVPN config — " + x.name + ".ovpn",
+            x.name + ".ovpn", x.config);
         } catch (e) { alertErr(e); }
       }),
       btnSm("Pristup", false, () => openVpnRulesDialog(c, "openvpn/clients")),
@@ -2484,6 +2491,31 @@ $("peer-form").addEventListener("submit", async (ev) => {
   }
 });
 
+// Config se ne kopira samo u međuspremnik nego se i preuzima kao datoteka —
+// VPN aplikacije (WireGuard, OpenVPN Connect) uvoze upravo datoteku, pa je
+// kopiranje teksta korak previše.
+function showVpnConfig(title, filename, text) {
+  $("wgconf-title").textContent = title;
+  $("wgconf-text").value = text;
+  $("wgconf-dialog").dataset.filename = filename;
+  $("wgconf-dialog").showModal();
+}
+
+function downloadText(filename, text) {
+  const blob = new Blob([text], { type: "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+$("wgconf-download").addEventListener("click", () => {
+  const d = $("wgconf-dialog");
+  downloadText(d.dataset.filename || "saguaro-vpn.conf", $("wgconf-text").value);
+});
+
 $("wgconf-close").addEventListener("click", () => $("wgconf-dialog").close());
 $("wgconf-copy").addEventListener("click", async () => {
   const ta = $("wgconf-text");
@@ -3266,3 +3298,87 @@ function refreshSyslog() {
     el.scrollTop = el.scrollHeight;
   }).catch(() => { $("sy-log").textContent = "Log nedostupan."; });
 }
+
+/* ---------- tražilica modula ---------- */
+
+// Traži se i po nazivu i po opisu modula, pa "skenir" nađe Blokade iako se
+// modul tako ne zove. Bez tražilice se na 22 modula gubi vrijeme na
+// prisjećanje u kojoj je skupini nešto.
+function searchModules(q) {
+  q = q.trim().toLowerCase();
+  if (!q) return [];
+  const hits = [];
+  for (const [id, m] of Object.entries(MODULES)) {
+    const name = m[0].toLowerCase();
+    const desc = m[1].toLowerCase();
+    let score = -1;
+    if (name.startsWith(q)) score = 0;
+    else if (name.includes(q)) score = 1;
+    else if (desc.includes(q)) score = 2;
+    if (score >= 0) hits.push({ id, name: m[0], desc: m[1], score });
+  }
+  hits.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name, "hr"));
+  return hits.slice(0, 8);
+}
+
+function renderSearch(hits, sel) {
+  const box = $("nav-results");
+  box.replaceChildren();
+  if (!hits.length) {
+    box.classList.add("hidden");
+    return;
+  }
+  hits.forEach((h, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "navresult" + (i === sel ? " sel" : "");
+    const grp = NAV_GROUPS[groupOf(h.id)];
+    const nm = document.createElement("span");
+    nm.className = "nr-name";
+    nm.textContent = h.name;
+    const gr = document.createElement("span");
+    gr.className = "nr-group";
+    gr.textContent = grp ? grp[0] : "";
+    b.append(nm, gr);
+    b.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      gotoModule(h.id);
+    });
+    box.append(b);
+  });
+  box.classList.remove("hidden");
+}
+
+function gotoModule(id) {
+  $("nav-search").value = "";
+  $("nav-results").classList.add("hidden");
+  location.hash = "#" + id;
+}
+
+let searchSel = 0;
+$("nav-search").addEventListener("input", () => {
+  searchSel = 0;
+  renderSearch(searchModules($("nav-search").value), searchSel);
+});
+$("nav-search").addEventListener("keydown", (ev) => {
+  const hits = searchModules($("nav-search").value);
+  if (!hits.length) return;
+  if (ev.key === "ArrowDown") {
+    ev.preventDefault();
+    searchSel = (searchSel + 1) % hits.length;
+    renderSearch(hits, searchSel);
+  } else if (ev.key === "ArrowUp") {
+    ev.preventDefault();
+    searchSel = (searchSel - 1 + hits.length) % hits.length;
+    renderSearch(hits, searchSel);
+  } else if (ev.key === "Enter") {
+    ev.preventDefault();
+    gotoModule(hits[searchSel].id);
+  } else if (ev.key === "Escape") {
+    $("nav-search").value = "";
+    $("nav-results").classList.add("hidden");
+  }
+});
+$("nav-search").addEventListener("blur", () => {
+  setTimeout(() => $("nav-results").classList.add("hidden"), 120);
+});

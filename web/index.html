@@ -43,6 +43,11 @@
   <aside>
     <div class="brand"><span class="brand-mark">SAGUARO</span></div>
     <div class="subtitle">Infrastructure</div>
+    <div class="navsearch">
+      <input id="nav-search" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Traži modul…" aria-label="Traži modul">
+      <div id="nav-results" class="navresults hidden"></div>
+    </div>
     <nav id="nav"></nav>
     <button id="logout" class="logout">Odjava</button>
   </aside>
@@ -922,6 +927,26 @@
         gumbom <b>Primijeni</b>. Prije svake primjene uređaj sam sprema backup
         konfiguracije, a Saguaro nikad ne dira postavke koje nije sam stvorio.</p>
 
+      <details class="help"><summary>Snalaženje — skupine, kartice i tražilica</summary><div>
+        Sučelje ima dvije razine: <b>lijevi stupac</b> bira skupinu (Status,
+        Mreža, Zaštita, VPN, Sustav), a <b>kartice ispod naslova</b> biraju
+        modul unutar te skupine.
+        <br><br>Ako ne znaš u kojoj je skupini nešto, upiši u <b>tražilicu</b>
+        iznad izbornika. Traži se po nazivu <i>i</i> po opisu modula, pa te
+        nađe i kad se modul ne zove onako kako razmišljaš:
+        <ul>
+          <li><code>dns</code> → DNS</li>
+          <li><code>skenir</code> → <b>Blokade</b> (ondje je detekcija
+            skeniranja portova, iako se modul ne zove tako)</li>
+          <li><code>lozink</code> → <b>Postavke</b></li>
+          <li><code>vpn</code> → WireGuard i OpenVPN</li>
+          <li><code>backup</code> → Backup</li>
+        </ul>
+        Strelicama gore/dolje biraš rezultat, <b>Enter</b> otvara modul,
+        <b>Esc</b> zatvara popis. Uz svaki rezultat piše i skupina u kojoj se
+        modul nalazi, pa ga sljedeći put nađeš i bez tražilice.
+      </div></details>
+
       <details class="help"><summary>Dashboard — pregled stanja</summary><div>
         Pločice pokazuju opterećenje procesora, memoriju, disk i vrijeme rada,
         s malim grafom zadnjih sat vremena. "Internet veza" provjerava tri
@@ -1778,7 +1803,8 @@
       style="width:100%;font-family:ui-monospace,monospace;font-size:12px"></textarea>
     <div class="form-actions">
       <button type="button" class="ghost" id="wgconf-close">Zatvori</button>
-      <button type="button" class="primary" id="wgconf-copy">Kopiraj</button>
+      <button type="button" class="ghost" id="wgconf-copy">Kopiraj</button>
+      <button type="button" class="primary" id="wgconf-download">Preuzmi datoteku</button>
     </div>
   </dialog>
 

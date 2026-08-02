@@ -398,6 +398,11 @@ func (s *server) auth(next http.HandlerFunc) http.Handler {
 
 func (s *server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	if fi, err := os.Stat(filepath.Join(s.webDir, "index.html")); err == nil && !fi.IsDir() {
+		// no-cache ne znači "ne spremaj", nego "prije upotrebe pitaj je li se
+		// promijenilo". Bez toga preglednik nakon nadogradnje servira staro
+		// sučelje dok korisnik ne napravi Ctrl+Shift+R; ovako sam povuče novo,
+		// a nepromijenjene datoteke i dalje stižu kao jeftini 304.
+		w.Header().Set("Cache-Control", "no-cache")
 		http.FileServer(http.Dir(s.webDir)).ServeHTTP(w, r)
 		return
 	}

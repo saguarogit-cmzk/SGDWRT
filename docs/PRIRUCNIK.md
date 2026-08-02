@@ -17,6 +17,24 @@ Moduli su složeni u pet skupina, po načelu **jedan modul = jedan posao**:
 
 Lijevi stupac bira skupinu, kartice ispod naslova biraju modul unutar nje.
 
+### Tražilica modula
+
+Iznad izbornika je polje **Traži modul…**. Traži se po nazivu **i po opisu**
+modula, pa nađe i ono što se ne zove onako kako razmišljaš:
+
+| Upišeš | Nađe |
+|---|---|
+| `dns` | DNS |
+| `skenir` | **Blokade** — ondje je detekcija skeniranja portova |
+| `lozink` | **Postavke** |
+| `vpn` | WireGuard i OpenVPN |
+| `promjen` | **Promjene** — trag izmjena konfiguracije |
+| `log` | **Logovi** |
+
+Strelicama gore/dolje biraš rezultat, **Enter** otvara modul, **Esc** zatvara
+popis. Uz svaki rezultat piše i skupina u kojoj modul živi, pa ga sljedeći put
+nađeš i bez tražilice.
+
 ## Temeljna pravila (vrijede u svim modulima)
 
 - **Primijeni**: promjene se najprije spremaju u Saguaro bazu, a na uređaj se

@@ -448,8 +448,44 @@ let editRecUUID = null;
 let dnsDomain = "lan";
 let dnssecOn = false;
 
+let editSpUUID = null;
+
 async function loadDns() {
-  const [st, rc] = await Promise.all([api("/dns/status"), api("/dns/records")]);
+  const [st, rc, sp] = await Promise.all([
+    api("/dns/status"), api("/dns/records"), api("/dns/split")]);
+
+  const spb = $("sp-rows");
+  spb.replaceChildren();
+  for (const x of sp.split) {
+    const tr = document.createElement("tr");
+    const tdD = document.createElement("td");
+    tdD.textContent = x.domain;
+    const sub = document.createElement("span");
+    sub.className = "badge";
+    sub.textContent = "*." + x.domain;
+    tdD.append(sub);
+    tr.append(tdD);
+    const tdI = document.createElement("td");
+    tdI.textContent = x.ip;
+    tr.append(tdI);
+    const tdE = document.createElement("td");
+    tdE.append(x.enabled ? stGood("Da") : stOff("Ne"));
+    tr.append(tdE);
+    const tdN = document.createElement("td");
+    tdN.textContent = x.notes || "—";
+    tr.append(tdN);
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    tdAct.append(
+      btnSm("Uredi", false, () => openSpDialog(x)),
+      btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati split DNS za "${x.domain}"?`)) return;
+        await api("/dns/split/" + x.uuid, "DELETE").catch(alertErr);
+        loadDns().catch(alertErr);
+      }));
+    tr.append(tdAct);
+    spb.append(tr);
+  }
 
   const dm = st.dnsmasq || {};
   dnsDomain = dm.domain || "lan";
@@ -515,6 +551,18 @@ async function loadDns() {
     tr.append(tdAct);
     tb.append(tr);
   }
+}
+
+function openSpDialog(x) {
+  const f = $("sp-form");
+  editSpUUID = x ? x.uuid : null;
+  $("sp-dialog-title").textContent = editSpUUID
+    ? "Uredi split DNS domenu" : "Nova split DNS domena";
+  f.elements.domain.value = x ? x.domain : "";
+  f.elements.ip.value = x ? x.ip : "";
+  f.elements.notes.value = x ? x.notes || "" : "";
+  f.elements.enabled.checked = x ? !!x.enabled : true;
+  $("sp-dialog").showModal();
 }
 
 function openRecDialog(rec) {
@@ -1818,6 +1866,25 @@ $("dhcp-apply").addEventListener("click", async () => {
   }
 });
 
+$("sp-add").addEventListener("click", () => openSpDialog(null));
+$("sp-cancel").addEventListener("click", () => $("sp-dialog").close());
+$("sp-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {
+    domain: f.elements.domain.value.trim(),
+    ip: f.elements.ip.value.trim(),
+    notes: f.elements.notes.value.trim(),
+    enabled: f.elements.enabled.checked,
+  };
+  try {
+    if (editSpUUID) await api("/dns/split/" + editSpUUID, "PUT", body);
+    else await api("/dns/split", "POST", body);
+    $("sp-dialog").close();
+    await loadDns();
+  } catch (e) { alertErr(e); }
+});
+
 $("rec-add").addEventListener("click", () => openRecDialog(null));
 $("rec-cancel").addEventListener("click", () => $("rec-dialog").close());
 $("rec-form").addEventListener("submit", async (ev) => {
@@ -1847,7 +1914,8 @@ $("dns-apply").addEventListener("click", async () => {
   try {
     const r = await api("/dns/apply", "POST", {});
     $("dns-apply-result").textContent =
-      `Primijenjeno: ${r.applied} zapisa (uklonjeno starih: ${r.removed}). Backup: ${r.backup}`;
+      `Primijenjeno: ${r.applied} zapisa i ${r.applied_split || 0} split DNS ` +
+      `domena (uklonjeno starih: ${r.removed}). Backup: ${r.backup}`;
     await loadDns();
   } catch (e) {
     $("dns-apply-result").textContent = "Greška: " + (e.message || e);

@@ -60,6 +60,20 @@ CREATE TABLE IF NOT EXISTS dns_records (
     UNIQUE (name, rtype)
 );
 
+-- Split DNS: domena I SVE njene poddomene -> interna adresa servera.
+-- Primjenjuje se kao dnsmasq address=/domena/ip, pa lokalni korisnici dolaze
+-- izravno na server umjesto "van pa natrag" kroz javnu adresu (bitno za
+-- Traefik/Let's Encrypt: ime u certifikatu ostaje isto).
+CREATE TABLE IF NOT EXISTS dns_split (
+    uuid        TEXT PRIMARY KEY,
+    domain      TEXT NOT NULL UNIQUE,
+    ip          TEXT NOT NULL,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- WireGuard peerovi; privatni ključ postoji samo ako je par generiran na
 -- uređaju (omogućuje export klijentskog configa), inače je peer donio svoj javni
 CREATE TABLE IF NOT EXISTS wg_peers (

@@ -192,6 +192,29 @@
     </section>
     <section class="card">
       <div class="card-head">
+        <h2>Split DNS — vlastite domene prema internom serveru</h2>
+        <button id="sp-add" class="primary">Dodaj domenu</button>
+      </div>
+      <p class="hint">Kad je server objavljen prema internetu, lokalni korisnici
+        upisom javnog imena završe na javnoj adresi i često ne dobiju odgovor.
+        Ovdje kažeš: <b>ta domena i sve njene poddomene lokalno vode izravno na
+        interni server</b> (npr. <code>tvrtka.hr</code> → 192.168.50.10 pokriva i
+        <code>mail.tvrtka.hr</code>, <code>app.tvrtka.hr</code>…). Certifikat
+        (Let's Encrypt/Traefik) i dalje odgovara jer se ime ne mijenja.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Domena (+ poddomene)</th><th>Interni server</th><th>Aktivno</th>
+            <th>Napomene</th><th></th>
+          </tr></thead>
+          <tbody id="sp-rows"></tbody>
+        </table>
+      </div>
+      <p class="hint">Vrijedi za sve koji koriste ovaj uređaj kao DNS. Uređaji u
+        VLAN-ovima uz ovo trebaju i firewall dopuštenje prema serveru.</p>
+    </section>
+    <section class="card">
+      <div class="card-head">
         <h2>Lokalni DNS zapisi</h2>
         <button id="rec-add" class="primary">Dodaj zapis</button>
       </div>
@@ -847,11 +870,17 @@
         leaseova. Vrijede nakon gumba Primijeni.
       </div></details>
 
-      <details class="help"><summary>DNS — lokalna imena i DNSSEC</summary><div>
+      <details class="help"><summary>DNS — lokalna imena, split DNS i DNSSEC</summary><div>
         Lokalni zapisi daju uređajima imena (npr. <code>nas.lan</code> umjesto
         192.168.1.50). Tip A = ime → adresa; CNAME = dodatno ime (alias) za
         postojeće ime. <b>DNSSEC</b> provjerava kriptografske potpise DNS
-        odgovora — domene s krivotvorenim odgovorima se odbijaju.
+        odgovora — domene s krivotvorenim odgovorima se odbijaju.<br><br>
+        <b>Split DNS</b> rješava klasičan problem: server je objavljen prema
+        internetu, a lokalni korisnici mu ne mogu pristupiti javnim imenom.
+        Upišeš domenu i internu adresu servera — ta domena i sve poddomene
+        lokalno vode izravno na server. Ime ostaje isto pa Let's Encrypt
+        certifikat (Traefik, nginx…) i dalje odgovara. To je čišće rješenje od
+        NAT reflectiona jer promet uopće ne ide preko routera.
       </div></details>
 
       <details class="help"><summary>Firewall — pravila i port forwardi</summary><div>
@@ -864,8 +893,12 @@
         <b>Čarobnjak "Objavi server"</b>: odabereš interni server (ili ga
         izabereš iz inventara), označiš usluge (web, mail, RDP…) i po želji
         javnu adresu — čarobnjak složi sve forwarde odjednom. <b>NAT
-        reflection (hairpin)</b>: uz svaki forward, uključeno znači da server
-        preko javne adrese rade i korisnici iz lokalne mreže.
+        reflection (hairpin)</b>: uz svaki forward, uključeno znači da serveru
+        preko javne adrese pristupaju i korisnici iznutra — iz LAN-a, svih
+        VLAN-ova i s VPN-a. Ako korisnici pristupaju <i>imenom</i> (a ne
+        adresom), uz ovo postavi i <b>split DNS</b> (DNS modul) — tada promet
+        ide izravno na server. Korisnici u VLAN-u dodatno trebaju firewall
+        dopuštenje prema mreži u kojoj je server.
       </div></details>
 
       <details class="help"><summary>Blokade — zaštita mreže</summary><div>
@@ -1395,6 +1428,26 @@
       <button type="button" class="ghost" id="wgconf-close">Zatvori</button>
       <button type="button" class="primary" id="wgconf-copy">Kopiraj</button>
     </div>
+  </dialog>
+
+  <dialog id="sp-dialog">
+    <form id="sp-form">
+      <h2 id="sp-dialog-title">Split DNS domena</h2>
+      <div class="form-grid">
+        <label>Domena<input name="domain" required placeholder="tvrtka.hr"></label>
+        <label>Interni server (IP)<input name="ip" required placeholder="192.168.50.10"></label>
+        <label class="wide">Napomene<textarea name="notes" rows="2"></textarea></label>
+        <label class="check"><input type="checkbox" name="enabled" checked>
+          Aktivno — uključi u primjenu</label>
+      </div>
+      <p class="hint">Upisuje se domena bez zvjezdice — poddomene su uključene
+        automatski. Ako samo jedno ime treba voditi drugamo, upiši puno ime
+        (npr. <code>mail.tvrtka.hr</code>) kao zaseban zapis.</p>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="sp-cancel">Odustani</button>
+        <button type="submit" class="primary">Spremi</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="rec-dialog">

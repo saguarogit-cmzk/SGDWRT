@@ -84,6 +84,13 @@ susjedi prikazuju se u modulu.
 - **Lokalni zapisi**: imena za uređaje u mreži (npr. `nas.lan` umjesto
   192.168.1.50). Tip **A** = ime → IP adresa; **CNAME** = dodatno ime (alias)
   za postojeće ime. Ime bez točke automatski dobiva lokalnu domenu.
+- **Split DNS**: domena *i sve njene poddomene* lokalno vode na internu adresu
+  servera (dnsmasq `address=/domena/ip`). Rješava scenarij "server je objavljen
+  prema internetu, a lokalni korisnici do njega ne mogu": upišeš npr.
+  `tvrtka.hr` → `192.168.50.10` i pokriveni su `mail.tvrtka.hr`,
+  `app.tvrtka.hr` i ostali. Ime ostaje isto pa Let's Encrypt certifikat
+  (Traefik/nginx) i dalje vrijedi, a promet ne ide "van pa natrag".
+  Ručno dodani `address=` unosi u dnsmasq konfiguraciji ostaju netaknuti.
 - **DNSSEC**: provjera kriptografskih potpisa DNS odgovora — krivotvoreni
   odgovori se odbijaju. Ako nema vlastitih upstream DNS-ova, uređaj uz
   uključivanje postavlja pouzdane javne (ISP routeri često ne prosljeđuju
@@ -104,7 +111,11 @@ susjedi prikazuju se u modulu.
   inventara) + usluge (web, mail, SSH, RDP, vlastiti portovi) + po želji
   konkretna javna adresa → čarobnjak stvori sve potrebne forwarde odjednom.
 - **NAT reflection (hairpin)**: opcija uz svaki forward (zadano uključena) —
-  server preko javne adrese rade i korisnici iz lokalne mreže.
+  serveru preko javne adrese pristupaju i korisnici iznutra. Saguaro izrijekom
+  navodi *sve interne zone* (LAN, VLAN-ovi, VPN), jer fw4 zadano pokriva samo
+  odredišnu zonu pa korisnici izvan LAN-a inače ostanu bez pristupa.
+  Kad se pristupa imenom, uz hairpin postavi i **split DNS** (DNS modul);
+  VLAN klijenti trebaju i forwarding pravilo prema mreži servera.
 
 ## Blokade
 

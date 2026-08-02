@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -179,6 +180,131 @@ func (s *server) handleDNSRecordUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleDNSRecordDelete(w http.ResponseWriter, r *http.Request) {
 	res, err := s.db.Exec(`DELETE FROM dns_records WHERE uuid=?`, r.PathValue("uuid"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusNotFound, "zapis ne postoji")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("uuid")})
+}
+
+/* ---------- split DNS (domena + poddomene -> interna adresa) ---------- */
+
+type SplitRecord struct {
+	UUID    string `json:"uuid"`
+	Domain  string `json:"domain"`
+	IP      string `json:"ip"`
+	Enabled bool   `json:"enabled"`
+	Notes   string `json:"notes"`
+}
+
+const splitCols = `uuid, domain, ip, enabled, COALESCE(notes,'')`
+
+func scanSplit(row interface{ Scan(...any) error }) (SplitRecord, error) {
+	var x SplitRecord
+	err := row.Scan(&x.UUID, &x.Domain, &x.IP, &x.Enabled, &x.Notes)
+	return x, err
+}
+
+func validateSplit(w http.ResponseWriter, x *SplitRecord) bool {
+	x.Domain = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(x.Domain, "*.")))
+	x.IP = strings.TrimSpace(x.IP)
+	if !validDNSName(x.Domain) || !strings.Contains(x.Domain, ".") {
+		writeErr(w, http.StatusBadRequest,
+			"upiši domenu s točkom (npr. tvrtka.hr ili app.tvrtka.hr)")
+		return false
+	}
+	ip := net.ParseIP(x.IP)
+	if ip == nil || ip.To4() == nil {
+		writeErr(w, http.StatusBadRequest, "interna adresa mora biti IPv4")
+		return false
+	}
+	x.IP = ip.To4().String()
+	return true
+}
+
+func (s *server) handleSplitList(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.db.Query(`SELECT ` + splitCols + ` FROM dns_split ORDER BY domain`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []SplitRecord{}
+	for rows.Next() {
+		x, err := scanSplit(rows)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		out = append(out, x)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"split": out})
+}
+
+type splitIn struct {
+	SplitRecord
+	Enabled *bool `json:"enabled"`
+}
+
+func (s *server) handleSplitCreate(w http.ResponseWriter, r *http.Request) {
+	var in splitIn
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	x := &in.SplitRecord
+	if !validateSplit(w, x) {
+		return
+	}
+	x.UUID = newUUID()
+	_, err := s.db.Exec(`INSERT INTO dns_split (uuid, domain, ip, enabled, notes)
+		VALUES (?,?,?,?,?)`, x.UUID, x.Domain, x.IP, enabledIntOf(in.Enabled), x.Notes)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			writeErr(w, http.StatusConflict, "ta domena već ima split DNS zapis")
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	xx, _ := scanSplit(s.db.QueryRow(`SELECT `+splitCols+` FROM dns_split WHERE uuid=?`, x.UUID))
+	writeJSON(w, http.StatusCreated, xx)
+}
+
+func (s *server) handleSplitUpdate(w http.ResponseWriter, r *http.Request) {
+	uuid := r.PathValue("uuid")
+	var in splitIn
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	x := &in.SplitRecord
+	if !validateSplit(w, x) {
+		return
+	}
+	res, err := s.db.Exec(`UPDATE dns_split SET domain=?, ip=?, enabled=?, notes=?,
+		updated_at=datetime('now') WHERE uuid=?`,
+		x.Domain, x.IP, enabledIntOf(in.Enabled), x.Notes, uuid)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			writeErr(w, http.StatusConflict, "ta domena već ima split DNS zapis")
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusNotFound, "zapis ne postoji")
+		return
+	}
+	xx, _ := scanSplit(s.db.QueryRow(`SELECT `+splitCols+` FROM dns_split WHERE uuid=?`, uuid))
+	writeJSON(w, http.StatusOK, xx)
+}
+
+func (s *server) handleSplitDelete(w http.ResponseWriter, r *http.Request) {
+	res, err := s.db.Exec(`DELETE FROM dns_split WHERE uuid=?`, r.PathValue("uuid"))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -404,20 +530,78 @@ func (s *server) handleDNSApply(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(&batch, "set dhcp.%s.ip=%s\n", sn, x.value)
 		}
 	}
+	// split DNS: address=/domena/ip na dnsmasq sekciji. Lista je zajednička s
+	// ručnim unosima, pa se uklanjaju samo zapisi koje smo mi prošli put
+	// upisali (pamte se u settings) — tuđi ostaju netaknuti (D-011).
+	splitRows, err := s.db.Query(`SELECT domain, ip FROM dns_split
+		WHERE enabled = 1 ORDER BY domain`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	want := []string{}
+	for splitRows.Next() {
+		var d, ip string
+		if err := splitRows.Scan(&d, &ip); err != nil {
+			splitRows.Close()
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		want = append(want, "/"+d+"/"+ip)
+	}
+	splitRows.Close()
+
+	dnsmasqSect := ""
+	for name, sec := range cfg {
+		if sectStr(sec, ".type") == "dnsmasq" {
+			dnsmasqSect = name
+			break
+		}
+	}
+	if dnsmasqSect != "" {
+		var prev []string
+		json.Unmarshal([]byte(s.getSetting("dns_split_applied", "[]")), &prev)
+		ours := map[string]bool{}
+		for _, p := range prev {
+			ours[p] = true
+		}
+		for _, wnt := range want {
+			ours[wnt] = true
+		}
+		keep := []string{}
+		for _, a := range sectList(cfg[dnsmasqSect], "address") {
+			if !ours[a] {
+				keep = append(keep, a) // ručni unos — ostaje
+			}
+		}
+		final := append(keep, want...)
+		if len(sectList(cfg[dnsmasqSect], "address")) > 0 {
+			fmt.Fprintf(&batch, "delete dhcp.%s.address\n", dnsmasqSect)
+		}
+		for _, a := range final {
+			fmt.Fprintf(&batch, "add_list dhcp.%s.address=%s\n", dnsmasqSect, uciQuote(a))
+		}
+	}
 	batch.WriteString("commit dhcp\n")
 
 	if err := uciBatch(ctx, batch.String()); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := serviceReload(ctx, "dnsmasq", "reload"); err != nil {
+	if dnsmasqSect != "" {
+		b, _ := json.Marshal(want)
+		s.setSetting("dns_split_applied", string(b))
+	}
+	// promjena address= zapisa traži restart, reload nije dovoljan
+	if err := serviceReload(ctx, "dnsmasq", "restart"); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"applied": len(recs),
-		"removed": removed,
-		"backup":  backupName,
+		"applied":       len(recs),
+		"applied_split": len(want),
+		"removed":       removed,
+		"backup":        backupName,
 	})
 }

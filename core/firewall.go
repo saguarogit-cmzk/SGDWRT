@@ -932,6 +932,20 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// interne zone za NAT reflection (sve osim izvorišnih/WAN zona)
+	internalZones := []string{}
+	for _, sec := range cfg {
+		if sectStr(sec, ".type") != "zone" {
+			continue
+		}
+		zn := sectStr(sec, "name")
+		if zn == "" || zn == "wan" {
+			continue
+		}
+		internalZones = append(internalZones, zn)
+	}
+	sort.Strings(internalZones)
+
 	var b strings.Builder
 	removed := 0
 	for name, sec := range cfg {
@@ -970,12 +984,20 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 		if f.SrcDIP != "" {
 			fmt.Fprintf(&b, "set firewall.%s.src_dip=%s\n", sn, f.SrcDIP)
 		}
-		// hairpin NAT / NAT reflection: forward dostupan i iz unutarnjih mreža
+		// hairpin NAT / NAT reflection: forward dostupan i iz unutarnjih mreža.
+		// fw4 zadano radi reflection samo za odredišnu zonu, pa izrijekom
+		// navodimo sve interne zone (VLAN-ovi, VPN) — inače korisnici izvan
+		// LAN-a ne mogu do servera preko javne adrese.
 		refl := "0"
 		if f.Reflection {
 			refl = "1"
 		}
 		fmt.Fprintf(&b, "set firewall.%s.reflection=%s\n", sn, refl)
+		if f.Reflection {
+			for _, z := range internalZones {
+				fmt.Fprintf(&b, "add_list firewall.%s.reflection_zone=%s\n", sn, z)
+			}
+		}
 	}
 	for _, f := range rules {
 		sn := rlPrefix + strings.ReplaceAll(f.UUID, "-", "")[:8]

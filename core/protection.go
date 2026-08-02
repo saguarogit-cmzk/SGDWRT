@@ -132,6 +132,7 @@ func (s *server) handleProtectionGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	out["adblock"] = ad
+	out["scan"] = s.scanState(r.Context())
 
 	writeJSON(w, http.StatusOK, out)
 }

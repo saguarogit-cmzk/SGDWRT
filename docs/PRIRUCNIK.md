@@ -133,6 +133,29 @@ susjedi prikazuju se u modulu.
   **Iznimke**: domene koje se nikad ne blokiraju (npr. vlastita domena) —
   imaju prednost pred svim listama.
 
+- **Detekcija skeniranja portova**: prije napada gotovo uvijek ide izviđanje —
+  netko s interneta u nekoliko sekundi kuca na stotine portova. Uređaj takav
+  izvor prepozna **po ponašanju** (broju novih veza u sekundi) i privremeno ga
+  odbaci. Ne pregledava sadržaj prometa, kao veliki IDS sustavi, pa je trošak
+  zanemariv — sve se odvija u firewallu.
+  - Zadani prag je namjerno blag: objavljeni web ili mail server kojemu
+    posjetitelji dolaze kroz jedan operaterski NAT zna otvoriti puno veza u
+    sekundi, a to nije napad.
+  - Ako nešto legitimno ipak upadne u zamku (npr. alat za nadzor koji kuca
+    prečesto), dodaj ga u **iznimke** i isprazni popis blokiranih.
+  - Pravila se pišu u `/etc/nftables.d/`, odakle ih firewall sam uvlači, pa
+    preživljavaju restart.
+
+## Promjene konfiguracije (Nadzor)
+
+Uređaj svake minute usporedi svoje postavke s prošlim stanjem i zabilježi što
+se promijenilo. Klik na redak pokazuje točnu razliku, redak po redak.
+
+Bitno: hvataju se i promjene napravljene **izvan Saguara** — kroz LuCI ili sa
+SSH-a. One se označavaju kao takve jer OpenWrt nema više administratorskih
+računa (sve je `root`), pa se ne mogu pripisati osobi. Promjene napravljene
+kroz Saguaro nose ime korisnika koji ih je napravio.
+
 ## WireGuard i OpenVPN (udaljeni pristup)
 
 Dva ravnopravna VPN-a — WireGuard je brži i moderniji, OpenVPN kompatibilniji

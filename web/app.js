@@ -930,6 +930,7 @@ function openPeerDialog(p) {
 async function loadMonitorx() {
   const [x, tr] = await Promise.all([api("/monitor"), api("/traffic")]);
   loadAlerts().catch(() => {});
+  loadAudit().catch(() => {});
 
   $("nm-unknown").checked = !!x.unknown_alert;
   const tb = $("nm-rows");
@@ -1063,6 +1064,7 @@ async function loadOspf() {
 
 async function loadProtection() {
   const x = await api("/protection");
+  fillScan(x.scan);
 
   const bi = x.banip || {};
   $("bi-enabled").checked = !!bi.enabled;
@@ -3134,5 +3136,106 @@ $("hd-save").addEventListener("click", async () => {
   } catch (e) {
     $("hd-result").textContent = "Greška: " + (e.message || e);
     await loadHardening();
+  }
+});
+
+/* ---------- detekcija skeniranja portova (Blokade) ---------- */
+
+function fillScan(sc) {
+  if (!sc) return;
+  $("sc-enabled").checked = !!sc.enabled;
+  $("sc-rate").value = sc.rate;
+  $("sc-burst").value = sc.burst;
+  $("sc-ban").value = sc.ban_minutes;
+  $("sc-allow").value = sc.allow_ips || "";
+
+  const kv = $("sc-kv");
+  kv.replaceChildren();
+  const blocked = sc.blocked || [];
+  for (const [k, v] of [
+    ["Nadzirana sučelja", (sc.devices || []).join(", ") || "—"],
+    ["Trenutno blokirano izvora", String(blocked.length)],
+    ["Blokirani", blocked.length ? blocked.join(", ") : "nijedan"],
+  ]) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    kv.append(dt, dd);
+  }
+}
+
+$("sc-save").addEventListener("click", async () => {
+  $("sc-result").textContent = "Spremam…";
+  try {
+    const sc = await api("/protection/scan", "POST", {
+      enabled: $("sc-enabled").checked,
+      rate: parseInt($("sc-rate").value, 10) || 25,
+      burst: parseInt($("sc-burst").value, 10) || 50,
+      ban_minutes: parseInt($("sc-ban").value, 10) || 60,
+      allow_ips: $("sc-allow").value.trim(),
+    });
+    fillScan(sc);
+    $("sc-result").textContent = "Spremljeno i primijenjeno.";
+  } catch (e) {
+    $("sc-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("sc-clear").addEventListener("click", async () => {
+  try {
+    await api("/protection/scan/clear", "POST", {});
+    $("sc-result").textContent = "Popis blokiranih je ispražnjen.";
+    loadProtection().catch(() => {});
+  } catch (e) {
+    $("sc-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+/* ---------- promjene konfiguracije (Nadzor) ---------- */
+
+async function loadAudit(data) {
+  const a = data || await api("/audit");
+  const tb = $("au-rows");
+  tb.replaceChildren();
+  for (const c of a.changes) {
+    const tr = document.createElement("tr");
+    tr.style.cursor = "pointer";
+    const who = c.source ? c.source : "izvan Saguara (LuCI/SSH)";
+    for (const v of [c.ts, c.name, who, `+${c.added} / −${c.removed}`]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    tr.addEventListener("click", () => showDiff(c.id));
+    tb.append(tr);
+  }
+  if (!a.changes.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 4;
+    td.className = "hint";
+    td.textContent = "Još nije zabilježena nijedna promjena.";
+    tr.append(td);
+    tb.append(tr);
+  }
+}
+
+async function showDiff(id) {
+  const pre = $("au-diff");
+  pre.classList.remove("hidden");
+  pre.textContent = "Učitavam…";
+  try {
+    const d = await api("/audit/" + id);
+    const who = d.source ? "korisnik " + d.source : "izvan Saguara (LuCI ili SSH)";
+    pre.textContent = `${d.name} — ${d.ts} — ${who}\n\n${d.diff}`;
+  } catch (e) {
+    pre.textContent = "Greška: " + (e.message || e);
+  }
+}
+
+$("au-run").addEventListener("click", async () => {
+  try {
+    await loadAudit(await api("/audit/run", "POST", {}));
+  } catch (e) {
+    alertErr(e);
   }
 });

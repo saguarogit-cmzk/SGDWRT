@@ -274,6 +274,27 @@ if [ -f /etc/init.d/adblock-fast ]; then
     fi
 fi
 
+# detekcija skeniranja portova
+if [ -f /etc/nftables.d/20-saguaro-scan.nft ]; then
+    if nft list chain inet fw4 sag_scan_detect >/dev/null 2>&1; then
+        NSC=$(nft list set inet fw4 sag_scanners 2>/dev/null |
+              grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | grep -c .)
+        ok "Detekcija skeniranja portova radi (trenutno blokiranih: $NSC)"
+    else
+        bad "Pravila za detekciju skeniranja postoje, ali nisu u jezgri" \
+            "/etc/init.d/firewall restart"
+    fi
+else
+    skip "Detekcija skeniranja portova nije uključena"
+fi
+
+# trag promjena konfiguracije
+if api audit | grep -q '"changes"'; then
+    ok "Trag promjena konfiguracije je aktivan"
+else
+    bad "Trag promjena konfiguracije ne odgovara"
+fi
+
 # očvršćivanje
 if [ "$(sysctl -n net.ipv4.conf.all.rp_filter 2>/dev/null)" = "2" ]; then
     ok "Obrana od krivotvorenih adresa je uključena (labavo)"

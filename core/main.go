@@ -23,17 +23,20 @@ import (
 	"time"
 )
 
-const version = "0.21.0"
+const version = "0.22.0"
 
 type server struct {
-	tokenMu   sync.RWMutex
-	token     string // API token za strojni pristup; GUI koristi sesije (auth.go)
-	webDir    string
-	etcDir    string
-	dataDir   string
-	backupDir string
-	started   time.Time
-	db        *sql.DB
+	tokenMu       sync.RWMutex
+	writeMu       sync.RWMutex
+	lastWriteUser string    // zadnji korisnik koji je pisao kroz API
+	lastWriteAt   time.Time // i kada — za pripisivanje promjene konfiguracije
+	token         string    // API token za strojni pristup; GUI koristi sesije (auth.go)
+	webDir        string
+	etcDir        string
+	dataDir       string
+	backupDir     string
+	started       time.Time
+	db            *sql.DB
 }
 
 func main() {
@@ -123,9 +126,16 @@ func main() {
 		}
 	}
 
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		s.ensureScanRules(ctx)
+		cancel()
+	}
+
 	go collectMetrics()
 	go s.monitorLoop()
 	go s.watchdogLoop()
+	go s.auditLoop()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
@@ -147,6 +157,9 @@ func main() {
 	mux.Handle("GET /api/v1/alerts", s.auth(s.handleAlertsGet))
 	mux.Handle("POST /api/v1/alerts", s.auth(s.handleAlertsSet))
 	mux.Handle("POST /api/v1/alerts/run", s.auth(s.handleWatchdogRun))
+	mux.Handle("GET /api/v1/audit", s.auth(s.handleAuditList))
+	mux.Handle("GET /api/v1/audit/{id}", s.auth(s.handleAuditDiff))
+	mux.Handle("POST /api/v1/audit/run", s.auth(s.handleAuditRun))
 	mux.Handle("GET /api/v1/backup/offsite", s.auth(s.handleOffsiteGet))
 	mux.Handle("POST /api/v1/backup/offsite", s.auth(s.handleOffsiteSet))
 	mux.Handle("POST /api/v1/backup/offsite/test", s.auth(s.handleOffsiteTest))
@@ -179,6 +192,8 @@ func main() {
 	mux.Handle("GET /api/v1/protection", s.auth(s.handleProtectionGet))
 	mux.Handle("POST /api/v1/protection/banip", s.auth(s.handleBanipSet))
 	mux.Handle("POST /api/v1/protection/adblock", s.auth(s.handleAdblockSet))
+	mux.Handle("POST /api/v1/protection/scan", s.auth(s.handleScanSet))
+	mux.Handle("POST /api/v1/protection/scan/clear", s.auth(s.handleScanClear))
 	mux.Handle("GET /api/v1/wireguard/status", s.auth(s.handleWGStatus))
 	mux.Handle("POST /api/v1/wireguard/server", s.auth(s.handleWGServerSet))
 	mux.Handle("GET /api/v1/wireguard/peers", s.auth(s.handleWGPeerList))
@@ -323,6 +338,22 @@ func ensureToken(path string) (string, error) {
 // auth propušta strojni API token ili valjanu GUI sesiju.
 // allowedWithDefaultPassword nabraja jedine putanje dostupne korisniku koji još
 // nije promijenio zadanu lozinku s instalacije.
+// mutatingRequest javlja mijenja li poziv konfiguraciju. Nekoliko POST
+// endpointa samo pokreće provjeru ili šalje probu — kad bi se i oni brojali,
+// klik na "Provjeri sada" pripisao bi sebi tuđu promjenu.
+func mutatingRequest(method, path string) bool {
+	if method == http.MethodGet {
+		return false
+	}
+	switch path {
+	case "/api/v1/audit/run", "/api/v1/alerts/run", "/api/v1/notify/test",
+		"/api/v1/rollback/confirm", "/api/v1/auth/logout",
+		"/api/v1/auth/logout-others", "/api/v1/backup/offsite/test":
+		return false
+	}
+	return true
+}
+
 func allowedWithDefaultPassword(path string) bool {
 	switch path {
 	case "/api/v1/auth/password", "/api/v1/auth/logout", "/api/v1/auth/logout-others":
@@ -335,6 +366,11 @@ func (s *server) auth(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if ok && subtle.ConstantTimeCompare([]byte(got), []byte(s.apiToken())) == 1 {
+			// tko piše kroz API pamti se radi pripisivanja promjena
+			// konfiguracije (audit.go); čitanje se ne bilježi
+			if mutatingRequest(r.Method, r.URL.Path) {
+				s.noteWrite("API token")
+			}
 			next(w, r)
 			return
 		}
@@ -349,6 +385,9 @@ func (s *server) auth(next http.HandlerFunc) http.Handler {
 						"korištenja ostalih funkcija.",
 				})
 				return
+			}
+			if mutatingRequest(r.Method, r.URL.Path) {
+				s.noteWrite(user)
 			}
 			next(w, r)
 			return

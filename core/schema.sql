@@ -273,3 +273,25 @@ CREATE TABLE IF NOT EXISTS alert_state (
     last_sent   TEXT,
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Zadnje viđeno stanje svake uci konfiguracije; iz njega se računa razlika
+-- pri sljedećoj promjeni.
+CREATE TABLE IF NOT EXISTS config_state (
+    name        TEXT PRIMARY KEY,             -- npr. "firewall"
+    hash        TEXT NOT NULL,
+    body        TEXT NOT NULL,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Trag promjena konfiguracije. source je korisnik Saguara ako je promjena
+-- došla kroz sučelje, inače prazno (LuCI ili SSH — OpenWrt nema više
+-- administratorskih računa, pa se takva promjena ne može pripisati osobi).
+CREATE TABLE IF NOT EXISTS config_changes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          TEXT NOT NULL DEFAULT (datetime('now')),
+    name        TEXT NOT NULL,
+    source      TEXT,
+    added       INTEGER NOT NULL DEFAULT 0,
+    removed     INTEGER NOT NULL DEFAULT 0,
+    diff        TEXT NOT NULL
+);

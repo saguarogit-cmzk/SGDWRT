@@ -490,9 +490,37 @@
         <button id="sy-refresh" class="ghost">Osvježi</button>
       </div>
       <p class="hint">Puni log operativnog sustava (kernel, servisi, VPN,
-        firewall…) — zadnjih 150 linija. Za trajno čuvanje pošalji ga na
-        vanjski poslužitelj: Postavke → Slanje logova (syslog).</p>
+        firewall…) — zadnjih 150 linija. Za trajno čuvanje uključi spremanje na
+        disk (Sustav → Postavke) ili slanje na vanjski syslog poslužitelj.</p>
       <pre id="sy-log" style="font-size:11.5px;overflow-x:auto;background:#f6f8fa;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:400px;overflow-y:auto">—</pre>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Upozorenja e-mailom</h2>
+        <button id="al-run" class="ghost">Provjeri sada</button>
+      </div>
+      <p class="hint">Uređaj sam prati stanje i javlja kad se nešto promijeni.
+        Poruke idu na adresu iz SMTP postavki (kartica ispod). Ista se poruka ne
+        ponavlja češće od zadanog razmaka, da jedan pokvaren link ne zatrpa
+        sandučić.</p>
+      <div id="al-kinds" class="check-list"></div>
+      <div class="form-grid">
+        <label>Oznaka uređaja u naslovu poruke
+          <input id="al-label" placeholder="npr. Ured Zagreb"></label>
+        <label>Razmak između istih poruka (min)
+          <input id="al-quiet" type="number" min="1" max="1440"></label>
+        <label>Prag za procesor (%)<input id="al-cpu" type="number" min="50" max="100"></label>
+        <label>Prag za memoriju (%)<input id="al-mem" type="number" min="50" max="100"></label>
+        <label>Prag za disk (%)<input id="al-disk" type="number" min="50" max="100"></label>
+        <label>Javi istek certifikata (dana unaprijed)
+          <input id="al-cert" type="number" min="1" max="365"></label>
+      </div>
+      <dl class="kv" id="al-state"></dl>
+      <p class="hint" id="al-result"></p>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="al-save" class="primary">Spremi upozorenja</button>
+      </div>
     </section>
   </div>
 
@@ -666,6 +694,39 @@
   </div>
 
   <div class="view hidden" id="view-backup">
+    <section class="card">
+      <h2>Slanje backupa izvan uređaja</h2>
+      <p class="hint">Backup koji leži samo na uređaju nije backup — kvar diska
+        ili krađa uređaja znače gubitak svega. Ovime se svaka nova arhiva
+        automatski šalje na tvoj server ili NAS.</p>
+      <p class="hint"><b>Arhiva sadrži privatne ključeve VPN-a, API token i
+        lozinke</b>, pa se prije slanja šifrira. Lozinku za šifriranje zapiši na
+        sigurno: <b>bez nje se arhiva ne može otvoriti.</b> Otvara se naredbom
+        <code>saguaro-core -decrypt-backup arhiva.enc -backup-pass 'lozinka'</code>.</p>
+      <div class="form-grid">
+        <label class="check" style="grid-column:1/-1"><input type="checkbox" id="os-enabled">
+          Šalji svaku novu arhivu na vanjski poslužitelj</label>
+        <label>Poslužitelj (IP ili ime)<input id="os-host" placeholder="192.168.50.10"></label>
+        <label>Port<input id="os-port" type="number" placeholder="22"></label>
+        <label>Korisnik na poslužitelju<input id="os-user" placeholder="backup"></label>
+        <label>Putanja na poslužitelju<input id="os-path" placeholder="/backup/saguaro"></label>
+        <label class="check" style="grid-column:1/-1"><input type="checkbox" id="os-encrypt" checked>
+          Šifriraj arhivu prije slanja (preporučeno)</label>
+        <label class="wide">Lozinka za šifriranje (najmanje 12 znakova)
+          <input id="os-pass" type="password" autocomplete="new-password"
+                 placeholder="prazno = zadrži postojeću"></label>
+      </div>
+      <p class="hint">Prijava na poslužitelj ide SSH ključem — uređaj ga sam
+        napravi. Njegov javni dio dodaj na poslužitelju u
+        <code>~/.ssh/authorized_keys</code> korisnika kojeg si upisao:</p>
+      <pre id="os-pubkey" style="font-size:11.5px;overflow-x:auto;background:#f6f8fa;border:1px solid var(--line);border-radius:8px;padding:10px">—</pre>
+      <dl class="kv" id="os-kv"></dl>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="os-save" class="primary">Spremi</button>
+        <button id="os-test" class="ghost">Pošalji zadnju arhivu odmah</button>
+      </div>
+      <p class="hint" id="os-result"></p>
+    </section>
     <section class="grid-2">
       <div class="card">
         <h2>Puni backup uređaja</h2>
@@ -1003,6 +1064,42 @@
         vanjski syslog poslužitelj.
       </div></details>
 
+      <details class="help"><summary>Upozorenja e-mailom — što uređaj javlja</summary><div>
+        Uređaj sam prati stanje i javlja kad se nešto promijeni: pad i povratak
+        internet veze, promjena javne IP adrese, rad iza tuđeg NAT-a, pad VPN
+        poslužitelja, spajanje korisnika, ponovno pokretanje, prelazak praga za
+        procesor/memoriju/disk, neuspio backup, skori istek certifikata.
+        Svaka se vrsta pali zasebno (Nadzor → Upozorenja e-mailom), a ista se
+        poruka ne ponavlja češće od zadanog razmaka.
+        <br><br><b>CGNAT</b> je upozorenje koje vrijedi shvatiti ozbiljno: ako
+        uređaj nema vlastitu javnu adresu, objavljeni serveri i spajanje na VPN
+        izvana neće raditi ma kako dobro bilo podešeno.
+        <br><br>Veza prema poštanskom poslužitelju je uvijek šifrirana — na
+        portu 465 od početka, na 587 kroz STARTTLS. Ako poslužitelj ne nudi
+        šifriranje, slanje se odustaje umjesto da lozinka ode u čistom obliku.
+      </div></details>
+
+      <details class="help"><summary>Logovi — zašto nestanu i kako ih sačuvati</summary><div>
+        OpenWrt zadano drži logove samo u 128 kB spremnika u <b>memoriji</b>, pa
+        nakon svakog ponovnog pokretanja nestanu. Uključi
+        <b>Postavke → Trajno spremanje logova</b> i logovi idu na disk, uz noćnu
+        rotaciju u dnevne datoteke koje se mogu preuzeti. Uređaj ima puno
+        prostora, pa je 30 dana povijesti bezbolno. Neovisno o tome, kopija može
+        ići i na vanjski syslog poslužitelj.
+      </div></details>
+
+      <details class="help"><summary>Backup izvan uređaja — zašto i kako</summary><div>
+        Arhive na uređaju su povijest izmjena, ne backup: kvar diska ili krađa
+        uređaja znače gubitak svega. U <b>Backup → Slanje backupa izvan
+        uređaja</b> upiši svoj server ili NAS; svaka nova arhiva ide onamo sama.
+        <br><br>Prijava ide SSH ključem koji uređaj napravi — njegov javni dio
+        prekopiraj na poslužitelju u <code>~/.ssh/authorized_keys</code>.
+        <br><br>Arhiva sadrži <b>privatne ključeve VPN-a, API token i lozinke</b>,
+        pa se prije slanja šifrira. <b>Lozinku za šifriranje zapiši na sigurno —
+        bez nje se arhiva ne može otvoriti.</b> Otvara se naredbom
+        <code>saguaro-core -decrypt-backup arhiva.enc -backup-pass 'lozinka'</code>.
+      </div></details>
+
       <details class="help"><summary>Zaboravljena lozinka za Saguaro</summary><div>
         Ako se više ne možeš prijaviti u sučelje, lozinka se vraća sa SSH-a:
         <code>/etc/init.d/saguaro-core stop &amp;&amp;
@@ -1131,6 +1228,30 @@
         <button id="sm-test" class="ghost">Pošalji probnu poruku</button>
       </div>
       <p class="hint" id="sm-result"></p>
+    </section>
+    <section class="card" style="max-width:720px">
+      <h2>Trajno spremanje logova</h2>
+      <p class="hint">Uređaj zadano drži logove samo u malom spremniku u
+        memoriji, pa nakon svakog ponovnog pokretanja <b>nestanu</b>. Ovime se
+        pišu na disk i svaku noć rotiraju u dnevne datoteke. Uređaj ima puno
+        prostora, pa je 30 dana povijesti bezbolno.</p>
+      <div class="form-grid">
+        <label class="check" style="grid-column:1/-1"><input type="checkbox" id="ls-enabled">
+          Spremaj logove na disk</label>
+        <label>Spremnik u memoriji (kB)<input id="ls-buffer" type="number" min="64" max="16384"></label>
+        <label>Čuvaj dnevne logove (dana)<input id="ls-keep" type="number" min="1" max="3650"></label>
+      </div>
+      <dl class="kv" id="ls-kv"></dl>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Datoteka</th><th>Veličina</th><th>Zadnja izmjena</th><th></th></tr></thead>
+          <tbody id="ls-rows"></tbody>
+        </table>
+      </div>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="ls-save" class="primary">Spremi</button>
+      </div>
+      <p class="hint" id="ls-result"></p>
     </section>
     <section class="card" style="max-width:720px">
       <h2>Slanje logova na vanjski poslužitelj (syslog)</h2>

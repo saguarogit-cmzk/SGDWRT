@@ -202,3 +202,8 @@ footer{margin-top:auto;padding-top:18px;display:flex;justify-content:space-betwe
   .content{padding:16px}
   .form-grid{grid-template-columns:1fr}
 }
+
+/* popis kvačica za upozorenja — dvije kolone na širokom ekranu */
+.check-list{display:grid;grid-template-columns:1fr;gap:2px;margin:10px 0 14px}
+@media (min-width:900px){.check-list{grid-template-columns:1fr 1fr;gap:2px 22px}}
+.check-list .check-row{font-weight:500}

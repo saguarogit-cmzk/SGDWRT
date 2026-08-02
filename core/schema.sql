@@ -263,3 +263,13 @@ CREATE TABLE IF NOT EXISTS schema_version (
 );
 INSERT INTO schema_version (version)
     SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM schema_version);
+
+-- Stanje sustava upozorenja: pamti zadnju viđenu vrijednost (npr. javnu IP
+-- adresu ili stanje WAN veze) i trenutak zadnjeg poslanog e-maila, da se ista
+-- poruka ne ponavlja svake minute.
+CREATE TABLE IF NOT EXISTS alert_state (
+    key         TEXT PRIMARY KEY,
+    value       TEXT,
+    last_sent   TEXT,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);

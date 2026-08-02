@@ -76,11 +76,28 @@ func (s *server) createFullBackup(ctx context.Context) (string, int64, error) {
 func (s *server) handleBackupCreate(w http.ResponseWriter, r *http.Request) {
 	name, size, err := s.createFullBackup(r.Context())
 	if err != nil {
+		s.alert("backup", "warning", "Izrada backupa nije uspjela: "+err.Error())
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// slanje izvan uređaja ne smije srušiti izradu backupa — arhiva na
+	// uređaju već postoji, pa se neuspjeh samo javi
+	offsite := "isključeno"
+	if s.getSetting("offsite_enabled", "0") == "1" {
+		if err := s.sendOffsite(r.Context(), name); err != nil {
+			s.setSetting("offsite_last_error", err.Error())
+			s.alert("backup", "warning",
+				"Backup je napravljen, ali slanje izvan uređaja nije uspjelo: "+
+					err.Error())
+			offsite = "neuspjelo: " + err.Error()
+		} else {
+			s.setSetting("offsite_last_ok", time.Now().Format("2006-01-02 15:04:05"))
+			s.setSetting("offsite_last_error", "")
+			offsite = "poslano"
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"archive": name, "size_bytes": size,
+		"archive": name, "size_bytes": size, "offsite": offsite,
 	})
 }
 
@@ -512,4 +529,29 @@ func extractBackup(archive, dst string) error {
 			return err
 		}
 	}
+}
+
+// replaceCronLine zamjenjuje (ili miče) redak u crontabu prepoznat po oznaci.
+// Tuđi se retci ne diraju — svaki Saguaro zadatak ima vlastitu oznaku.
+func replaceCronLine(marker, line string) error {
+	old, _ := os.ReadFile(cronFile)
+	var lines []string
+	for _, l := range strings.Split(string(old), "\n") {
+		if l != "" && !strings.Contains(l, marker) {
+			lines = append(lines, l)
+		}
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	content := strings.Join(lines, "\n")
+	if content != "" {
+		content += "\n"
+	}
+	if err := os.WriteFile(cronFile, []byte(content), 0o600); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return serviceReload(ctx, "cron", "restart")
 }

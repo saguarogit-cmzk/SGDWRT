@@ -929,6 +929,7 @@ function openPeerDialog(p) {
 
 async function loadMonitorx() {
   const [x, tr] = await Promise.all([api("/monitor"), api("/traffic")]);
+  loadAlerts().catch(() => {});
 
   $("nm-unknown").checked = !!x.unknown_alert;
   const tb = $("nm-rows");
@@ -1368,6 +1369,8 @@ async function loadSettings() {
   $("tz-ntp").checked = !!tz.ntp_server;
   $("tz-servers").value = tz.ntp_servers || "";
 
+  loadLogStore(sys).catch(() => {});
+
   const acl = sys.mgmt_acl || {};
   $("acl-enabled").checked = !!acl.enabled;
   $("acl-allow").value = acl.allow || "";
@@ -1449,6 +1452,7 @@ async function loadBackup() {
   const [x, sch] = await Promise.all([
     api("/backup/archives"), api("/backup/schedule"),
   ]);
+  loadOffsite().catch(() => {});
   $("bs-enabled").checked = !!sch.enabled;
   $("bs-freq").value = sch.freq || "daily";
 
@@ -2888,3 +2892,197 @@ $("net-form").addEventListener("submit", async (ev) => {
 
 if (token) start().catch(() => logout(true));
 else $("login").classList.remove("hidden");
+
+/* ---------- upozorenja (Nadzor) ---------- */
+
+async function loadAlerts() {
+  const a = await api("/alerts");
+  const box = $("al-kinds");
+  box.replaceChildren();
+  for (const k of a.kinds) {
+    const lab = document.createElement("label");
+    lab.className = "check-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = k.enabled;
+    cb.dataset.kind = k.id;
+    lab.append(cb, document.createTextNode(" " + k.label));
+    box.append(lab);
+  }
+  $("al-quiet").value = a.quiet_min;
+  $("al-cpu").value = a.cpu_pct;
+  $("al-mem").value = a.mem_pct;
+  $("al-disk").value = a.disk_pct;
+  $("al-cert").value = a.cert_days;
+  $("al-label").value = a.device_label || "";
+
+  const kv = $("al-state");
+  kv.replaceChildren();
+  const st = a.state || {};
+  const rows = [["Javna IP adresa", a.public_ip || "još nije očitana"]];
+  for (const [k, v] of Object.entries(st)) {
+    if (k.startsWith("wan:")) rows.push(["Veza " + k.slice(4), v === "up" ? "radi" : "PALA"]);
+    else if (k.startsWith("svc:")) rows.push(["Servis " + k.slice(4), v === "up" ? "radi" : "NE RADI"]);
+    else if (k === "cgnat") rows.push(["Iza tuđeg NAT-a", v === "da" ? "DA — objave izvana neće raditi" : "ne"]);
+  }
+  for (const [k, v] of rows) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    kv.append(dt, dd);
+  }
+}
+
+$("al-save").addEventListener("click", async () => {
+  const kinds = {};
+  for (const cb of $("al-kinds").querySelectorAll("input[type=checkbox]")) {
+    kinds[cb.dataset.kind] = cb.checked;
+  }
+  $("al-result").textContent = "Spremam…";
+  try {
+    await api("/alerts", "POST", {
+      kinds,
+      quiet_min: parseInt($("al-quiet").value, 10) || 30,
+      cpu_pct: parseInt($("al-cpu").value, 10) || 90,
+      mem_pct: parseInt($("al-mem").value, 10) || 90,
+      disk_pct: parseInt($("al-disk").value, 10) || 90,
+      cert_days: parseInt($("al-cert").value, 10) || 30,
+      device_label: $("al-label").value.trim(),
+    });
+    $("al-result").textContent = "Spremljeno.";
+  } catch (e) {
+    $("al-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("al-run").addEventListener("click", async () => {
+  $("al-result").textContent = "Provjeravam…";
+  try {
+    const r = await api("/alerts/run", "POST", {});
+    $("al-result").textContent = "Provjereno. Javna adresa: " +
+      (r.public_ip || "nije očitana");
+    await loadAlerts();
+    await loadMonitorx();
+  } catch (e) {
+    $("al-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+/* ---------- trajni log (Postavke) ---------- */
+
+async function loadLogStore(sys) {
+  const ls = (sys && sys.logstore) || {};
+  $("ls-enabled").checked = !!ls.enabled;
+  $("ls-buffer").value = ls.buffer_kb || 1024;
+  $("ls-keep").value = ls.keep_days || 30;
+
+  const kv = $("ls-kv");
+  kv.replaceChildren();
+  for (const [k, v] of [
+    ["Spremljeno datoteka", String(ls.files || 0)],
+    ["Zauzeto na disku", fmtBytes(ls.size_bytes || 0)],
+  ]) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    kv.append(dt, dd);
+  }
+
+  const tb = $("ls-rows");
+  tb.replaceChildren();
+  if (!ls.enabled) return;
+  const f = await api("/system/logfiles").catch(() => ({ files: [] }));
+  for (const file of f.files) {
+    const tr = document.createElement("tr");
+    for (const v of [file.name, fmtBytes(file.size), file.mtime]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const td = document.createElement("td");
+    td.append(btnSm("Preuzmi", false, () => downloadLog(file.name)));
+    tr.append(td);
+    tb.append(tr);
+  }
+}
+
+async function downloadLog(name) {
+  const blob = await apiBlob("/system/logfiles/" + encodeURIComponent(name));
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+$("ls-save").addEventListener("click", async () => {
+  $("ls-result").textContent = "Spremam…";
+  try {
+    await api("/system/logstore", "POST", {
+      enabled: $("ls-enabled").checked,
+      buffer_kb: parseInt($("ls-buffer").value, 10) || 1024,
+      keep_days: parseInt($("ls-keep").value, 10) || 30,
+    });
+    $("ls-result").textContent = "Spremljeno.";
+    await loadSettings();
+  } catch (e) {
+    $("ls-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+/* ---------- backup izvan uređaja ---------- */
+
+async function loadOffsite() {
+  const o = await api("/backup/offsite");
+  $("os-enabled").checked = !!o.enabled;
+  $("os-host").value = o.host || "";
+  $("os-port").value = o.port || 22;
+  $("os-user").value = o.user || "";
+  $("os-path").value = o.path || "";
+  $("os-encrypt").checked = o.encrypt !== false;
+  $("os-pubkey").textContent = o.public_key ||
+    "— (ključ se napravi kad prvi put spremiš uključeno slanje)";
+  $("os-pass").placeholder = o.has_pass
+    ? "prazno = zadrži postojeću lozinku" : "obavezno pri prvom spremanju";
+
+  const kv = $("os-kv");
+  kv.replaceChildren();
+  for (const [k, v] of [
+    ["Zadnje uspješno slanje", o.last_ok || "još nijedno"],
+    ["Zadnja greška", o.last_error || "nema"],
+  ]) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    kv.append(dt, dd);
+  }
+}
+
+$("os-save").addEventListener("click", async () => {
+  $("os-result").textContent = "Spremam…";
+  try {
+    await api("/backup/offsite", "POST", {
+      enabled: $("os-enabled").checked,
+      host: $("os-host").value.trim(),
+      port: parseInt($("os-port").value, 10) || 22,
+      user: $("os-user").value.trim(),
+      path: $("os-path").value.trim(),
+      encrypt: $("os-encrypt").checked,
+      passphrase: $("os-pass").value,
+    });
+    $("os-pass").value = "";
+    $("os-result").textContent = "Spremljeno. Ne zaboravi dodati javni ključ na poslužitelj.";
+    await loadOffsite();
+  } catch (e) {
+    $("os-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("os-test").addEventListener("click", async () => {
+  $("os-result").textContent = "Šaljem…";
+  try {
+    const r = await api("/backup/offsite/test", "POST", {});
+    $("os-result").textContent = "Poslano: " + r.sent;
+    await loadOffsite();
+  } catch (e) {
+    $("os-result").textContent = "Greška: " + (e.message || e);
+  }
+});

@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const version = "0.19.0"
+const version = "0.20.0"
 
 type server struct {
 	tokenMu   sync.RWMutex
@@ -44,6 +44,11 @@ func main() {
 	noTLS := flag.Bool("no-tls", false, "posluži bez TLS-a (samo za razvoj)")
 	resetAdmin := flag.String("reset-admin", "",
 		"postavi novu lozinku za prijavu u Saguaro i izađi (izlaz iz nužde sa SSH-a)")
+	decBackup := flag.String("decrypt-backup", "",
+		"dešifriraj arhivu backupa i izađi")
+	decOut := flag.String("out", "", "odredišna datoteka uz -decrypt-backup")
+	decPass := flag.String("backup-pass", "",
+		"lozinka arhive uz -decrypt-backup (prazno = uzmi spremljenu s uređaja)")
 	flag.Parse()
 
 	if err := os.MkdirAll(*etcDir, 0o755); err != nil {
@@ -82,6 +87,22 @@ func main() {
 		return
 	}
 
+	// otvaranje šifrirane arhive; radi i na drugom uređaju ako se prenese
+	// binary i navede lozinka (-backup-pass)
+	if *decBackup != "" {
+		pass := *decPass
+		if pass == "" {
+			pass = s.getSetting("backup_pass", "")
+		}
+		if pass == "" {
+			log.Fatalf("nedostaje lozinka arhive (-backup-pass)")
+		}
+		if err := runDecrypt(*decBackup, *decOut, pass); err != nil {
+			log.Fatalf("%v", err)
+		}
+		return
+	}
+
 	{
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		if err := s.ensureSelf(ctx); err != nil {
@@ -94,6 +115,7 @@ func main() {
 
 	go collectMetrics()
 	go s.monitorLoop()
+	go s.watchdogLoop()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
@@ -107,6 +129,15 @@ func main() {
 	mux.Handle("POST /api/v1/dhcp/server", s.auth(s.handleDHCPServerSet))
 	mux.Handle("GET /api/v1/system", s.auth(s.handleSystem))
 	mux.Handle("GET /api/v1/system/status", s.auth(s.handleStatus))
+	mux.Handle("POST /api/v1/system/logstore", s.auth(s.handleLogStoreSet))
+	mux.Handle("GET /api/v1/system/logfiles", s.auth(s.handleLogFiles))
+	mux.Handle("GET /api/v1/system/logfiles/{name}", s.auth(s.handleLogDownload))
+	mux.Handle("GET /api/v1/alerts", s.auth(s.handleAlertsGet))
+	mux.Handle("POST /api/v1/alerts", s.auth(s.handleAlertsSet))
+	mux.Handle("POST /api/v1/alerts/run", s.auth(s.handleWatchdogRun))
+	mux.Handle("GET /api/v1/backup/offsite", s.auth(s.handleOffsiteGet))
+	mux.Handle("POST /api/v1/backup/offsite", s.auth(s.handleOffsiteSet))
+	mux.Handle("POST /api/v1/backup/offsite/test", s.auth(s.handleOffsiteTest))
 	mux.Handle("POST /api/v1/system/device-password", s.auth(s.handleDevicePasswordSet))
 	mux.Handle("GET /api/v1/storage", s.auth(s.handleStorage))
 	mux.Handle("GET /api/v1/interfaces", s.auth(s.handleInterfaces))

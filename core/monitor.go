@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/smtp"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -18,37 +17,11 @@ import (
 
 /* ---------- događaji + e-mail ---------- */
 
+// addEvent zapisuje događaj u dnevnik. Obavijest e-mailom ide pod vrstom
+// "config" (promjena konfiguracije), koja je zadano isključena — namjenska
+// upozorenja koriste s.alert s vlastitom vrstom.
 func addEvent(s *server, level, message string) {
-	s.db.Exec(`INSERT INTO events (level, message) VALUES (?,?)`, level, message)
-	s.db.Exec(`DELETE FROM events WHERE id NOT IN
-		(SELECT id FROM events ORDER BY id DESC LIMIT 500)`)
-	go s.sendMail("Saguaro obavijest", message)
-}
-
-// sendMail šalje obavijest ako su SMTP postavke popunjene (best effort).
-func (s *server) sendMail(subject, body string) {
-	host := s.getSetting("smtp_host", "")
-	to := s.getSetting("smtp_to", "")
-	if host == "" || to == "" || s.getSetting("notify_email", "0") != "1" {
-		return
-	}
-	port := s.getSetting("smtp_port", "587")
-	from := s.getSetting("smtp_from", "saguaro@localhost")
-	user := s.getSetting("smtp_user", "")
-	pass := s.getSetting("smtp_pass", "")
-
-	msg := []byte("From: " + from + "\r\nTo: " + to +
-		"\r\nSubject: " + subject + "\r\n" +
-		"Content-Type: text/plain; charset=utf-8\r\n\r\n" + body + "\r\n")
-	var auth smtp.Auth
-	if user != "" {
-		auth = smtp.PlainAuth("", user, pass, host)
-	}
-	if err := smtp.SendMail(host+":"+port, auth, from,
-		strings.Fields(to), msg); err != nil {
-		s.db.Exec(`INSERT INTO events (level, message) VALUES ('warning', ?)`,
-			"Slanje e-maila nije uspjelo: "+err.Error())
-	}
+	s.alert("config", level, message)
 }
 
 func (s *server) handleNotifyTest(w http.ResponseWriter, r *http.Request) {
@@ -56,21 +29,9 @@ func (s *server) handleNotifyTest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "prvo spremi SMTP postavke")
 		return
 	}
-	host := s.getSetting("smtp_host", "")
-	port := s.getSetting("smtp_port", "587")
-	from := s.getSetting("smtp_from", "saguaro@localhost")
-	user := s.getSetting("smtp_user", "")
-	pass := s.getSetting("smtp_pass", "")
-	to := s.getSetting("smtp_to", "")
-	msg := []byte("From: " + from + "\r\nTo: " + to +
-		"\r\nSubject: Saguaro — probna poruka\r\n\r\n" +
-		"Obavijesti s uređaja rade.\r\n")
-	var auth smtp.Auth
-	if user != "" {
-		auth = smtp.PlainAuth("", user, pass, host)
-	}
-	if err := smtp.SendMail(host+":"+port, auth, from,
-		strings.Fields(to), msg); err != nil {
+	body := "Obavijesti s ovog uređaja rade.\n\n" +
+		"Ako si ovo dobio, SMTP postavke su ispravne."
+	if err := s.smtpSend("Saguaro — probna poruka", body); err != nil {
 		writeErr(w, http.StatusBadGateway, "slanje nije uspjelo: "+err.Error())
 		return
 	}
@@ -161,7 +122,7 @@ func (s *server) monitorLoop() {
 							state = "NE ODGOVARA"
 							level = "warning"
 						}
-						addEvent(s, level, fmt.Sprintf("Nadzor: %s (%s) %s",
+						s.alert("monitor", level, fmt.Sprintf("Nadzor: %s (%s) %s",
 							m.name, m.ip, state))
 					}
 				}
@@ -186,7 +147,7 @@ func (s *server) monitorLoop() {
 					if name == "" {
 						name = "bez imena"
 					}
-					addEvent(s, "warning", fmt.Sprintf(
+					s.alert("unknown_mac", "warning", fmt.Sprintf(
 						"Novi nepoznat uređaj u mreži: %s (%s, %s)",
 						name, l.MAC, l.IP))
 				}

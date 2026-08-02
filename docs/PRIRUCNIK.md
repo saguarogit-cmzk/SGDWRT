@@ -156,10 +156,56 @@ Ovaj uređaj upisuje se sam (hardver, serijski broj, verzije — osvježava se p
 svakom startu); uređuju se samo lokacija, klijent i napomene. Susjednu i
 klijentsku opremu dodaješ ručno.
 
+## Upozorenja e-mailom (Nadzor)
+
+Uređaj sam prati stanje i javlja kad se nešto promijeni. Svaka se vrsta
+upozorenja pali zasebno, a ista se poruka ne ponavlja češće od zadanog razmaka
+(zadano 30 minuta) — da jedan pokvaren link ne zatrpa sandučić.
+
+Što se prati: pad i povratak internet veze · promjena javne IP adrese · rad iza
+tuđeg NAT-a (CGNAT) · pad VPN poslužitelja · spajanje i odspajanje VPN
+korisnika · ponovno pokretanje uređaja · promjena konfiguracije · prijave i
+veći broj neuspjelih prijava · prelazak praga za procesor, memoriju i disk ·
+neuspio backup · skori istek certifikata · nedostupnost praćenog uređaja ·
+nepoznat uređaj u mreži.
+
+- **Oznaka uređaja** ide u naslov poruke — korisno kad se nadzire više lokacija.
+- **Provjeri sada** pokreće sve provjere odmah, bez čekanja sljedećeg kruga
+  (petlja se inače vrti svake minute; javna adresa svakih 5 minuta).
+- **CGNAT**: ako uređaj nema vlastitu javnu adresu, objavljeni serveri i
+  spajanje na VPN izvana **neće raditi**. To je čest uzrok problema koji je
+  inače teško prepoznati, pa uređaj na njega izričito upozori.
+- Poruke idu preko SMTP-a uz **obaveznu šifriranu vezu**: port 465 znači TLS
+  od početka, na 587 se traži STARTTLS i slanje se odustaje ako ga poslužitelj
+  ne nudi — lozinka SMTP računa ne smije putovati u čistom obliku. Koristi
+  zaseban račun i lozinku aplikacije (Gmail, Microsoft 365).
+
+## Trajno spremanje logova
+
+Uređaj zadano drži logove samo u malom spremniku u memoriji (128 kB), pa nakon
+svakog ponovnog pokretanja **nestanu** — a s njima i odgovor na pitanje "što se
+dogodilo sinoć". Uključivanjem spremanja na disk logovi idu u
+`/opt/saguaro/log/system.log` i svaku se noć u 00:05 rotiraju u dnevne
+datoteke (`system.log.GGGG-MM-DD.gz`); starije od zadanog broja dana se brišu.
+Datoteke se mogu preuzeti iz sučelja. Neovisno o tome, kopija logova može ići i
+na vanjski syslog poslužitelj (kartica ispod).
+
 ## Backup
 
 - **Puni backup** = OpenWrt konfiguracija + Saguaro baza + certifikati i token,
   u jednoj tar.gz arhivi. Čuva se zadnjih 10 na uređaju.
+- **Slanje izvan uređaja**: svaka nova arhiva automatski ide na tvoj server ili
+  NAS preko SCP-a. Backup koji leži samo na uređaju nije backup.
+  - Prijava ide **SSH ključem** koji uređaj sam napravi; njegov javni dio treba
+    dodati na poslužitelju u `~/.ssh/authorized_keys` upisanog korisnika.
+  - Arhiva se prije slanja **šifrira** (AES-256-GCM, lozinka se rastegne
+    PBKDF2-om) jer sadrži privatne ključeve VPN-a, API token i lozinke.
+    **Lozinku zapiši na sigurno — bez nje se arhiva ne može otvoriti.**
+  - Otvaranje šifrirane arhive:
+    ```sh
+    saguaro-core -decrypt-backup arhiva.tar.gz.enc -backup-pass 'lozinka'
+    ```
+    Radi i na drugom računalu ako se prenese binary.
 - **Preuzmi** arhive na sigurno mjesto izvan uređaja — to je pravi backup.
 - **Vraćanje** prepiše cijelu konfiguraciju i ponovno pokrene uređaj; radi i s
   arhivom drugog uređaja (kloniranje) i nakon reinstalacije firmwarea.

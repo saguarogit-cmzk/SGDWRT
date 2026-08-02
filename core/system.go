@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +53,8 @@ func (s *server) handleSystemSettingsGet(w http.ResponseWriter, r *http.Request)
 			}
 		}
 	}
+	logstore := s.logStoreState(cfg)
+
 	// stvarno stanje ACL-a iz firewalla (safe mode ga je mogao vratiti)
 	aclActive := false
 	if fwCfg, err := uciGetConfig(r.Context(), "firewall"); err == nil {
@@ -79,7 +84,8 @@ func (s *server) handleSystemSettingsGet(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"syslog": syslog,
+		"syslog":   syslog,
+		"logstore": logstore,
 		"mgmt_acl": map[string]any{
 			"enabled": aclActive,
 			"allow":   s.getSetting("mgmt_acl_allow", ""),
@@ -527,4 +533,194 @@ func (s *server) handleDevicePasswordSet(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"changed": true, "backup": backupName,
 	})
+}
+
+/* ---------- trajni log na disk ---------- */
+
+// Logovi zadano žive samo u malom spremniku u RAM-u (128 kB) i nestaju pri
+// svakom restartu. Uređaj ima 220 GB diska, pa nema razloga da tako ostane:
+// ovo uključuje pisanje u datoteku i dnevnu rotaciju kroz cron.
+const logDir = "/opt/saguaro/log"
+const logFile = logDir + "/system.log"
+const logRotateMark = "# sag-logrotate"
+const logRotateScript = "/opt/saguaro/etc/logrotate.sh"
+
+type logStore struct {
+	Enabled   bool  `json:"enabled"`
+	BufferKB  int   `json:"buffer_kb"`
+	KeepDays  int   `json:"keep_days"`
+	SizeBytes int64 `json:"size_bytes"`
+	Files     int   `json:"files"`
+}
+
+func (s *server) logStoreState(cfg map[string]uciSection) logStore {
+	st := logStore{BufferKB: 128, KeepDays: 30}
+	if sect := findSystemSection(cfg); sect != "" {
+		st.Enabled = sectStr(cfg[sect], "log_file") == logFile
+		if n, err := strconv.Atoi(sectStr(cfg[sect], "log_size")); err == nil && n > 0 {
+			st.BufferKB = n
+		}
+	}
+	if n, err := strconv.Atoi(s.getSetting("log_keep_days", "30")); err == nil && n > 0 {
+		st.KeepDays = n
+	}
+	entries, err := os.ReadDir(logDir)
+	if err != nil {
+		return st
+	}
+	for _, e := range entries {
+		if info, err := e.Info(); err == nil && !e.IsDir() {
+			st.Files++
+			st.SizeBytes += info.Size()
+		}
+	}
+	return st
+}
+
+func (s *server) handleLogStoreSet(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var in struct {
+		Enabled  *bool `json:"enabled"`
+		BufferKB int   `json:"buffer_kb"`
+		KeepDays int   `json:"keep_days"`
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	if in.Enabled == nil {
+		writeErr(w, http.StatusBadRequest, "nedostaje polje enabled")
+		return
+	}
+	if in.BufferKB == 0 {
+		in.BufferKB = 1024
+	}
+	if in.BufferKB < 64 || in.BufferKB > 16384 {
+		writeErr(w, http.StatusBadRequest,
+			"spremnik u memoriji mora biti između 64 i 16384 kB")
+		return
+	}
+	if in.KeepDays == 0 {
+		in.KeepDays = 30
+	}
+	if in.KeepDays < 1 || in.KeepDays > 3650 {
+		writeErr(w, http.StatusBadRequest, "čuvanje logova mora biti 1–3650 dana")
+		return
+	}
+
+	cfg, err := uciGetConfig(ctx, "system")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	sect := findSystemSection(cfg)
+	if sect == "" {
+		writeErr(w, http.StatusNotFound, "system sekcija ne postoji")
+		return
+	}
+	backupName, err := s.backupConfig(systemConfig)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "backup: "+err.Error())
+		return
+	}
+
+	var b strings.Builder
+	if *in.Enabled {
+		if err := os.MkdirAll(logDir, 0o750); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		fmt.Fprintf(&b, "set system.%s.log_file=%s\n", sect, logFile)
+		fmt.Fprintf(&b, "set system.%s.log_size=%d\n", sect, in.BufferKB)
+	} else {
+		if sectStr(cfg[sect], "log_file") != "" {
+			fmt.Fprintf(&b, "delete system.%s.log_file\n", sect)
+		}
+		fmt.Fprintf(&b, "set system.%s.log_size=128\n", sect)
+	}
+	b.WriteString("commit system\n")
+	if err := uciBatch(ctx, b.String()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.setSetting("log_keep_days", strconv.Itoa(in.KeepDays)); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.writeLogRotate(*in.Enabled, in.KeepDays); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := serviceReload(ctx, "log", "restart"); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled": *in.Enabled, "backup": backupName,
+	})
+}
+
+// writeLogRotate postavlja (ili miče) noćnu rotaciju loga. Rotacija je
+// preimenovanje uz datum + restart logd-a, jer logd piše u jednu datoteku i
+// ne zna sam rotirati.
+func (s *server) writeLogRotate(enabled bool, keepDays int) error {
+	if !enabled {
+		os.Remove(logRotateScript)
+		return replaceCronLine(logRotateMark, "")
+	}
+	script := "#!/bin/sh\n" +
+		"# Saguaro: noćna rotacija sistemskog loga\n" +
+		"LOG=" + logFile + "\n" +
+		// čišćenje starih ide prvo — inače bi se preskočilo onih dana kad
+		// nema što rotirati (busybox find nema -delete, zato -exec rm)
+		"find " + logDir + " -name 'system.log.*' -mtime +" +
+		strconv.Itoa(keepDays) + " -exec rm -f {} \\; 2>/dev/null\n" +
+		"[ -s \"$LOG\" ] || exit 0\n" +
+		"mv \"$LOG\" \"$LOG.$(date +%Y-%m-%d)\"\n" +
+		"/etc/init.d/log restart\n" +
+		"gzip -f \"$LOG.$(date +%Y-%m-%d)\" 2>/dev/null\n" +
+		"exit 0\n"
+	if err := os.WriteFile(logRotateScript, []byte(script), 0o700); err != nil {
+		return err
+	}
+	return replaceCronLine(logRotateMark,
+		"5 0 * * * "+logRotateScript+" "+logRotateMark)
+}
+
+// handleLogFiles vraća popis spremljenih dnevnih logova (za preuzimanje).
+func (s *server) handleLogFiles(w http.ResponseWriter, r *http.Request) {
+	type f struct {
+		Name  string `json:"name"`
+		Size  int64  `json:"size"`
+		MTime string `json:"mtime"`
+	}
+	out := []f{}
+	entries, _ := os.ReadDir(logDir)
+	for _, e := range entries {
+		info, err := e.Info()
+		if err != nil || e.IsDir() {
+			continue
+		}
+		out = append(out, f{e.Name(), info.Size(),
+			info.ModTime().Format("2006-01-02 15:04")})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name > out[j].Name })
+	writeJSON(w, http.StatusOK, map[string]any{"files": out})
+}
+
+// handleLogDownload servira spremljeni log. Ime se provjerava jednako strogo
+// kao kod backupa — samo datoteke iz log direktorija, bez putanja.
+func (s *server) handleLogDownload(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" || name != filepath.Base(name) || strings.HasPrefix(name, ".") {
+		writeErr(w, http.StatusNotFound, "log ne postoji")
+		return
+	}
+	p := filepath.Join(logDir, name)
+	if fi, err := os.Stat(p); err != nil || fi.IsDir() {
+		writeErr(w, http.StatusNotFound, "log ne postoji")
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	http.ServeFile(w, r, p)
 }

@@ -3,6 +3,20 @@
 Upravljačka platforma za IN100 (i kompatibilne OpenWrt 25.x x86_64) uređaje.
 Ista pomoć dostupna je i u samom sučelju: **Sustav → Pomoć**.
 
+## Raspored sučelja
+
+Moduli su složeni u pet skupina, po načelu **jedan modul = jedan posao**:
+
+| Skupina | Moduli |
+|---|---|
+| **Status** | Dashboard · Nadzor · Upozorenja · Promjene |
+| **Mreža** | Mreža · Multi-WAN · OSPF · QoS · DHCP · DNS |
+| **Zaštita** | Firewall · Objava servera · Blokade · Očvršćivanje |
+| **VPN** | WireGuard · OpenVPN |
+| **Sustav** | Postavke · Logovi · Backup · Uređaji · Ažuriranje · Pomoć |
+
+Lijevi stupac bira skupinu, kartice ispod naslova biraju modul unutar nje.
+
 ## Temeljna pravila (vrijede u svim modulima)
 
 - **Primijeni**: promjene se najprije spremaju u Saguaro bazu, a na uređaj se
@@ -100,7 +114,7 @@ susjedi prikazuju se u modulu.
   uključivanje postavlja pouzdane javne (ISP routeri često ne prosljeđuju
   DNSSEC podatke pa provjera bez toga ne bi radila).
 
-## Firewall
+## Firewall i Objava servera
 
 - **Port forwardi (DNAT)**: usluga iz lokalne mreže postaje dostupna izvana
   (vanjski port ili raspon → interna adresa:port).
@@ -146,7 +160,7 @@ susjedi prikazuju se u modulu.
   - Pravila se pišu u `/etc/nftables.d/`, odakle ih firewall sam uvlači, pa
     preživljavaju restart.
 
-## Promjene konfiguracije (Nadzor)
+## Promjene (Status)
 
 Uređaj svake minute usporedi svoje postavke s prošlim stanjem i zabilježi što
 se promijenilo. Klik na redak pokazuje točnu razliku, redak po redak.
@@ -179,7 +193,7 @@ Ovaj uređaj upisuje se sam (hardver, serijski broj, verzije — osvježava se p
 svakom startu); uređuju se samo lokacija, klijent i napomene. Susjednu i
 klijentsku opremu dodaješ ručno.
 
-## Upozorenja e-mailom (Nadzor)
+## Upozorenja (Status)
 
 Uređaj sam prati stanje i javlja kad se nešto promijeni. Svaka se vrsta
 upozorenja pali zasebno, a ista se poruka ne ponavlja češće od zadanog razmaka
@@ -218,7 +232,7 @@ greška — funkcija nije uključena ili se ne može provjeriti bez vanjskog
 resursa). Vrijedi ga pokrenuti nakon svake veće izmjene i nakon nadogradnje.
 Detalji i popis onoga što se mora provjeriti ručno: `docs/TESTOVI.md`.
 
-## Očvršćivanje (Postavke)
+## Očvršćivanje (Zaštita)
 
 Sitne mjere koje OpenWrt zadano ne uključuje. Svaka je zasebna kvačica jer
 neke ovise o tome kako je uređaj spojen, a kvačice pokazuju **stvarno stanje na
@@ -237,7 +251,7 @@ Sučelje Saguara uz to uvijek traži **TLS 1.2 ili noviji** i šalje zaglavlja k
 pregledniku zabranjuju ugrađivanje stranice u tuđi okvir i učitavanje skripti s
 drugih adresa.
 
-## Trajno spremanje logova
+## Logovi (Sustav)
 
 Uređaj zadano drži logove samo u malom spremniku u memoriji (128 kB), pa nakon
 svakog ponovnog pokretanja **nestanu** — a s njima i odgovor na pitanje "što se

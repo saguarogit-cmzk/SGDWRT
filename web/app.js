@@ -671,6 +671,7 @@ async function loadFirewall() {
   if (foreign > 0) info += ` · ostalih (OpenWrt/ručnih): ${foreign}`;
   if (enFw !== devFw || enRl !== devRl) info += " — ⚠ razlika, potrebna primjena";
   $("fw-sync-info").textContent = info;
+  $("pub-sync-info").textContent = info;
 
   const pb = $("pf-rows");
   pb.replaceChildren();
@@ -929,8 +930,6 @@ function openPeerDialog(p) {
 
 async function loadMonitorx() {
   const [x, tr] = await Promise.all([api("/monitor"), api("/traffic")]);
-  loadAlerts().catch(() => {});
-  loadAudit().catch(() => {});
 
   $("nm-unknown").checked = !!x.unknown_alert;
   const tb = $("nm-rows");
@@ -974,12 +973,6 @@ async function loadMonitorx() {
   $("tr-hint").textContent = tr.available
     ? "Zbroj od zadnjeg resetiranja brojača (nlbwmon)."
     : "Mjerenje prometa (nlbwmon) nije dostupno.";
-
-  api("/syslog").then((sl) => {
-    const el = $("sy-log");
-    el.textContent = sl.log || "—";
-    el.scrollTop = el.scrollHeight;
-  }).catch(() => { $("sy-log").textContent = "Log nedostupan."; });
 
   const eb = $("ev-rows");
   eb.replaceChildren();
@@ -1371,26 +1364,6 @@ async function loadSettings() {
   $("tz-ntp").checked = !!tz.ntp_server;
   $("tz-servers").value = tz.ntp_servers || "";
 
-  loadLogStore(sys).catch(() => {});
-  loadHardening().catch(() => {});
-
-  const acl = sys.mgmt_acl || {};
-  $("acl-enabled").checked = !!acl.enabled;
-  $("acl-allow").value = acl.allow || "";
-
-  const em = mon.email || {};
-  $("sm-enabled").checked = !!em.enabled;
-  $("sm-host").value = em.host || "";
-  $("sm-port").value = em.port || "587";
-  $("sm-user").value = em.user || "";
-  $("sm-from").value = em.from || "";
-  $("sm-to").value = em.to || "";
-
-  const sl = sys.syslog || {};
-  $("sl-enabled").checked = !!sl.enabled;
-  $("sl-host").value = sl.host || "";
-  $("sl-port").value = sl.port || "514";
-  $("sl-proto").value = sl.proto || "udp";
   const kv = $("sess-kv");
   kv.replaceChildren();
   for (const [k, v] of [["Prijavljen kao", s.username],
@@ -1645,28 +1618,36 @@ function openWanDialog(wn) {
 const MODULES = {
   dashboard: ["Dashboard", "Pregled stanja uređaja i mreže", () => null],
   monitorx:  ["Nadzor", "Praćenje uređaja, događaji i potrošnja prometa", () => loadMonitorx()],
+  alerts:    ["Upozorenja", "Što uređaj javlja e-mailom i kome", () => loadAlertsView()],
+  audit:     ["Promjene", "Tko je i što promijenio u postavkama uređaja", () => loadAudit()],
   network:   ["Mreža", "LAN adresa, WAN veze i VLAN mreže", () => loadNetwork()],
   multiwan:  ["Multi-WAN", "Više internet veza — failover, raspodjela i nadzor", () => loadMultiwan()],
   ospf:      ["OSPF", "Dinamičko usmjeravanje — automatska razmjena ruta s routerima", () => loadOspf()],
   qos:       ["QoS", "Ograničenje brzine — glatki pozivi i pravedna raspodjela veze", () => loadQos()],
   dhcp:      ["DHCP", "Dodjela IP adresa i rezervacije za uređaje u mreži", () => loadDhcp()],
   dns:       ["DNS", "Lokalna imena uređaja (npr. nas.lan umjesto IP adrese)", () => loadDns()],
-  firewall:  ["Firewall", "Pravila prometa, port forwardi, DMZ i 1:1 NAT", () => loadFirewall()],
-  protection: ["Blokade", "Blokiranje zloćudnih IP adresa i reklamnih/malware domena", () => loadProtection()],
+  firewall:  ["Firewall", "Zone, pravila prometa i imenovane grupe adresa", () => loadFirewall()],
+  publish:   ["Objava servera", "Što je iz mreže dostupno s interneta — forwardi, DMZ, 1:1 NAT", () => loadFirewall()],
+  protection: ["Blokade", "Zloćudne adrese, reklamne domene i detekcija skeniranja", () => loadProtection()],
+  hardening: ["Očvršćivanje", "Dodatne mjere zaštite i tko smije do upravljanja", () => loadHardeningView()],
   wireguard: ["WireGuard", "Udaljeni pristup — moderni VPN s ključevima", () => loadWireguard()],
   openvpn:   ["OpenVPN", "Udaljeni pristup — klasični VPN s certifikatima", () => loadOpenvpn()],
   devices:   ["Uređaji", "Inventar opreme — ovaj uređaj i susjedni", () => loadDevices()],
   backup:    ["Backup", "Sigurnosne kopije uređaja i vraćanje", () => loadBackup()],
   update:    ["Ažuriranje", "Nadogradnja Saguaro sustava uz automatski backup", () => loadUpdate()],
-  settings:  ["Postavke", "Korisnički račun, sesije, API token i logovi", () => loadSettings()],
+  settings:  ["Postavke", "Lozinke, sesije, vrijeme i API token", () => loadSettings()],
+  logs:      ["Logovi", "Sustavski log, trajno spremanje i slanje na poslužitelj", () => loadLogsView()],
   help:      ["Pomoć", "Upute za rad — kako koristiti svaki modul", () => null],
 };
+// Načelo rasporeda: jedan modul = jedan posao. Kartica koja odgovara na
+// vlastito pitanje ("što uređaj javlja", "tko je što promijenio") ide u svoj
+// modul umjesto na dno Postavki, gdje se ne pronalazi.
 const NAV_GROUPS = [
-  ["Status", ["dashboard", "monitorx"]],
+  ["Status", ["dashboard", "monitorx", "alerts", "audit"]],
   ["Mreža", ["network", "multiwan", "ospf", "qos", "dhcp", "dns"]],
-  ["Zaštita", ["firewall", "protection"]],
+  ["Zaštita", ["firewall", "publish", "protection", "hardening"]],
   ["VPN", ["wireguard", "openvpn"]],
-  ["Sustav", ["devices", "backup", "update", "settings", "help"]],
+  ["Sustav", ["settings", "logs", "backup", "devices", "update", "help"]],
 ];
 const groupOf = (id) => NAV_GROUPS.findIndex((g) => g[1].includes(id));
 const lastByGroup = {};
@@ -2009,7 +1990,7 @@ $("al-form").addEventListener("submit", async (ev) => {
   } catch (e) { alertErr(e); }
 });
 
-$("sy-refresh").addEventListener("click", () => loadMonitorx().catch(alertErr));
+$("sy-refresh").addEventListener("click", () => refreshSyslog());
 
 $("nm-add").addEventListener("click", () => {
   $("nm-form").reset();
@@ -2258,22 +2239,26 @@ $("rl-form").addEventListener("submit", async (ev) => {
   } catch (e) { alertErr(e); }
 });
 
-$("fw-apply").addEventListener("click", async () => {
-  const btn = $("fw-apply");
+// Firewall i Objava servera dijele istu primjenu (jedan endpoint primjenjuje
+// forwarde, pravila i 1:1 NAT), pa oba gumba rade isti posao.
+async function applyFirewall(btnId, outId) {
+  const btn = $(btnId);
   btn.disabled = true;
-  $("fw-apply-result").textContent = "Primjenjujem…";
+  $(outId).textContent = "Primjenjujem…";
   try {
     const r = await api("/firewall/apply", "POST", {});
-    $("fw-apply-result").textContent =
+    $(outId).textContent =
       `Primijenjeno: ${r.applied_forwards} forwarda + ${r.applied_rules} pravila ` +
       `(uklonjeno starih: ${r.removed}). Backup: ${r.backup}`;
     await loadFirewall();
   } catch (e) {
-    $("fw-apply-result").textContent = "Greška: " + (e.message || e);
+    $(outId).textContent = "Greška: " + (e.message || e);
   } finally {
     btn.disabled = false;
   }
-});
+}
+$("fw-apply").addEventListener("click", () => applyFirewall("fw-apply", "fw-apply-result"));
+$("pub-apply").addEventListener("click", () => applyFirewall("pub-apply", "pub-apply-result"));
 
 $("dmz-toggle").addEventListener("click", async () => {
   const next = !dmzEnabled;
@@ -3239,3 +3224,45 @@ $("au-run").addEventListener("click", async () => {
     alertErr(e);
   }
 });
+
+/* ---------- učitavači novih modula (preraspodjela sučelja) ---------- */
+
+// Upozorenja: vrste i pragovi + SMTP postavke na jednom mjestu.
+async function loadAlertsView() {
+  const [, mon] = await Promise.all([loadAlerts(), api("/monitor")]);
+  const em = mon.email || {};
+  $("sm-enabled").checked = !!em.enabled;
+  $("sm-host").value = em.host || "";
+  $("sm-port").value = em.port || "587";
+  $("sm-user").value = em.user || "";
+  $("sm-from").value = em.from || "";
+  $("sm-to").value = em.to || "";
+}
+
+// Očvršćivanje: kvačice + ograničenje upravljačkog pristupa.
+async function loadHardeningView() {
+  const [, sys] = await Promise.all([loadHardening(), api("/settings/system")]);
+  const acl = sys.mgmt_acl || {};
+  $("acl-enabled").checked = !!acl.enabled;
+  $("acl-allow").value = acl.allow || "";
+}
+
+// Logovi: živi sustavski log, trajno spremanje i slanje na vanjski poslužitelj.
+async function loadLogsView() {
+  const sys = await api("/settings/system");
+  const sl = sys.syslog || {};
+  $("sl-enabled").checked = !!sl.enabled;
+  $("sl-host").value = sl.host || "";
+  $("sl-port").value = sl.port || "514";
+  $("sl-proto").value = sl.proto || "udp";
+  await loadLogStore(sys);
+  refreshSyslog();
+}
+
+function refreshSyslog() {
+  api("/syslog").then((sl) => {
+    const el = $("sy-log");
+    el.textContent = sl.log || "—";
+    el.scrollTop = el.scrollHeight;
+  }).catch(() => { $("sy-log").textContent = "Log nedostupan."; });
+}

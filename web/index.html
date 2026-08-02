@@ -271,24 +271,6 @@
     </section>
     <section class="card">
       <div class="card-head">
-        <h2>Port forwardi (DNAT)</h2>
-        <div class="row-actions">
-          <button id="pub-wizard" class="ghost">Objavi server (čarobnjak)</button>
-          <button id="pf-add" class="primary">Dodaj forward</button>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Naziv</th><th>Proto</th><th>Ulaz</th><th>Odredište</th>
-            <th>Aktivan</th><th>Napomene</th><th></th>
-          </tr></thead>
-          <tbody id="pf-rows"></tbody>
-        </table>
-      </div>
-    </section>
-    <section class="card">
-      <div class="card-head">
         <h2>Pravila prometa</h2>
         <button id="rl-add" class="primary">Dodaj pravilo</button>
       </div>
@@ -317,6 +299,31 @@
         </table>
       </div>
     </section>
+  </div>
+
+  <div class="view hidden" id="view-publish">
+    <section class="card">
+      <div class="card-head">
+        <h2>Port forwardi (DNAT)</h2>
+        <div class="row-actions">
+          <button id="pub-wizard" class="ghost">Objavi server (čarobnjak)</button>
+          <button id="pf-add" class="primary">Dodaj forward</button>
+        </div>
+      </div>
+      <p class="hint">Usluga iz lokalne mreže postaje dostupna s interneta.
+        Kad se serveru pristupa <b>imenom</b>, uz forward postavi i
+        <b>Split DNS</b> (Mreža → DNS) — inače lokalni korisnici idu "van pa
+        natrag" i često nikamo.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Naziv</th><th>Proto</th><th>Ulaz</th><th>Odredište</th>
+            <th>Aktivan</th><th>Napomene</th><th></th>
+          </tr></thead>
+          <tbody id="pf-rows"></tbody>
+        </table>
+      </div>
+    </section>
     <section class="grid-2">
       <div class="card">
         <h2>DMZ</h2>
@@ -337,7 +344,7 @@
           <button id="n1-add" class="primary">Dodaj</button>
         </div>
         <p class="hint">Javna adresa mora postojati na WAN sučelju
-          (Mreža → WAN → adrese). Primjenjuje se gumbom Primijeni firewall.</p>
+          (Mreža → WAN → adrese).</p>
         <div class="table-wrap">
           <table>
             <thead><tr>
@@ -348,6 +355,16 @@
           </table>
         </div>
       </div>
+    </section>
+    <section class="card">
+      <h2>Primjena na uređaj</h2>
+      <p class="hint" id="pub-sync-info">—</p>
+      <p class="hint">Objave i pravila prometa dijele istu primjenu — ovaj gumb
+        radi isto što i onaj u modulu Firewall.</p>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="pub-apply" class="primary">Primijeni</button>
+      </div>
+      <p class="hint" id="pub-apply-result"></p>
     </section>
   </div>
 
@@ -511,64 +528,6 @@
           <thead><tr><th>Vrijeme</th><th>Razina</th><th>Poruka</th></tr></thead>
           <tbody id="ev-rows"></tbody>
         </table>
-      </div>
-    </section>
-    <section class="card">
-      <div class="card-head">
-        <h2>Sustavski log (logread)</h2>
-        <button id="sy-refresh" class="ghost">Osvježi</button>
-      </div>
-      <p class="hint">Puni log operativnog sustava (kernel, servisi, VPN,
-        firewall…) — zadnjih 150 linija. Za trajno čuvanje uključi spremanje na
-        disk (Sustav → Postavke) ili slanje na vanjski syslog poslužitelj.</p>
-      <pre id="sy-log" style="font-size:11.5px;overflow-x:auto;background:#f6f8fa;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:400px;overflow-y:auto">—</pre>
-    </section>
-
-    <section class="card">
-      <div class="card-head">
-        <h2>Promjene konfiguracije</h2>
-        <button id="au-run" class="ghost">Provjeri sada</button>
-      </div>
-      <p class="hint">Uređaj svake minute usporedi svoje postavke s prošlim
-        stanjem. Tako se vide i promjene napravljene <b>izvan Saguara</b> — kroz
-        LuCI ili sa SSH-a. Klikni na redak da vidiš što se točno promijenilo.</p>
-      <p class="hint">OpenWrt nema više administratorskih računa (sve je
-        <code>root</code>), pa se promjena izvan Saguara ne može pripisati
-        osobi — samo se pošteno označi kao takva.</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Vrijeme</th><th>Postavke</th><th>Tko</th><th>Promjena</th></tr></thead>
-          <tbody id="au-rows"></tbody>
-        </table>
-      </div>
-      <pre id="au-diff" class="hidden" style="font-size:11.5px;overflow-x:auto;background:#f6f8fa;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:340px;overflow-y:auto"></pre>
-    </section>
-
-    <section class="card">
-      <div class="card-head">
-        <h2>Upozorenja e-mailom</h2>
-        <button id="al-run" class="ghost">Provjeri sada</button>
-      </div>
-      <p class="hint">Uređaj sam prati stanje i javlja kad se nešto promijeni.
-        Poruke idu na adresu iz SMTP postavki (kartica ispod). Ista se poruka ne
-        ponavlja češće od zadanog razmaka, da jedan pokvaren link ne zatrpa
-        sandučić.</p>
-      <div id="al-kinds" class="check-list"></div>
-      <div class="form-grid">
-        <label>Oznaka uređaja u naslovu poruke
-          <input id="al-label" placeholder="npr. Ured Zagreb"></label>
-        <label>Razmak između istih poruka (min)
-          <input id="al-quiet" type="number" min="1" max="1440"></label>
-        <label>Prag za procesor (%)<input id="al-cpu" type="number" min="50" max="100"></label>
-        <label>Prag za memoriju (%)<input id="al-mem" type="number" min="50" max="100"></label>
-        <label>Prag za disk (%)<input id="al-disk" type="number" min="50" max="100"></label>
-        <label>Javi istek certifikata (dana unaprijed)
-          <input id="al-cert" type="number" min="1" max="365"></label>
-      </div>
-      <dl class="kv" id="al-state"></dl>
-      <p class="hint" id="al-result"></p>
-      <div class="form-actions" style="justify-content:flex-start">
-        <button id="al-save" class="primary">Spremi upozorenja</button>
       </div>
     </section>
   </div>
@@ -1153,7 +1112,7 @@
       </div></details>
 
       <details class="help"><summary>Očvršćivanje — što svaka kvačica radi</summary><div>
-        <b>Postavke → Očvršćivanje</b> nudi mjere koje OpenWrt zadano ne pali.
+        <b>Zaštita → Očvršćivanje</b> nudi mjere koje OpenWrt zadano ne pali.
         Kvačice pokazuju stvarno stanje uređaja, pa se vidi i ako je nešto
         naknadno promijenjeno izvan Saguara.
         <ul>
@@ -1177,7 +1136,7 @@
         internet veze, promjena javne IP adrese, rad iza tuđeg NAT-a, pad VPN
         poslužitelja, spajanje korisnika, ponovno pokretanje, prelazak praga za
         procesor/memoriju/disk, neuspio backup, skori istek certifikata.
-        Svaka se vrsta pali zasebno (Nadzor → Upozorenja e-mailom), a ista se
+        Svaka se vrsta pali zasebno (Status → Upozorenja), a ista se
         poruka ne ponavlja češće od zadanog razmaka.
         <br><br><b>CGNAT</b> je upozorenje koje vrijedi shvatiti ozbiljno: ako
         uređaj nema vlastitu javnu adresu, objavljeni serveri i spajanje na VPN
@@ -1190,7 +1149,7 @@
       <details class="help"><summary>Logovi — zašto nestanu i kako ih sačuvati</summary><div>
         OpenWrt zadano drži logove samo u 128 kB spremnika u <b>memoriji</b>, pa
         nakon svakog ponovnog pokretanja nestanu. Uključi
-        <b>Postavke → Trajno spremanje logova</b> i logovi idu na disk, uz noćnu
+        <b>Sustav → Logovi</b> i logovi idu na disk, uz noćnu
         rotaciju u dnevne datoteke koje se mogu preuzeti. Uređaj ima puno
         prostora, pa je 30 dana povijesti bezbolno. Neovisno o tome, kopija može
         ići i na vanjski syslog poslužitelj.
@@ -1301,20 +1260,46 @@
       <p class="hint" id="tz-result"></p>
     </section>
     <section class="card" style="max-width:720px">
-      <h2>Ograničenje upravljačkog pristupa (ACL)</h2>
-      <p class="hint">Pristup ovom sučelju i SSH-u dopušten samo s navedenih
-        adresa/mreža. Promjena je pod <b>safe modeom</b>: ako sam sebe
-        zaključaš, vraća se sama za 2 minute.</p>
-      <div class="form-grid">
-        <label class="check" style="grid-column:1/-1"><input type="checkbox" id="acl-enabled">
-          Uključeno</label>
-        <label class="wide">Dopuštene adrese/mreže (razmakom odvojene)
-          <input id="acl-allow" placeholder="192.168.50.0/24 10.6.0.0/24"></label>
-      </div>
+      <h2>API token</h2>
+      <p class="hint">Token za strojni pristup API-ju (skripte, integracije) —
+        šalje se kao <code>Authorization: Bearer &lt;token&gt;</code>.
+        Regeneriranje odmah poništava stari token; GUI prijave ostaju.</p>
+      <dl class="kv"><dt>Token</dt><dd id="tok-value" style="word-break:break-all">••••••••••••</dd></dl>
       <div class="form-actions" style="justify-content:flex-start">
-        <button id="acl-save" class="primary">Spremi</button>
+        <button id="tok-show" class="ghost">Prikaži</button>
+        <button id="tok-regen" class="primary">Regeneriraj</button>
       </div>
-      <p class="hint" id="acl-result"></p>
+      <p class="hint" id="tok-result"></p>
+    </section>
+  </div>
+
+  <div class="view hidden" id="view-alerts">
+    <section class="card">
+      <div class="card-head">
+        <h2>Upozorenja e-mailom</h2>
+        <button id="al-run" class="ghost">Provjeri sada</button>
+      </div>
+      <p class="hint">Uređaj sam prati stanje i javlja kad se nešto promijeni.
+        Poruke idu na adresu iz SMTP postavki (kartica ispod). Ista se poruka ne
+        ponavlja češće od zadanog razmaka, da jedan pokvaren link ne zatrpa
+        sandučić.</p>
+      <div id="al-kinds" class="check-list"></div>
+      <div class="form-grid">
+        <label>Oznaka uređaja u naslovu poruke
+          <input id="al-label" placeholder="npr. Ured Zagreb"></label>
+        <label>Razmak između istih poruka (min)
+          <input id="al-quiet" type="number" min="1" max="1440"></label>
+        <label>Prag za procesor (%)<input id="al-cpu" type="number" min="50" max="100"></label>
+        <label>Prag za memoriju (%)<input id="al-mem" type="number" min="50" max="100"></label>
+        <label>Prag za disk (%)<input id="al-disk" type="number" min="50" max="100"></label>
+        <label>Javi istek certifikata (dana unaprijed)
+          <input id="al-cert" type="number" min="1" max="365"></label>
+      </div>
+      <dl class="kv" id="al-state"></dl>
+      <p class="hint" id="al-result"></p>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="al-save" class="primary">Spremi upozorenja</button>
+      </div>
     </section>
     <section class="card" style="max-width:720px">
       <h2>Obavijesti e-mailom (SMTP)</h2>
@@ -1337,6 +1322,31 @@
       </div>
       <p class="hint" id="sm-result"></p>
     </section>
+  </div>
+
+  <div class="view hidden" id="view-audit">
+    <section class="card">
+      <div class="card-head">
+        <h2>Promjene konfiguracije</h2>
+        <button id="au-run" class="ghost">Provjeri sada</button>
+      </div>
+      <p class="hint">Uređaj svake minute usporedi svoje postavke s prošlim
+        stanjem. Tako se vide i promjene napravljene <b>izvan Saguara</b> — kroz
+        LuCI ili sa SSH-a. Klikni na redak da vidiš što se točno promijenilo.</p>
+      <p class="hint">OpenWrt nema više administratorskih računa (sve je
+        <code>root</code>), pa se promjena izvan Saguara ne može pripisati
+        osobi — samo se pošteno označi kao takva.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Vrijeme</th><th>Postavke</th><th>Tko</th><th>Promjena</th></tr></thead>
+          <tbody id="au-rows"></tbody>
+        </table>
+      </div>
+      <pre id="au-diff" class="hidden" style="font-size:11.5px;overflow-x:auto;background:#f6f8fa;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:340px;overflow-y:auto"></pre>
+    </section>
+  </div>
+
+  <div class="view hidden" id="view-hardening">
     <section class="card">
       <h2>Očvršćivanje</h2>
       <p class="hint">Sitne mjere koje OpenWrt zadano ne uključuje. Svaka je
@@ -1348,6 +1358,35 @@
         <button id="hd-save" class="primary">Primijeni</button>
       </div>
       <p class="hint" id="hd-result"></p>
+    </section>
+    <section class="card" style="max-width:720px">
+      <h2>Ograničenje upravljačkog pristupa (ACL)</h2>
+      <p class="hint">Pristup ovom sučelju i SSH-u dopušten samo s navedenih
+        adresa/mreža. Promjena je pod <b>safe modeom</b>: ako sam sebe
+        zaključaš, vraća se sama za 2 minute.</p>
+      <div class="form-grid">
+        <label class="check" style="grid-column:1/-1"><input type="checkbox" id="acl-enabled">
+          Uključeno</label>
+        <label class="wide">Dopuštene adrese/mreže (razmakom odvojene)
+          <input id="acl-allow" placeholder="192.168.50.0/24 10.6.0.0/24"></label>
+      </div>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="acl-save" class="primary">Spremi</button>
+      </div>
+      <p class="hint" id="acl-result"></p>
+    </section>
+  </div>
+
+  <div class="view hidden" id="view-logs">
+    <section class="card">
+      <div class="card-head">
+        <h2>Sustavski log (logread)</h2>
+        <button id="sy-refresh" class="ghost">Osvježi</button>
+      </div>
+      <p class="hint">Puni log operativnog sustava (kernel, servisi, VPN,
+        firewall…) — zadnjih 150 linija. Za trajno čuvanje uključi spremanje na
+        spremanje na disk (kartica ispod) ili slanje na vanjski poslužitelj.</p>
+      <pre id="sy-log" style="font-size:11.5px;overflow-x:auto;background:#f6f8fa;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:400px;overflow-y:auto">—</pre>
     </section>
     <section class="card" style="max-width:720px">
       <h2>Trajno spremanje logova</h2>
@@ -1390,18 +1429,6 @@
         <button id="sl-save" class="primary">Spremi</button>
       </div>
       <p class="hint" id="sl-result"></p>
-    </section>
-    <section class="card" style="max-width:720px">
-      <h2>API token</h2>
-      <p class="hint">Token za strojni pristup API-ju (skripte, integracije) —
-        šalje se kao <code>Authorization: Bearer &lt;token&gt;</code>.
-        Regeneriranje odmah poništava stari token; GUI prijave ostaju.</p>
-      <dl class="kv"><dt>Token</dt><dd id="tok-value" style="word-break:break-all">••••••••••••</dd></dl>
-      <div class="form-actions" style="justify-content:flex-start">
-        <button id="tok-show" class="ghost">Prikaži</button>
-        <button id="tok-regen" class="primary">Regeneriraj</button>
-      </div>
-      <p class="hint" id="tok-result"></p>
     </section>
   </div>
 

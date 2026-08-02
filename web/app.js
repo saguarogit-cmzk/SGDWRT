@@ -1194,6 +1194,8 @@ function renderMwRules() {
 /* ---------- openvpn ---------- */
 
 let editOvcUUID = null;
+// traži li poslužitelj lozinku uz certifikat (određuje je li polje obavezno)
+let ovpnPassAuth = false;
 let ovAccessMode = "full";
 
 async function loadOpenvpn() {
@@ -1211,6 +1213,8 @@ async function loadOpenvpn() {
     f.elements.push_lan.checked = !!srv.push_lan;
   }
   f.elements.allow_mgmt.checked = !!srv.allow_mgmt;
+  f.elements.pass_auth.checked = !!srv.pass_auth;
+  ovpnPassAuth = !!srv.pass_auth;
 
   const kv = $("ov-kv");
   kv.replaceChildren();
@@ -1247,6 +1251,13 @@ async function loadOpenvpn() {
       td.textContent = v;
       tr.append(td);
     }
+    // kad poslužitelj traži lozinku, korisnik bez nje se ne može prijaviti —
+    // to mora biti vidljivo na prvi pogled, a ne tek pri neuspjelom spajanju
+    const tdP = document.createElement("td");
+    if (c.has_pass) tdP.append(stGood("Postavljena"));
+    else if (ovpnPassAuth) tdP.append(stCrit("Nedostaje"));
+    else tdP.append(stOff("Nema"));
+    tr.append(tdP);
     const tdE = document.createElement("td");
     tdE.append(c.enabled ? stGood("Da") : stOff("Ne"));
     tr.append(tdE);
@@ -1274,6 +1285,18 @@ async function loadOpenvpn() {
             x.name + ".ovpn", x.config);
         } catch (e) { alertErr(e); }
       }),
+      ...(c.has_pass ? [btnSm("Ukloni lozinku", true, async () => {
+        if (!confirm(`Ukloniti lozinku korisnika ""?
+
+` +
+          "Ako poslužitelj traži lozinku, taj se korisnik više neće moći " +
+          "prijaviti dok mu se ne postavi nova.")) return;
+        await api("/openvpn/clients/" + c.uuid, "PUT", {
+          tunnel_ip: c.tunnel_ip, enabled: c.enabled, notes: c.notes,
+          clear_password: true,
+        }).catch(alertErr);
+        loadOpenvpn().catch(alertErr);
+      })] : []),
       btnSm("Pristup", false, () => openVpnRulesDialog(c, "openvpn/clients")),
       btnSm("Uredi", false, () => openOvcDialog(c)),
       btnSm("Obriši", true, async () => {
@@ -1296,6 +1319,18 @@ function openOvcDialog(c) {
   f.elements.tunnel_ip.value = c ? c.tunnel_ip : "";
   f.elements.notes.value = c ? c.notes || "" : "";
   f.elements.enabled.checked = c ? !!c.enabled : true;
+  f.elements.password.value = "";
+  // lozinka je obavezna samo kad je provjera uključena i korisnik je još nema
+  const need = ovpnPassAuth && !(c && c.has_pass);
+  f.elements.password.required = need;
+  f.elements.password.placeholder = need
+    ? "obavezno — najmanje 8 znakova"
+    : (c && c.has_pass ? "prazno = zadrži postojeću" : "najmanje 8 znakova");
+  $("ovc-pass-hint").textContent = ovpnPassAuth
+    ? "Poslužitelj traži korisničko ime i lozinku uz certifikat. Korisničko " +
+      "ime je naziv klijenta; lozinku upiši ovdje."
+    : "Lozinka nije obavezna jer poslužitelj traži samo certifikat. Uključi " +
+      "traženje lozinke u postavkama poslužitelja za dodatnu zaštitu.";
   $("ovc-dialog").showModal();
 }
 
@@ -2644,6 +2679,7 @@ $("ov-form").addEventListener("submit", async (ev) => {
     client_dns: f.elements.client_dns.value.trim(),
     push_lan: f.elements.push_lan.checked,
     allow_mgmt: f.elements.allow_mgmt.checked,
+    pass_auth: f.elements.pass_auth.checked,
   };
   $("ov-server-result").textContent = "Spremam (prvi put traje par sekundi — izdaju se certifikati)…";
   try {
@@ -2695,6 +2731,7 @@ $("ovc-form").addEventListener("submit", async (ev) => {
     tunnel_ip: f.elements.tunnel_ip.value.trim(),
     notes: f.elements.notes.value.trim(),
     enabled: f.elements.enabled.checked,
+    password: f.elements.password.value,
   };
   if (!editOvcUUID) body.name = f.elements.name.value.trim();
   try {

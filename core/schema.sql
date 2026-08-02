@@ -112,6 +112,9 @@ CREATE TABLE IF NOT EXISTS ovpn_clients (
     cert_pem    TEXT NOT NULL,
     key_pem     TEXT NOT NULL,
     tunnel_ip   TEXT NOT NULL UNIQUE,
+    -- Lozinka za drugi faktor uz certifikat (PBKDF2, isti oblik kao users).
+    -- Prazno = korisnik se prijavljuje samo certifikatom.
+    pass_hash   TEXT,
     enabled     INTEGER NOT NULL DEFAULT 1,
     notes       TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),

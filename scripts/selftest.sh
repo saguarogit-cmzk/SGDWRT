@@ -205,6 +205,21 @@ if [ "$(uci -q get openvpn.sag_server.enabled)" = "1" ]; then
             fi
         fi
         CONF=/var/etc/openvpn-sag_server.conf
+        # drugi faktor uz certifikat: korisničko ime i lozinka
+        if grep -q "^auth-user-pass-verify" "$CONF" 2>/dev/null; then
+            # grep -c ispiše 0 ali vrati neuspjeh, pa se zadano postavlja zasebno
+            NPW=$(grep -c . "$BASE/etc/ovpn/users" 2>/dev/null)
+            [ -n "$NPW" ] || NPW=0
+            if [ "$NPW" -gt 0 ]; then
+                ok "OpenVPN traži i lozinku uz certifikat (korisnika s lozinkom: $NPW)"
+            else
+                bad "OpenVPN traži lozinku, ali je nitko nema" \
+                    "nijedan se korisnik ne može prijaviti dok mu se ne postavi"
+            fi
+        else
+            skip "OpenVPN traži samo certifikat" \
+                 "tko dobije .ovpn datoteku, spojio se — razmisli o lozinci"
+        fi
         for opt in "crl-verify" "data-ciphers" "tls-version-min"; do
             if grep -q "^$opt" "$CONF" 2>/dev/null; then
                 ok "OpenVPN: $opt je postavljen"

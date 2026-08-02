@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.22.0"
+const version = "0.23.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -53,7 +53,24 @@ func main() {
 	decOut := flag.String("out", "", "odredišna datoteka uz -decrypt-backup")
 	decPass := flag.String("backup-pass", "",
 		"lozinka arhive uz -decrypt-backup (prazno = uzmi spremljenu s uređaja)")
+	ovpnAuth := flag.String("ovpn-auth", "",
+		"provjeri OpenVPN prijavu iz datoteke i izađi (poziva ga OpenVPN)")
+	ovpnUsers := flag.String("ovpn-users", "",
+		"datoteka s otiscima lozinki uz -ovpn-auth")
+	ovpnExport := flag.String("ovpn-export", "",
+		"ispiši .ovpn datoteku za navedenog klijenta i izađi")
 	flag.Parse()
+
+	// Provjera VPN prijave mora proći PRIJE otvaranja baze: OpenVPN je zove
+	// nakon što odustane od root ovlasti, pa proces ne može čitati bazu.
+	// Sve što treba je datoteka s otiscima, čitljiva grupi nogroup.
+	if *ovpnAuth != "" {
+		if err := verifyOvpnUser(*ovpnAuth, *ovpnUsers); err != nil {
+			fmt.Fprintln(os.Stderr, "prijava odbijena:", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 
 	if err := os.MkdirAll(*etcDir, 0o755); err != nil {
 		log.Fatalf("etc direktorij: %v", err)
@@ -88,6 +105,13 @@ func main() {
 		}
 		fmt.Println("Lozinka korisnika 'admin' je postavljena.")
 		fmt.Println("Sve postojeće sesije su odjavljene; pri prvoj prijavi tražit će se nova lozinka.")
+		return
+	}
+
+	if *ovpnExport != "" {
+		if err := s.exportOvpnConfig(*ovpnExport, *decOut); err != nil {
+			log.Fatalf("%v", err)
+		}
 		return
 	}
 

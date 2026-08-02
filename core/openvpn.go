@@ -340,6 +340,7 @@ func (s *server) handleOvpnStatus(w http.ResponseWriter, r *http.Request) {
 			"client_dns":    s.getSetting("ovpn_client_dns", ""),
 			"push_lan":      s.getSetting("ovpn_push_lan", "1") == "1",
 			"allow_mgmt":    s.getSetting("ovpn_allow_mgmt", "0") == "1",
+			"pass_auth":     s.ovpnPassAuth(),
 		}
 	}
 
@@ -388,6 +389,8 @@ type ovpnServerIn struct {
 	// AllowMgmt otvara upravljanje uređajem (SSH, LuCI, Saguaro) VPN
 	// korisnicima. Zadano isključeno — VPN je pristup mreži, ne upravljanju.
 	AllowMgmt bool `json:"allow_mgmt"`
+	// PassAuth traži korisničko ime i lozinku uz certifikat.
+	PassAuth bool `json:"pass_auth"`
 }
 
 func (s *server) handleOvpnServerSet(w http.ResponseWriter, r *http.Request) {
@@ -455,6 +458,7 @@ func (s *server) handleOvpnServerSet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	ovCfg, _ := uciGetConfig(ctx, "openvpn")
 	var b strings.Builder
 	fmt.Fprintf(&b, "set openvpn.%s=openvpn\n", ovpnUciSection)
 	fmt.Fprintf(&b, "set openvpn.%s.enabled=1\n", ovpnUciSection)
@@ -480,6 +484,23 @@ func (s *server) handleOvpnServerSet(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(&b, "set openvpn.%s.remote_cert_tls=client\n", ovpnUciSection)
 	// opoziv certifikata i odustajanje od root ovlasti nakon pokretanja
 	fmt.Fprintf(&b, "set openvpn.%s.crl_verify=%s\n", ovpnUciSection, s.crlPath())
+	// drugi faktor uz certifikat: korisničko ime i lozinka. Provjeru radi
+	// pomoćna skripta, jer OpenVPN nema vlastitu bazu korisnika.
+	if in.PassAuth {
+		fmt.Fprintf(&b, "set openvpn.%s.auth_user_pass_verify=%s\n", ovpnUciSection,
+			uciQuote(s.ovpnAuthScript()+" via-file"))
+		fmt.Fprintf(&b, "set openvpn.%s.script_security=2\n", ovpnUciSection)
+		// ime iz prijave postaje CN, pa se CCD datoteke i pravila po korisniku
+		// i dalje poklapaju s nazivom klijenta
+		fmt.Fprintf(&b, "set openvpn.%s.username_as_common_name=1\n", ovpnUciSection)
+	} else {
+		for _, o := range []string{"auth_user_pass_verify", "script_security",
+			"username_as_common_name"} {
+			if _, has := ovCfg[ovpnUciSection][o]; has {
+				fmt.Fprintf(&b, "delete openvpn.%s.%s\n", ovpnUciSection, o)
+			}
+		}
+	}
 	fmt.Fprintf(&b, "set openvpn.%s.user=nobody\n", ovpnUciSection)
 	fmt.Fprintf(&b, "set openvpn.%s.group=nogroup\n", ovpnUciSection)
 	fmt.Fprintf(&b, "set openvpn.%s.keepalive=%s\n", ovpnUciSection, uciQuote("10 60"))
@@ -554,6 +575,7 @@ func (s *server) handleOvpnServerSet(w http.ResponseWriter, r *http.Request) {
 		"ovpn_client_dns":    in.ClientDNS,
 		"ovpn_push_lan":      map[bool]string{true: "1", false: "0"}[pushLan],
 		"ovpn_allow_mgmt":    boolSetting(in.AllowMgmt),
+		"ovpn_pass_auth":     boolSetting(in.PassAuth),
 	} {
 		if err := s.setSetting(k, v); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
@@ -637,18 +659,19 @@ type OvpnClient struct {
 	TunnelIP  string `json:"tunnel_ip"`
 	Enabled   bool   `json:"enabled"`
 	Notes     string `json:"notes"`
+	HasPass   bool   `json:"has_pass"` // je li postavljena lozinka (sama se ne vraća)
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
 
 // certifikat i ključ se ne vraćaju kroz popis — samo kroz /config export
 const ovpnCols = `uuid, name, tunnel_ip, enabled, COALESCE(notes,''),
-	created_at, updated_at`
+	COALESCE(pass_hash,'') <> '', created_at, updated_at`
 
 func scanOvpnClient(row interface{ Scan(...any) error }) (OvpnClient, error) {
 	var c OvpnClient
 	err := row.Scan(&c.UUID, &c.Name, &c.TunnelIP, &c.Enabled, &c.Notes,
-		&c.CreatedAt, &c.UpdatedAt)
+		&c.HasPass, &c.CreatedAt, &c.UpdatedAt)
 	return c, err
 }
 
@@ -674,6 +697,33 @@ func (s *server) handleOvpnClientList(w http.ResponseWriter, r *http.Request) {
 type ovpnClientIn struct {
 	OvpnClient
 	Enabled *bool `json:"enabled"`
+	// prazno pri izmjeni = zadrži postojeću lozinku
+	Password string `json:"password"`
+	// izričito uklanjanje lozinke (npr. privremeno blokiranje korisnika)
+	ClearPassword bool `json:"clear_password"`
+}
+
+// ovpnPassHash provjeri i pretvori lozinku u otisak; prazna lozinka vraća "".
+func ovpnPassHash(w http.ResponseWriter, pw string) (string, bool) {
+	if pw == "" {
+		return "", true
+	}
+	if len([]rune(pw)) < 8 {
+		writeErr(w, http.StatusBadRequest,
+			"lozinka VPN korisnika mora imati bar 8 znakova")
+		return "", false
+	}
+	if hasCtrl(pw) {
+		writeErr(w, http.StatusBadRequest,
+			"lozinka ne smije sadržavati prijelom retka")
+		return "", false
+	}
+	h, err := hashPassword(pw)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return "", false
+	}
+	return h, true
 }
 
 func (s *server) validateOvpnClient(w http.ResponseWriter, c *OvpnClient) bool {
@@ -718,11 +768,21 @@ func (s *server) handleOvpnClientCreate(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	passHash, okPw := ovpnPassHash(w, in.Password)
+	if !okPw {
+		return
+	}
+	if passHash == "" && s.ovpnPassAuth() {
+		writeErr(w, http.StatusBadRequest,
+			"poslužitelj traži lozinku uz certifikat — upiši lozinku za ovog korisnika")
+		return
+	}
 	c.UUID = newUUID()
 	_, err = s.db.Exec(`INSERT INTO ovpn_clients
-		(uuid, name, cert_pem, key_pem, tunnel_ip, enabled, notes)
-		VALUES (?,?,?,?,?,?,?)`,
-		c.UUID, c.Name, certPEM, keyPEM, c.TunnelIP, enabledIntOf(in.Enabled), c.Notes)
+		(uuid, name, cert_pem, key_pem, tunnel_ip, pass_hash, enabled, notes)
+		VALUES (?,?,?,?,?,?,?,?)`,
+		c.UUID, c.Name, certPEM, keyPEM, c.TunnelIP, passHash,
+		enabledIntOf(in.Enabled), c.Notes)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			writeErr(w, http.StatusConflict,
@@ -755,9 +815,24 @@ func (s *server) handleOvpnClientUpdate(w http.ResponseWriter, r *http.Request) 
 	if !s.validateOvpnClient(w, c) {
 		return
 	}
-	_, err := s.db.Exec(`UPDATE ovpn_clients SET tunnel_ip=?, enabled=?, notes=?,
-		updated_at=datetime('now') WHERE uuid=?`,
-		c.TunnelIP, enabledIntOf(in.Enabled), c.Notes, uuid)
+	passHash, okPw := ovpnPassHash(w, in.Password)
+	if !okPw {
+		return
+	}
+	var err error
+	if in.ClearPassword {
+		_, err = s.db.Exec(`UPDATE ovpn_clients SET tunnel_ip=?, enabled=?, notes=?,
+			pass_hash=NULL, updated_at=datetime('now') WHERE uuid=?`,
+			c.TunnelIP, enabledIntOf(in.Enabled), c.Notes, uuid)
+	} else if passHash == "" { // prazno = zadrži postojeću lozinku
+		_, err = s.db.Exec(`UPDATE ovpn_clients SET tunnel_ip=?, enabled=?, notes=?,
+			updated_at=datetime('now') WHERE uuid=?`,
+			c.TunnelIP, enabledIntOf(in.Enabled), c.Notes, uuid)
+	} else {
+		_, err = s.db.Exec(`UPDATE ovpn_clients SET tunnel_ip=?, enabled=?, notes=?,
+			pass_hash=?, updated_at=datetime('now') WHERE uuid=?`,
+			c.TunnelIP, enabledIntOf(in.Enabled), c.Notes, passHash, uuid)
+	}
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			writeErr(w, http.StatusConflict, "klijent s tom adresom već postoji")
@@ -835,6 +910,14 @@ func (s *server) handleOvpnClientConfig(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	body := s.buildOvpnClientConfig(endpoint, port, string(caB), certPEM,
+		keyPEM, string(tcB))
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "config": body})
+}
+
+// buildOvpnClientConfig slaže .ovpn datoteku. Koriste je i sučelje i izvoz iz
+// naredbenog retka, pa je sadržaj zajamčeno isti.
+func (s *server) buildOvpnClientConfig(endpoint, port, ca, cert, key, tc string) string {
 	var b strings.Builder
 	b.WriteString("client\ndev tun\nproto udp\n")
 	fmt.Fprintf(&b, "remote %s %s\n", endpoint, port)
@@ -842,13 +925,17 @@ func (s *server) handleOvpnClientConfig(w http.ResponseWriter, r *http.Request) 
 	b.WriteString("remote-cert-tls server\nverb 3\n")
 	// ista propisana kriptografija kao na serveru
 	b.WriteString("data-ciphers AES-256-GCM:CHACHA20-POLY1305\n")
-	b.WriteString("tls-version-min 1.2\nauth-nocache\n\n")
-	fmt.Fprintf(&b, "<ca>\n%s</ca>\n", string(caB))
-	fmt.Fprintf(&b, "<cert>\n%s</cert>\n", certPEM)
-	fmt.Fprintf(&b, "<key>\n%s</key>\n", keyPEM)
-	fmt.Fprintf(&b, "<tls-crypt>\n%s</tls-crypt>\n", string(tcB))
-
-	writeJSON(w, http.StatusOK, map[string]any{"name": name, "config": b.String()})
+	b.WriteString("tls-version-min 1.2\nauth-nocache\n")
+	if s.ovpnPassAuth() {
+		// aplikacija će pri spajanju zatražiti korisničko ime i lozinku
+		b.WriteString("auth-user-pass\n")
+	}
+	b.WriteString("\n")
+	fmt.Fprintf(&b, "<ca>\n%s</ca>\n", ca)
+	fmt.Fprintf(&b, "<cert>\n%s</cert>\n", cert)
+	fmt.Fprintf(&b, "<key>\n%s</key>\n", key)
+	fmt.Fprintf(&b, "<tls-crypt>\n%s</tls-crypt>\n", tc)
+	return b.String()
 }
 
 /* ---------- pristupna pravila po klijentu ---------- */
@@ -934,6 +1021,15 @@ func (s *server) handleOvpnApply(w http.ResponseWriter, r *http.Request) {
 	ipnet := s.ovpnServerNet(ovpnCfg)
 	if ipnet == nil {
 		writeErr(w, http.StatusConflict, "mreža tunela nije čitljiva iz konfiguracije")
+		return
+	}
+	// popis korisnika i pomoćna skripta za provjeru lozinke
+	if err := s.writeOvpnAuthScript(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "auth skripta: "+err.Error())
+		return
+	}
+	if err := s.writeOvpnUsers(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "popis korisnika: "+err.Error())
 		return
 	}
 	mask := net.IP(ipnet.Mask).String()
@@ -1058,4 +1154,144 @@ func (s *server) handleOvpnApply(w http.ResponseWriter, r *http.Request) {
 		"removed_rules":   removed,
 		"backup":          backupName,
 	})
+}
+
+/* ---------- korisničko ime i lozinka (drugi faktor uz certifikat) ---------- */
+
+// Certifikat sam po sebi je "nešto što imaš" — tko dobije .ovpn datoteku,
+// spojio se. Lozinka dodaje "nešto što znaš", pa ukradena datoteka više nije
+// dovoljna. OpenVPN provjeru prepušta vanjskoj skripti (auth-user-pass-verify).
+//
+// Zamka: OpenVPN nakon pokretanja odustaje od root ovlasti, pa skripta radi
+// kao nobody i ne može čitati Saguaro bazu (0600 root). Zato se otisci lozinki
+// ispisuju u zasebnu datoteku čitljivu grupi nogroup — otisci, nikad lozinke.
+func (s *server) ovpnUsersFile() string {
+	return filepath.Join(s.ovpnDir(), "users")
+}
+
+func (s *server) ovpnAuthScript() string {
+	return filepath.Join(s.ovpnDir(), "authverify.sh")
+}
+
+// writeOvpnUsers ispisuje "ime:otisak" za svakog uključenog klijenta s
+// lozinkom. Klijenti bez lozinke se izostavljaju — kad je provjera uključena,
+// oni se ne mogu prijaviti dok im se lozinka ne postavi.
+func (s *server) writeOvpnUsers() error {
+	rows, err := s.db.Query(`SELECT name, COALESCE(pass_hash,'') FROM ovpn_clients
+		WHERE enabled = 1 AND COALESCE(pass_hash,'') <> '' ORDER BY name`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var b strings.Builder
+	for rows.Next() {
+		var name, hash string
+		if rows.Scan(&name, &hash) != nil {
+			continue
+		}
+		b.WriteString(name + ":" + hash + "\n")
+	}
+	p := s.ovpnUsersFile()
+	if err := os.WriteFile(p, []byte(b.String()), 0o640); err != nil {
+		return err
+	}
+	// nogroup (65534) je grupa u koju OpenVPN prelazi nakon pokretanja
+	_ = os.Chown(p, 0, 65534)
+	return nil
+}
+
+// writeOvpnAuthScript stvara pomoćnu skriptu koju OpenVPN zove pri svakoj
+// prijavi. Sama provjera otiska je u Saguaro binaryju (-ovpn-auth), jer je
+// PBKDF2 u shellu neizvediv.
+func (s *server) writeOvpnAuthScript() error {
+	body := "#!/bin/sh\n" +
+		"# Saguaro — provjera korisničkog imena i lozinke za OpenVPN.\n" +
+		"# OpenVPN preda datoteku s imenom u prvom i lozinkom u drugom retku.\n" +
+		"exec /opt/saguaro/bin/saguaro-core -ovpn-auth \"$1\" -ovpn-users " +
+		s.ovpnUsersFile() + "\n"
+	p := s.ovpnAuthScript()
+	if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+		return err
+	}
+	return nil
+}
+
+// verifyOvpnUser provjeri par ime/lozinka protiv datoteke s otiscima.
+// Namjerno ne dira bazu: poziva se iz procesa koji radi kao nobody.
+func verifyOvpnUser(credFile, usersFile string) error {
+	raw, err := os.ReadFile(credFile)
+	if err != nil {
+		return fmt.Errorf("ne mogu pročitati podatke za prijavu: %w", err)
+	}
+	lines := strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n")
+	if len(lines) < 2 {
+		return fmt.Errorf("neispravan zapis prijave")
+	}
+	user, pass := strings.TrimSpace(lines[0]), lines[1]
+
+	ub, err := os.ReadFile(usersFile)
+	if err != nil {
+		return fmt.Errorf("popis korisnika nije dostupan: %w", err)
+	}
+	for _, l := range strings.Split(string(ub), "\n") {
+		name, hash, ok := strings.Cut(strings.TrimSpace(l), ":")
+		if !ok || name != user {
+			continue
+		}
+		if verifyPassword(hash, pass) {
+			return nil
+		}
+		return fmt.Errorf("pogrešna lozinka")
+	}
+	// isti trošak i za nepostojećeg korisnika, da se po trajanju ne može
+	// zaključiti postoji li ime
+	verifyPassword(dummyHash, pass)
+	return fmt.Errorf("korisnik ne postoji ili nema postavljenu lozinku")
+}
+
+// ovpnPassAuth javlja traži li poslužitelj i lozinku uz certifikat.
+func (s *server) ovpnPassAuth() bool {
+	return s.getSetting("ovpn_pass_auth", "0") == "1"
+}
+
+// exportOvpnConfig ispisuje .ovpn datoteku za klijenta iz naredbenog retka.
+// Korisno za skriptiranu isporuku i za provjeru bez preglednika; sadržaj je
+// isti kao onaj koji nudi sučelje.
+func (s *server) exportOvpnConfig(name, outPath string) error {
+	var certPEM, keyPEM string
+	if err := s.db.QueryRow(`SELECT cert_pem, key_pem FROM ovpn_clients
+		WHERE name=?`, name).Scan(&certPEM, &keyPEM); err != nil {
+		return fmt.Errorf("klijent %q ne postoji", name)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cfg, err := uciGetConfig(ctx, "openvpn")
+	if err != nil {
+		return err
+	}
+	sec, ok := cfg[ovpnUciSection]
+	if !ok {
+		return fmt.Errorf("OpenVPN poslužitelj još nije postavljen")
+	}
+	caB, err := os.ReadFile(filepath.Join(s.ovpnDir(), "ca.crt"))
+	if err != nil {
+		return err
+	}
+	tcB, err := os.ReadFile(filepath.Join(s.ovpnDir(), "tc.key"))
+	if err != nil {
+		return err
+	}
+	endpoint := s.getSetting("ovpn_endpoint_host", "")
+	if endpoint == "" {
+		if netCfg, nerr := uciGetConfig(ctx, "network"); nerr == nil {
+			endpoint = sectStr(netCfg["lan"], "ipaddr")
+		}
+	}
+	body := s.buildOvpnClientConfig(endpoint, sectStr(sec, "port"),
+		string(caB), certPEM, keyPEM, string(tcB))
+	if outPath == "" || outPath == "-" {
+		fmt.Print(body)
+		return nil
+	}
+	return os.WriteFile(outPath, []byte(body), 0o600)
 }

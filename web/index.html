@@ -663,7 +663,14 @@
               Klijentima pošalji rutu prema LAN mreži</label>
             <label class="check"><input type="checkbox" name="allow_mgmt">
               Dopusti VPN korisnicima pristup upravljanju uređajem</label>
+            <label class="check"><input type="checkbox" name="pass_auth">
+              Uz certifikat traži i korisničko ime i lozinku</label>
           </div>
+          <p class="hint">Certifikat je „nešto što imaš" — tko dobije
+            <code>.ovpn</code> datoteku, spojio se. Lozinka dodaje „nešto što
+            znaš", pa ukradena datoteka više nije dovoljna. Kad je uključeno,
+            svaki korisnik mora imati postavljenu lozinku; oni bez nje se ne
+            mogu prijaviti. Korisničko ime je naziv klijenta.</p>
           <p class="hint">Certifikate (CA, server, klijenti) uređaj izdaje sam —
             ništa se ne unosi ručno. Veza je <b>split tunnel</b>: korisnici kroz
             tunel dosežu samo lokalnu mrežu, a na internet idu preko vlastite veze.</p>
@@ -695,7 +702,7 @@
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Naziv</th><th>Tunel IP</th><th>Aktivan</th><th>Spojen</th>
+            <th>Naziv</th><th>Tunel IP</th><th>Lozinka</th><th>Aktivan</th><th>Spojen</th>
             <th>Promet (rx/tx)</th><th></th>
           </tr></thead>
           <tbody id="ovc-rows"></tbody>
@@ -1620,12 +1627,16 @@
       <div class="form-grid">
         <label>Naziv (malim slovima)<input name="name" required placeholder="goran-laptop"></label>
         <label>Adresa u tunelu<input name="tunnel_ip" required placeholder="10.7.0.2"></label>
+        <label class="wide">Lozinka korisnika
+          <input name="password" type="password" autocomplete="new-password"
+                 minlength="8" placeholder="najmanje 8 znakova"></label>
         <label class="wide">Napomene<textarea name="notes" rows="2"></textarea></label>
         <label class="check"><input type="checkbox" name="enabled" checked>
           Aktivan — smije se spajati</label>
       </div>
-      <p class="hint">Certifikat i ključ generiraju se automatski; gotova
-        <code>.ovpn</code> datoteka dostupna je gumbom <b>Config</b> u tablici.</p>
+      <p class="hint" id="ovc-pass-hint">Certifikat i ključ generiraju se
+        automatski; gotova <code>.ovpn</code> datoteka preuzima se gumbom
+        <b>Preuzmi .ovpn</b> u tablici.</p>
       <div class="form-actions">
         <button type="button" class="ghost" id="ovc-cancel">Odustani</button>
         <button type="submit" class="primary">Spremi</button>

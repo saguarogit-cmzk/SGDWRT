@@ -205,6 +205,30 @@ sa starijom opremom. Zajednički model:
 - **Ukidanje pristupa**: isključi (ili obriši) korisnika pa *Primijeni* —
   WireGuard peer nestaje s uređaja, OpenVPN klijent gubi pravo spajanja.
 
+### Korisničko ime i lozinka uz certifikat (OpenVPN)
+
+Certifikat je *nešto što imaš* — tko dobije `.ovpn` datoteku, spojio se.
+Uključivanjem **„Uz certifikat traži i korisničko ime i lozinku"** dodaje se
+*nešto što znaš*, pa ukradena datoteka više nije dovoljna.
+
+- **Korisničko ime je naziv klijenta**, lozinka se upisuje u dijalogu klijenta.
+- Kad je provjera uključena, **svaki korisnik mora imati lozinku** — oni bez nje
+  se ne mogu prijaviti, i u tablici stoji crveno *Nedostaje*.
+- Lozinka se čuva **samo kao otisak** (PBKDF2-SHA256, 210 000 iteracija), nikad
+  u čitljivom obliku. Otisci idu u `/opt/saguaro/etc/ovpn/users`, datoteku koju
+  smije čitati samo `root` i grupa `nogroup` — jer OpenVPN nakon pokretanja radi
+  kao `nobody` i mora je pročitati pri prijavi.
+- **Ukloni lozinku** u tablici privremeno blokira korisnika bez brisanja
+  njegovog certifikata.
+- Nakon uključivanja ili isključivanja ove opcije **klijentima treba nova
+  `.ovpn` datoteka**, jer se u njoj mijenja redak `auth-user-pass`.
+
+Izvoz iz naredbenog retka (za skriptiranu isporuku):
+
+```sh
+saguaro-core -ovpn-export ime-klijenta -out /tmp/klijent.ovpn
+```
+
 ## Uređaji (inventar)
 
 Ovaj uređaj upisuje se sam (hardver, serijski broj, verzije — osvježava se pri

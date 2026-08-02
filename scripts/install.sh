@@ -1,12 +1,12 @@
 #!/bin/sh
 # Saguaro Infrastructure — instalacija na svjež OpenWrt 25.x (apk) uređaj.
 # Upotreba (na uređaju, kao root):
-#   wget -O - https://raw.githubusercontent.com/saguarogit-cmzk/SGDWRT/main/scripts/install.sh | sh
+#   wget -O - https://raw.githubusercontent.com/saguarogit-cmzk/SGSWRT/main/scripts/install.sh | sh
 # ili s lokalnim paketom:
 #   sh install.sh saguaro-vX.Y.Z-linux-amd64.tar.gz
 set -e
 
-REPO="saguarogit-cmzk/SGDWRT"
+REPO="saguarogit-cmzk/SGSWRT"
 BASE="/opt/saguaro"
 
 echo ">> Saguaro Infrastructure — instalacija"

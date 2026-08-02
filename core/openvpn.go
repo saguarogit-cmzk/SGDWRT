@@ -52,9 +52,14 @@ func newSerial() *big.Int {
 // ensureOvpnPKI stvara CA, serverski certifikat i tls-crypt ključ pri prvom pozivu.
 func (s *server) ensureOvpnPKI() error {
 	dir := s.ovpnDir()
-	if err := os.MkdirAll(s.ccdDir(), 0o700); err != nil {
+	if err := os.MkdirAll(s.ccdDir(), 0o755); err != nil {
 		return err
 	}
+	// OpenVPN nakon pokretanja odustaje od root ovlasti (user nobody), pa mora
+	// moći ući u ovaj direktorij i čitati CCD datoteke. 0751 dopušta samo
+	// prolaz, ne i ispis sadržaja; privatni ključevi ostaju 0600.
+	_ = os.Chmod(dir, 0o751)
+	_ = os.Chmod(s.ccdDir(), 0o755)
 	caCrt, caKey := filepath.Join(dir, "ca.crt"), filepath.Join(dir, "ca.key")
 	if _, err := os.Stat(caCrt); err != nil {
 		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -115,7 +120,101 @@ func (s *server) ensureOvpnPKI() error {
 			return err
 		}
 	}
-	return nil
+	// popis opozvanih certifikata mora postojati prije nego ga server traži
+	return s.writeOvpnCRL()
+}
+
+/* ---------- opoziv certifikata (CRL) ---------- */
+
+// crlPath je popis opozvanih certifikata koji OpenVPN provjerava pri svakom
+// spajanju. Brisanje CCD datoteke sprječava spajanje, ali certifikat ostaje
+// kriptografski valjan — tek upis u CRL ga trajno poništava.
+func (s *server) crlPath() string { return filepath.Join(s.ovpnDir(), "crl.pem") }
+
+// revokeOvpnCert upisuje serijski broj certifikata u tablicu opozvanih.
+// Certifikat se čita iz spremljenog PEM-a, pa nije potrebno pamtiti serijski
+// broj pri izdavanju.
+func (s *server) revokeOvpnCert(name, certPEM string) error {
+	blk, _ := pem.Decode([]byte(certPEM))
+	if blk == nil {
+		return fmt.Errorf("certifikat korisnika %s nije čitljiv", name)
+	}
+	crt, err := x509.ParseCertificate(blk.Bytes)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT OR REPLACE INTO ovpn_revoked
+		(serial, name, not_after, revoked_at) VALUES (?,?,?,datetime('now'))`,
+		crt.SerialNumber.Text(16), name, crt.NotAfter.UTC().Format(time.RFC3339))
+	return err
+}
+
+// writeOvpnCRL ispisuje crl.pem iz tablice opozvanih certifikata.
+// Rok valjanosti popisa je namjerno dug: OpenVPN odbija sve veze ako je CRL
+// istekao, pa bi kratak rok značio samonametnuti ispad.
+func (s *server) writeOvpnCRL() error {
+	dir := s.ovpnDir()
+	caPEM, err := os.ReadFile(filepath.Join(dir, "ca.crt"))
+	if err != nil {
+		return err
+	}
+	keyPEM, err := os.ReadFile(filepath.Join(dir, "ca.key"))
+	if err != nil {
+		return err
+	}
+	cb, _ := pem.Decode(caPEM)
+	kb, _ := pem.Decode(keyPEM)
+	if cb == nil || kb == nil {
+		return fmt.Errorf("CA certifikat ili ključ nisu čitljivi")
+	}
+	caCrt, err := x509.ParseCertificate(cb.Bytes)
+	if err != nil {
+		return err
+	}
+	caKey, err := x509.ParseECPrivateKey(kb.Bytes)
+	if err != nil {
+		return err
+	}
+
+	revoked := []x509.RevocationListEntry{}
+	rows, err := s.db.Query(`SELECT serial, revoked_at, not_after FROM ovpn_revoked`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var serial, revAt, notAfter string
+			if rows.Scan(&serial, &revAt, &notAfter) != nil {
+				continue
+			}
+			// certifikat koji je ionako istekao ne treba držati u popisu
+			if t, err := time.Parse(time.RFC3339, notAfter); err == nil &&
+				t.Before(time.Now()) {
+				continue
+			}
+			n, ok := new(big.Int).SetString(serial, 16)
+			if !ok {
+				continue
+			}
+			at, err := time.Parse("2006-01-02 15:04:05", revAt)
+			if err != nil {
+				at = time.Now()
+			}
+			revoked = append(revoked, x509.RevocationListEntry{
+				SerialNumber: n, RevocationTime: at.UTC(),
+			})
+		}
+	}
+
+	tpl := &x509.RevocationList{
+		Number:                    newSerial(),
+		ThisUpdate:                time.Now().Add(-time.Hour),
+		NextUpdate:                time.Now().AddDate(10, 0, 0),
+		RevokedCertificateEntries: revoked,
+	}
+	der, err := x509.CreateRevocationList(rand.Reader, tpl, caCrt, caKey)
+	if err != nil {
+		return err
+	}
+	return writePEM(s.crlPath(), "X509 CRL", der, 0o644)
 }
 
 // ovpnSignCert izdaje certifikat s danim CN-om potpisan našim CA-om.
@@ -240,6 +339,7 @@ func (s *server) handleOvpnStatus(w http.ResponseWriter, r *http.Request) {
 			"endpoint_host": s.getSetting("ovpn_endpoint_host", ""),
 			"client_dns":    s.getSetting("ovpn_client_dns", ""),
 			"push_lan":      s.getSetting("ovpn_push_lan", "1") == "1",
+			"allow_mgmt":    s.getSetting("ovpn_allow_mgmt", "0") == "1",
 		}
 	}
 
@@ -285,6 +385,9 @@ type ovpnServerIn struct {
 	EndpointHost string `json:"endpoint_host"`
 	ClientDNS    string `json:"client_dns"`
 	PushLan      *bool  `json:"push_lan"`
+	// AllowMgmt otvara upravljanje uređajem (SSH, LuCI, Saguaro) VPN
+	// korisnicima. Zadano isključeno — VPN je pristup mreži, ne upravljanju.
+	AllowMgmt bool `json:"allow_mgmt"`
 }
 
 func (s *server) handleOvpnServerSet(w http.ResponseWriter, r *http.Request) {
@@ -367,6 +470,18 @@ func (s *server) handleOvpnServerSet(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(&b, "set openvpn.%s.key=%s\n", ovpnUciSection, filepath.Join(dir, "server.key"))
 	fmt.Fprintf(&b, "set openvpn.%s.dh=none\n", ovpnUciSection)
 	fmt.Fprintf(&b, "set openvpn.%s.tls_crypt=%s\n", ovpnUciSection, filepath.Join(dir, "tc.key"))
+	// izričito propisana kriptografija umjesto oslanjanja na zadane vrijednosti
+	// data_ciphers je u OpenWrt init skripti list-opcija, pa ide add_list-om
+	fmt.Fprintf(&b, "delete openvpn.%s.data_ciphers\n", ovpnUciSection)
+	fmt.Fprintf(&b, "add_list openvpn.%s.data_ciphers=%s\n", ovpnUciSection,
+		uciQuote("AES-256-GCM:CHACHA20-POLY1305"))
+	fmt.Fprintf(&b, "set openvpn.%s.data_ciphers_fallback=AES-256-GCM\n", ovpnUciSection)
+	fmt.Fprintf(&b, "set openvpn.%s.tls_version_min=1.2\n", ovpnUciSection)
+	fmt.Fprintf(&b, "set openvpn.%s.remote_cert_tls=client\n", ovpnUciSection)
+	// opoziv certifikata i odustajanje od root ovlasti nakon pokretanja
+	fmt.Fprintf(&b, "set openvpn.%s.crl_verify=%s\n", ovpnUciSection, s.crlPath())
+	fmt.Fprintf(&b, "set openvpn.%s.user=nobody\n", ovpnUciSection)
+	fmt.Fprintf(&b, "set openvpn.%s.group=nogroup\n", ovpnUciSection)
 	fmt.Fprintf(&b, "set openvpn.%s.keepalive=%s\n", ovpnUciSection, uciQuote("10 60"))
 	fmt.Fprintf(&b, "set openvpn.%s.persist_key=1\n", ovpnUciSection)
 	fmt.Fprintf(&b, "set openvpn.%s.persist_tun=1\n", ovpnUciSection)
@@ -406,7 +521,6 @@ func (s *server) handleOvpnServerSet(w http.ResponseWriter, r *http.Request) {
 	fb.WriteString("set firewall.sag_ovpn_zone.name=sagovpn\n")
 	fb.WriteString("delete firewall.sag_ovpn_zone.network\n")
 	fmt.Fprintf(&fb, "add_list firewall.sag_ovpn_zone.network=%s\n", ovpnIface)
-	fb.WriteString("set firewall.sag_ovpn_zone.input=ACCEPT\n")
 	fb.WriteString("set firewall.sag_ovpn_zone.output=ACCEPT\n")
 	fb.WriteString("set firewall.sag_ovpn_zone.forward=REJECT\n")
 	fb.WriteString("set firewall.sag_ovpn_rule=rule\n")
@@ -417,6 +531,7 @@ func (s *server) handleOvpnServerSet(w http.ResponseWriter, r *http.Request) {
 	fb.WriteString("set firewall.sag_ovpn_rule.target=ACCEPT\n")
 	// pun pristup pri prvom postavljanju (kao WireGuard); mijenja se kroz /access
 	fwCfg, _ := uciGetConfig(ctx, "firewall")
+	vpnZoneInput(&fb, fwCfg, "sag_ovpn", "sagovpn", "OpenVPN", in.AllowMgmt)
 	_, hasLan := fwCfg["sag_ovpn_lan"]
 	_, hasWan := fwCfg["sag_ovpn_wan"]
 	_, hadZone := fwCfg["sag_ovpn_zone"]
@@ -438,6 +553,7 @@ func (s *server) handleOvpnServerSet(w http.ResponseWriter, r *http.Request) {
 		"ovpn_endpoint_host": in.EndpointHost,
 		"ovpn_client_dns":    in.ClientDNS,
 		"ovpn_push_lan":      map[bool]string{true: "1", false: "0"}[pushLan],
+		"ovpn_allow_mgmt":    boolSetting(in.AllowMgmt),
 	} {
 		if err := s.setSetting(k, v); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
@@ -656,16 +772,31 @@ func (s *server) handleOvpnClientUpdate(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *server) handleOvpnClientDelete(w http.ResponseWriter, r *http.Request) {
-	res, err := s.db.Exec(`DELETE FROM ovpn_clients WHERE uuid=?`, r.PathValue("uuid"))
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	uuid := r.PathValue("uuid")
+	// certifikat se prije brisanja upisuje u popis opozvanih (CRL)
+	var name, certPEM string
+	if err := s.db.QueryRow(`SELECT name, cert_pem FROM ovpn_clients WHERE uuid=?`,
+		uuid).Scan(&name, &certPEM); err != nil {
 		writeErr(w, http.StatusNotFound, "klijent ne postoji")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("uuid")})
+	if err := s.revokeOvpnCert(name, certPEM); err != nil {
+		writeErr(w, http.StatusInternalServerError, "opoziv: "+err.Error())
+		return
+	}
+	if _, err := s.db.Exec(`DELETE FROM ovpn_clients WHERE uuid=?`, uuid); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	revoked := true
+	if err := s.writeOvpnCRL(); err != nil {
+		// baza je već ažurirana; CRL se ponovno ispisuje pri sljedećem "Primijeni"
+		addEvent(s, "warning", "Popis opozvanih certifikata nije osvježen: "+err.Error())
+		revoked = false
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"deleted": uuid, "revoked": revoked,
+	})
 }
 
 /* ---------- .ovpn export ---------- */
@@ -708,7 +839,10 @@ func (s *server) handleOvpnClientConfig(w http.ResponseWriter, r *http.Request) 
 	b.WriteString("client\ndev tun\nproto udp\n")
 	fmt.Fprintf(&b, "remote %s %s\n", endpoint, port)
 	b.WriteString("resolv-retry infinite\nnobind\npersist-key\npersist-tun\n")
-	b.WriteString("remote-cert-tls server\nverb 3\n\n")
+	b.WriteString("remote-cert-tls server\nverb 3\n")
+	// ista propisana kriptografija kao na serveru
+	b.WriteString("data-ciphers AES-256-GCM:CHACHA20-POLY1305\n")
+	b.WriteString("tls-version-min 1.2\nauth-nocache\n\n")
 	fmt.Fprintf(&b, "<ca>\n%s</ca>\n", string(caB))
 	fmt.Fprintf(&b, "<cert>\n%s</cert>\n", certPEM)
 	fmt.Fprintf(&b, "<key>\n%s</key>\n", keyPEM)
@@ -828,14 +962,14 @@ func (s *server) handleOvpnApply(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := os.MkdirAll(s.ccdDir(), 0o700); err != nil {
+	if err := os.MkdirAll(s.ccdDir(), 0o755); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	for _, c := range clients {
 		line := fmt.Sprintf("ifconfig-push %s %s\n", c.ip, mask)
 		if err := os.WriteFile(filepath.Join(s.ccdDir(), c.name),
-			[]byte(line), 0o600); err != nil {
+			[]byte(line), 0o644); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}

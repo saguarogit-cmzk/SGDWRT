@@ -76,11 +76,13 @@ func (s *server) ensureAdmin(initialPassword string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.db.Exec(`INSERT INTO users (uuid, username, pass_hash)
-		VALUES (?, 'admin', ?)`, newUUID(), h); err != nil {
+	// zadana lozinka dolazi s instalacije i javno je poznata — do njene
+	// promjene korisnik ne može raditi ništa drugo
+	if _, err := s.db.Exec(`INSERT INTO users (uuid, username, pass_hash, must_change_pw)
+		VALUES (?, 'admin', ?, 1)`, newUUID(), h); err != nil {
 		return err
 	}
-	log.Printf("kreiran korisnik 'admin' (lozinka = trenutni API token)")
+	log.Printf("kreiran korisnik 'admin' (zadana lozinka — obavezna promjena pri prvoj prijavi)")
 	return nil
 }
 
@@ -153,15 +155,23 @@ func tokenHash(token string) string {
 
 // sessionUser vraća korisničko ime za valjanu sesiju ("" ako sesija ne postoji).
 func (s *server) sessionUser(token string) string {
+	name, _ := s.sessionUserState(token)
+	return name
+}
+
+// sessionUserState uz korisničko ime vraća i mora li korisnik prvo promijeniti
+// zadanu lozinku.
+func (s *server) sessionUserState(token string) (string, bool) {
 	var username string
-	err := s.db.QueryRow(`SELECT u.username FROM sessions se
+	var mustChange int
+	err := s.db.QueryRow(`SELECT u.username, u.must_change_pw FROM sessions se
 		JOIN users u ON u.uuid = se.user_uuid
 		WHERE se.token_hash = ? AND se.expires_at > datetime('now')`,
-		tokenHash(token)).Scan(&username)
+		tokenHash(token)).Scan(&username, &mustChange)
 	if err != nil {
-		return ""
+		return "", false
 	}
-	return username
+	return username, mustChange == 1
 }
 
 func bearerToken(r *http.Request) string {
@@ -188,8 +198,9 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	in.Username = strings.TrimSpace(in.Username)
 
 	var userUUID, passHash string
-	err := s.db.QueryRow(`SELECT uuid, pass_hash FROM users WHERE username=?`,
-		in.Username).Scan(&userUUID, &passHash)
+	var mustChange int
+	err := s.db.QueryRow(`SELECT uuid, pass_hash, must_change_pw FROM users
+		WHERE username=?`, in.Username).Scan(&userUUID, &passHash, &mustChange)
 	if err == sql.ErrNoRows {
 		verifyPassword(dummyHash, in.Password) // izjednači trajanje
 		loginFailed(ip)
@@ -225,6 +236,7 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token": token, "username": in.Username, "expires_at": expires,
+		"must_change_password": mustChange == 1,
 	})
 }
 
@@ -291,8 +303,13 @@ func (s *server) handlePasswordChange(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if _, err := s.db.Exec(`UPDATE users SET pass_hash=?, updated_at=datetime('now')
-		WHERE uuid=?`, h, userUUID); err != nil {
+	if in.New == in.Current {
+		writeErr(w, http.StatusBadRequest, "nova lozinka mora biti različita od trenutne")
+		return
+	}
+	// promjenom pada i obveza mijenjanja zadane lozinke s instalacije
+	if _, err := s.db.Exec(`UPDATE users SET pass_hash=?, must_change_pw=0,
+		updated_at=datetime('now') WHERE uuid=?`, h, userUUID); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

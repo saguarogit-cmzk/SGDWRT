@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -71,6 +72,15 @@ func (s *server) handleDdnsSet(w http.ResponseWriter, r *http.Request) {
 		if in.Provider == "" && in.UpdateURL == "" {
 			writeErr(w, http.StatusBadRequest, "odaberi pružatelja ili upiši update URL")
 			return
+		}
+		if in.UpdateURL != "" {
+			u, err := url.Parse(in.UpdateURL)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") ||
+				u.Host == "" || hasCtrl(in.UpdateURL) {
+				writeErr(w, http.StatusBadRequest,
+					"update URL mora počinjati s http:// ili https://")
+				return
+			}
 		}
 		ok := in.Provider == ""
 		for _, p := range ddnsProviders {

@@ -41,5 +41,6 @@ func openDB(path string) (*sql.DB, error) {
 	db.Exec(`ALTER TABLE fw_rules ADD COLUMN start_time TEXT`)
 	db.Exec(`ALTER TABLE fw_rules ADD COLUMN stop_time TEXT`)
 	db.Exec(`ALTER TABLE fw_rules ADD COLUMN weekdays TEXT`)
+	db.Exec(`ALTER TABLE users ADD COLUMN must_change_pw INTEGER NOT NULL DEFAULT 0`)
 	return db, nil
 }

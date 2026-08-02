@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -197,6 +198,10 @@ func (s *server) handleBanipSet(w http.ResponseWriter, r *http.Request) {
 		en = "1"
 	}
 	b.WriteString("set banip.global.ban_enabled=" + en + "\n")
+	// banIP sam pogađa koje je sučelje WAN, i to prema zadanoj ruti — ako
+	// lokalna mreža ima gateway (npr. kao pričuvna veza), pogodi krivo i
+	// filtrira LAN umjesto interneta. Zato mu izričito upisujemo WAN sučelja.
+	writeBanipWAN(ctx, &b, g)
 	if _, has := g["ban_feed"]; has {
 		b.WriteString("delete banip.global.ban_feed\n")
 	}
@@ -334,4 +339,67 @@ func (s *server) handleAdblockSet(w http.ResponseWriter, r *http.Request) {
 		"enabled": *in.Enabled, "backup": backupName,
 		"note": "preuzimanje i obrada lista traje minutu-dvije",
 	})
+}
+
+// writeBanipWAN upisuje banIP-u konkretna WAN sučelja umjesto automatskog
+// pogađanja. Sučelja se čitaju iz wan firewall zone (ondje su i dodatni WAN-ovi
+// za failover), a uređaji iz mrežne konfiguracije.
+func writeBanipWAN(ctx context.Context, b *strings.Builder, g uciSection) {
+	fwCfg, err := uciGetConfig(ctx, "firewall")
+	if err != nil {
+		return
+	}
+	netCfg, err := uciGetConfig(ctx, "network")
+	if err != nil {
+		return
+	}
+	var ifv4, ifv6, devs []string
+	seen := map[string]bool{}
+	for _, sec := range fwCfg {
+		if sectStr(sec, ".type") != "zone" || sectStr(sec, "name") != "wan" {
+			continue
+		}
+		for _, iface := range sectList(sec, "network") {
+			ns, ok := netCfg[iface]
+			if !ok {
+				continue
+			}
+			// dhcpv6 / *6 sučelja idu u IPv6 popis
+			if strings.Contains(sectStr(ns, "proto"), "6") || strings.HasSuffix(iface, "6") {
+				ifv6 = append(ifv6, iface)
+			} else {
+				ifv4 = append(ifv4, iface)
+			}
+			if d := sectStr(ns, "device"); d != "" && !seen[d] {
+				seen[d] = true
+				devs = append(devs, d)
+			}
+		}
+	}
+	if len(ifv4) == 0 || len(devs) == 0 {
+		return // ništa pouzdano — bolje ostaviti banIP-ovu automatiku
+	}
+	sort.Strings(ifv4)
+	sort.Strings(ifv6)
+	sort.Strings(devs)
+
+	b.WriteString("set banip.global.ban_autodetect=0\n")
+	for _, k := range []string{"ban_ifv4", "ban_ifv6", "ban_dev"} {
+		if _, has := g[k]; has {
+			b.WriteString("delete banip.global." + k + "\n")
+		}
+	}
+	for _, v := range ifv4 {
+		b.WriteString("add_list banip.global.ban_ifv4=" + v + "\n")
+	}
+	for _, v := range ifv6 {
+		b.WriteString("add_list banip.global.ban_ifv6=" + v + "\n")
+	}
+	for _, v := range devs {
+		b.WriteString("add_list banip.global.ban_dev=" + v + "\n")
+	}
+	// IPv6 se zadano ne filtrira, a WAN ga ima; blokade se zapisuju u log
+	b.WriteString("set banip.global.ban_protov6=" +
+		boolSetting(len(ifv6) > 0) + "\n")
+	b.WriteString("set banip.global.ban_logprerouting=1\n")
 }

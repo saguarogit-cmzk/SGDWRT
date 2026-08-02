@@ -163,6 +163,7 @@ func (s *server) handleWGStatus(w http.ResponseWriter, r *http.Request) {
 			"endpoint_host":      s.getSetting("wg_endpoint_host", ""),
 			"client_dns":         s.getSetting("wg_client_dns", ""),
 			"client_allowed_ips": s.getSetting("wg_client_allowed_ips", "0.0.0.0/0"),
+			"allow_mgmt":         s.getSetting("wg_allow_mgmt", "0") == "1",
 		}
 	}
 
@@ -205,6 +206,9 @@ type wgServerIn struct {
 	EndpointHost     string `json:"endpoint_host"`
 	ClientDNS        string `json:"client_dns"`
 	ClientAllowedIPs string `json:"client_allowed_ips"`
+	// AllowMgmt otvara upravljanje uređajem (SSH, LuCI, Saguaro) VPN
+	// korisnicima. Zadano isključeno — VPN je pristup mreži, ne upravljanju.
+	AllowMgmt bool `json:"allow_mgmt"`
 }
 
 func (s *server) handleWGServerSet(w http.ResponseWriter, r *http.Request) {
@@ -325,9 +329,10 @@ func (s *server) handleWGServerSet(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(&fb, "set firewall.sag_wg_zone.name=sagwg\n")
 	fmt.Fprintf(&fb, "delete firewall.sag_wg_zone.network\n")
 	fmt.Fprintf(&fb, "add_list firewall.sag_wg_zone.network=%s\n", wgIface)
-	fmt.Fprintf(&fb, "set firewall.sag_wg_zone.input=ACCEPT\n")
 	fmt.Fprintf(&fb, "set firewall.sag_wg_zone.output=ACCEPT\n")
 	fmt.Fprintf(&fb, "set firewall.sag_wg_zone.forward=REJECT\n")
+	fwCfg, _ := uciGetConfig(ctx, "firewall")
+	vpnZoneInput(&fb, fwCfg, "sag_wg", "sagwg", "WireGuard", in.AllowMgmt)
 	fmt.Fprintf(&fb, "set firewall.sag_wg_lan=forwarding\n")
 	fmt.Fprintf(&fb, "set firewall.sag_wg_lan.src=sagwg\n")
 	fmt.Fprintf(&fb, "set firewall.sag_wg_lan.dest=lan\n")
@@ -344,6 +349,7 @@ func (s *server) handleWGServerSet(w http.ResponseWriter, r *http.Request) {
 		"wg_endpoint_host":      in.EndpointHost,
 		"wg_client_dns":         in.ClientDNS,
 		"wg_client_allowed_ips": in.ClientAllowedIPs,
+		"wg_allow_mgmt":         boolSetting(in.AllowMgmt),
 	} {
 		if err := s.setSetting(k, v); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())

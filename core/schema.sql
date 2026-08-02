@@ -119,6 +119,16 @@ CREATE TABLE IF NOT EXISTS ovpn_clients (
 );
 
 -- Pristupna pravila po OpenVPN klijentu (isti model kao wg_peer_rules)
+-- Opozvani OpenVPN certifikati. Iz ove tablice se generira crl.pem, koji
+-- server provjerava pri svakom spajanju — obrisani korisnik se ne može vratiti
+-- ni ako netko vrati njegovu CCD datoteku iz backupa.
+CREATE TABLE IF NOT EXISTS ovpn_revoked (
+    serial      TEXT PRIMARY KEY,               -- serijski broj certifikata (hex)
+    name        TEXT NOT NULL,
+    not_after   TEXT NOT NULL,                  -- istek certifikata (RFC3339)
+    revoked_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS ovpn_client_rules (
     uuid        TEXT PRIMARY KEY,
     client_uuid TEXT NOT NULL REFERENCES ovpn_clients(uuid) ON DELETE CASCADE,
@@ -232,6 +242,9 @@ CREATE TABLE IF NOT EXISTS users (
     uuid        TEXT PRIMARY KEY,
     username    TEXT NOT NULL UNIQUE,
     pass_hash   TEXT NOT NULL,                -- pbkdf2:<iter>:<salt hex>:<hash hex>
+    -- 1 = zadana lozinka s instalacije; do promjene je dopuštena samo promjena
+    -- lozinke, jer je zadana lozinka javno poznata i ista na svakom uređaju
+    must_change_pw INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );

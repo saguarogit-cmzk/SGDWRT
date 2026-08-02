@@ -17,7 +17,7 @@ Ista pomoć dostupna je i u samom sučelju: **Sustav → Pomoć**.
 Na svježem OpenWrt 25.x uređaju (kao root):
 
 ```sh
-wget -O - https://raw.githubusercontent.com/saguarogit-cmzk/SGDWRT/main/scripts/install.sh | sh
+wget -O - https://raw.githubusercontent.com/saguarogit-cmzk/SGSWRT/main/scripts/install.sh | sh
 ```
 
 Skripta instalira potrebne pakete, preuzme zadnje izdanje s GitHuba i pokrene

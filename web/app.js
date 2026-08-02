@@ -786,6 +786,7 @@ async function loadWireguard() {
     f.elements.client_dns.value = srv.client_dns || "";
     f.elements.client_allowed_ips.value = srv.client_allowed_ips || "";
   }
+  f.elements.allow_mgmt.checked = !!srv.allow_mgmt;
 
   const kv = $("wg-kv");
   kv.replaceChildren();
@@ -1211,6 +1212,7 @@ async function loadOpenvpn() {
     f.elements.client_dns.value = srv.client_dns || "";
     f.elements.push_lan.checked = !!srv.push_lan;
   }
+  f.elements.allow_mgmt.checked = !!srv.allow_mgmt;
 
   const kv = $("ov-kv");
   kv.replaceChildren();
@@ -1785,6 +1787,9 @@ function logout(showError) {
   token = "";
   $("app").classList.add("hidden");
   $("login").classList.remove("hidden");
+  $("firstpw-form").classList.add("hidden");
+  $("login-form").classList.remove("hidden");
+  firstPassCurrent = "";
   $("login-error").classList.toggle("hidden", !showError);
 }
 
@@ -1806,11 +1811,53 @@ $("login-form").addEventListener("submit", async (ev) => {
     if (!r.ok) throw new Error(data.error || "HTTP " + r.status);
     token = data.token;
     localStorage.setItem("saguaro_token", token);
+    const firstPass = $("pass-input").value;
     $("pass-input").value = "";
+    // zadana lozinka s instalacije: uređaj do promjene ne dopušta ništa drugo
+    if (data.must_change_password) {
+      showFirstPasswordForm(firstPass);
+      return;
+    }
     await start();
   } catch {
     logout(true);
   }
+});
+
+/* ---------- obavezna promjena zadane lozinke ---------- */
+
+let firstPassCurrent = "";
+
+function showFirstPasswordForm(current) {
+  firstPassCurrent = current;
+  $("login-form").classList.add("hidden");
+  $("firstpw-error").classList.add("hidden");
+  $("firstpw-form").classList.remove("hidden");
+  $("firstpw-new").focus();
+}
+
+$("firstpw-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const err = $("firstpw-error");
+  const pw = $("firstpw-new").value;
+  if (pw !== $("firstpw-rep").value) {
+    err.textContent = "Lozinke se ne podudaraju.";
+    err.classList.remove("hidden");
+    return;
+  }
+  try {
+    await api("/auth/password", "POST", { current: firstPassCurrent, new: pw });
+  } catch (e) {
+    err.textContent = (e && e.message) || "Promjena lozinke nije uspjela.";
+    err.classList.remove("hidden");
+    return;
+  }
+  firstPassCurrent = "";
+  $("firstpw-new").value = "";
+  $("firstpw-rep").value = "";
+  $("firstpw-form").classList.add("hidden");
+  $("login-form").classList.remove("hidden");
+  await start();
 });
 $("logout").addEventListener("click", () => logout(false));
 
@@ -2393,6 +2440,7 @@ $("wg-form").addEventListener("submit", async (ev) => {
     endpoint_host: f.elements.endpoint_host.value.trim(),
     client_dns: f.elements.client_dns.value.trim(),
     client_allowed_ips: f.elements.client_allowed_ips.value.trim(),
+    allow_mgmt: f.elements.allow_mgmt.checked,
   };
   $("wg-server-result").textContent = "Spremam…";
   try {
@@ -2571,6 +2619,7 @@ $("ov-form").addEventListener("submit", async (ev) => {
     endpoint_host: f.elements.endpoint_host.value.trim(),
     client_dns: f.elements.client_dns.value.trim(),
     push_lan: f.elements.push_lan.checked,
+    allow_mgmt: f.elements.allow_mgmt.checked,
   };
   $("ov-server-result").textContent = "Spremam (prvi put traje par sekundi — izdaju se certifikati)…";
   try {

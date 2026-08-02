@@ -143,6 +143,9 @@ func (s *server) validateForward(w http.ResponseWriter, f *FWForward) bool {
 	switch {
 	case f.Name == "":
 		writeErr(w, http.StatusBadRequest, "naziv je obavezan")
+	case hasCtrl(f.Name) || hasCtrl(f.Notes):
+		writeErr(w, http.StatusBadRequest,
+			"naziv i napomena ne smiju sadržavati prijelom retka")
 	case f.Proto != "tcp" && f.Proto != "udp" && f.Proto != "tcp udp":
 		writeErr(w, http.StatusBadRequest, "protokol mora biti tcp, udp ili tcp udp")
 	case !reZone.MatchString(f.SrcZone) || !reZone.MatchString(f.DestZone):
@@ -195,6 +198,9 @@ func (s *server) validateRule(w http.ResponseWriter, f *FWRule) bool {
 	switch {
 	case f.Name == "":
 		writeErr(w, http.StatusBadRequest, "naziv je obavezan")
+	case hasCtrl(f.Name) || hasCtrl(f.Notes):
+		writeErr(w, http.StatusBadRequest,
+			"naziv i napomena ne smiju sadržavati prijelom retka")
 	case f.Family != "any" && f.Family != "ipv4" && f.Family != "ipv6":
 		writeErr(w, http.StatusBadRequest, "family mora biti any, ipv4 ili ipv6")
 	case !protoOK:
@@ -1099,10 +1105,77 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// uciQuote štiti vrijednost s razmakom za uci batch liniju (jednostruki navodnici).
+// uciQuote štiti vrijednost za jednu liniju uci batcha. Kontrolni znakovi se
+// uklanjaju jer uci batch čita redak po redak — novi red u nazivu značio bi da
+// se ostatak teksta izvrši kao naredba. Vrijednost se uvijek citira.
 func uciQuote(s string) string {
-	if !strings.ContainsAny(s, " \t") {
-		return s
-	}
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
 	return "'" + strings.ReplaceAll(s, "'", "") + "'"
+}
+
+// hasCtrl javlja sadrži li tekst kontrolne znakove (novi red, tabulator...).
+// Takav ulaz se odbija već u validaciji, da korisnik dobije jasnu poruku
+// umjesto tiho očišćene vrijednosti.
+func hasCtrl(s string) bool {
+	return strings.ContainsFunc(s, func(r rune) bool {
+		return r < 0x20 || r == 0x7f
+	})
+}
+
+/* ---------- VPN zone prema samom uređaju ---------- */
+
+// boolSetting pretvara zastavicu u oblik koji koristi tablica settings.
+func boolSetting(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
+}
+
+// mgmtPorts su portovi upravljanja uređajem: SSH, LuCI (http/https) i Saguaro.
+var mgmtPorts = []string{"22", "80", "443", "8443"}
+
+// vpnZoneInput ispisuje uci naredbe koje zatvaraju VPN zonu prema samom uređaju.
+// Zadano VPN korisnik smije samo DNS i ping prema ruteru — sve ostalo (SSH,
+// LuCI, Saguaro) otvara se tek izričitom kvačicom, jer VPN služi za pristup
+// mreži, a ne za pristup upravljanju.
+// fwCfg je trenutna firewall konfiguracija — treba za provjeru postoji li
+// sekcija prije brisanja (uci batch prekida se na brisanju nepostojeće sekcije).
+func vpnZoneInput(b *strings.Builder, fwCfg map[string]uciSection,
+	prefix, zone, label string, allowMgmt bool) {
+	fmt.Fprintf(b, "set firewall.%s_zone.input=REJECT\n", prefix)
+
+	fmt.Fprintf(b, "set firewall.%s_dns=rule\n", prefix)
+	fmt.Fprintf(b, "set firewall.%s_dns.name=%s\n", prefix, uciQuote(label+" DNS"))
+	fmt.Fprintf(b, "set firewall.%s_dns.src=%s\n", prefix, zone)
+	fmt.Fprintf(b, "set firewall.%s_dns.proto=%s\n", prefix, uciQuote("tcp udp"))
+	fmt.Fprintf(b, "set firewall.%s_dns.dest_port=53\n", prefix)
+	fmt.Fprintf(b, "set firewall.%s_dns.target=ACCEPT\n", prefix)
+
+	fmt.Fprintf(b, "set firewall.%s_ping=rule\n", prefix)
+	fmt.Fprintf(b, "set firewall.%s_ping.name=%s\n", prefix, uciQuote(label+" ping"))
+	fmt.Fprintf(b, "set firewall.%s_ping.src=%s\n", prefix, zone)
+	fmt.Fprintf(b, "set firewall.%s_ping.proto=icmp\n", prefix)
+	fmt.Fprintf(b, "set firewall.%s_ping.icmp_type=echo-request\n", prefix)
+	fmt.Fprintf(b, "set firewall.%s_ping.target=ACCEPT\n", prefix)
+
+	if allowMgmt {
+		fmt.Fprintf(b, "set firewall.%s_mgmt=rule\n", prefix)
+		fmt.Fprintf(b, "set firewall.%s_mgmt.name=%s\n", prefix,
+			uciQuote(label+" upravljanje"))
+		fmt.Fprintf(b, "set firewall.%s_mgmt.src=%s\n", prefix, zone)
+		fmt.Fprintf(b, "set firewall.%s_mgmt.proto=tcp\n", prefix)
+		fmt.Fprintf(b, "delete firewall.%s_mgmt.dest_port\n", prefix)
+		for _, p := range mgmtPorts {
+			fmt.Fprintf(b, "add_list firewall.%s_mgmt.dest_port=%s\n", prefix, p)
+		}
+		fmt.Fprintf(b, "set firewall.%s_mgmt.target=ACCEPT\n", prefix)
+	} else if _, ok := fwCfg[prefix+"_mgmt"]; ok {
+		fmt.Fprintf(b, "delete firewall.%s_mgmt\n", prefix)
+	}
 }

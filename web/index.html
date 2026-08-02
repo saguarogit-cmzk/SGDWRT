@@ -22,6 +22,21 @@
     <p id="login-error" class="login-error hidden">Neispravna prijava ili uređaj nedostupan.</p>
     <button type="submit">Prijava</button>
   </form>
+
+  <form id="firstpw-form" class="login-card hidden">
+    <div class="brand"><span class="brand-mark">SAGUARO</span><span class="brand-sub">Infrastructure</span></div>
+    <h2>Postavi svoju lozinku</h2>
+    <p class="hint">Zadana lozinka je ista na svakom novom uređaju i javno je
+      poznata. Dok je ne promijeniš, ostale funkcije nisu dostupne.</p>
+    <label for="firstpw-new">Nova lozinka (najmanje 8 znakova)</label>
+    <input id="firstpw-new" type="password" autocomplete="new-password"
+           minlength="8" required>
+    <label for="firstpw-rep">Ponovi novu lozinku</label>
+    <input id="firstpw-rep" type="password" autocomplete="new-password"
+           minlength="8" required>
+    <p id="firstpw-error" class="login-error hidden"></p>
+    <button type="submit">Spremi i nastavi</button>
+  </form>
 </div>
 
 <div id="app" class="shell hidden">
@@ -348,11 +363,16 @@
             <label>DNS za klijente<input name="client_dns" placeholder="192.168.50.222"></label>
             <label class="wide">Promet klijenata kroz tunel (AllowedIPs)
           <input name="client_allowed_ips" placeholder="prazno = samo lokalna mreža (split tunnel)"></label>
+            <label class="wide check"><input type="checkbox" name="allow_mgmt">
+              Dopusti VPN korisnicima pristup upravljanju uređajem (SSH, LuCI, Saguaro)</label>
           </div>
           <p class="hint">Privatni ključ poslužitelja generira se automatski i ne
             napušta uređaj. Prazno polje prometa = <b>split tunnel</b>: korisnici
             kroz tunel dosežu samo lokalnu mrežu, a na internet idu preko vlastite
             veze. Za sav promet kroz tunel upiši <code>0.0.0.0/0</code>.</p>
+          <p class="hint">VPN korisnici zadano dosežu <b>samo mrežu</b> — prema
+            samom uređaju smiju jedino DNS i ping. Kvačica iznad otvara i prijavu
+            na upravljanje; uključi je samo ako se administrira preko VPN-a.</p>
           <p class="hint" id="wg-server-result"></p>
           <div class="form-actions" style="justify-content:flex-start">
             <button type="submit" class="primary">Spremi postavke</button>
@@ -600,10 +620,15 @@
             <label>DNS za klijente<input name="client_dns" placeholder="192.168.50.222"></label>
             <label class="check"><input type="checkbox" name="push_lan" checked>
               Klijentima pošalji rutu prema LAN mreži</label>
+            <label class="check"><input type="checkbox" name="allow_mgmt">
+              Dopusti VPN korisnicima pristup upravljanju uređajem</label>
           </div>
           <p class="hint">Certifikate (CA, server, klijenti) uređaj izdaje sam —
             ništa se ne unosi ručno. Veza je <b>split tunnel</b>: korisnici kroz
             tunel dosežu samo lokalnu mrežu, a na internet idu preko vlastite veze.</p>
+          <p class="hint">Prema samom uređaju VPN korisnici zadano smiju jedino
+            DNS i ping. Brisanjem klijenta njegov se certifikat <b>trajno
+            opoziva</b> (CRL) — ne vrijedi ni ako se stara datoteka vrati iz backupa.</p>
           <p class="hint" id="ov-server-result"></p>
           <div class="form-actions" style="justify-content:flex-start">
             <button type="submit" class="primary">Spremi postavke</button>
@@ -972,7 +997,7 @@
 
       <details class="help"><summary>Instalacija na novi uređaj</summary><div>
         Na svježem OpenWrt 25.x uređaju pokreni:
-        <code>wget -O - https://raw.githubusercontent.com/saguarogit-cmzk/SGDWRT/main/scripts/install.sh | sh</code>
+        <code>wget -O - https://raw.githubusercontent.com/saguarogit-cmzk/SGSWRT/main/scripts/install.sh | sh</code>
         — skripta instalira pakete, preuzme zadnje izdanje i pokrene Saguaro.
         Prva prijava: korisnik <code>admin</code>, lozinka <code>Sgs#2026</code>.
         Odmah je promijeni (Sustav → Postavke) i regeneriraj API token —

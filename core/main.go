@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const version = "0.18.0"
+const version = "0.19.0"
 
 type server struct {
 	tokenMu   sync.RWMutex
@@ -262,6 +262,16 @@ func ensureToken(path string) (string, error) {
 }
 
 // auth propušta strojni API token ili valjanu GUI sesiju.
+// allowedWithDefaultPassword nabraja jedine putanje dostupne korisniku koji još
+// nije promijenio zadanu lozinku s instalacije.
+func allowedWithDefaultPassword(path string) bool {
+	switch path {
+	case "/api/v1/auth/password", "/api/v1/auth/logout", "/api/v1/auth/logout-others":
+		return true
+	}
+	return false
+}
+
 func (s *server) auth(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -269,7 +279,17 @@ func (s *server) auth(next http.HandlerFunc) http.Handler {
 			next(w, r)
 			return
 		}
-		if ok && s.sessionUser(got) != "" {
+		if user, mustChange := s.sessionUserState(got); user != "" {
+			// dok je na snazi zadana lozinka s instalacije, dopuštena je samo
+			// njena promjena i odjava — sve ostalo se odbija
+			if mustChange && !allowedWithDefaultPassword(r.URL.Path) {
+				writeJSON(w, http.StatusForbidden, map[string]string{
+					"error": "password_change_required",
+					"detail": "Zadana lozinka s instalacije javno je poznata. " +
+						"Promijeni je prije korištenja ostalih funkcija.",
+				})
+				return
+			}
 			next(w, r)
 			return
 		}

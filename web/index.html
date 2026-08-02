@@ -1064,6 +1064,20 @@
         vanjski syslog poslužitelj.
       </div></details>
 
+      <details class="help"><summary>Samoprovjera uređaja</summary><div>
+        Uz instalaciju dolazi test koji provjerava <b>stvarno stanje</b> uređaja
+        — procese, portove, pravila u jezgri — a ne samo postavke. Pokreće se
+        sa SSH-a:
+        <code>sh /opt/saguaro/selftest.sh</code>
+        Ništa ne mijenja. Sa <code>--disruptive</code> uz to ugasi OpenVPN i
+        provjeri vraća li se sam.
+        <br><br>Ispisuje <b>PROŠLO</b>, <b>PALO</b> (uz uputu kako popraviti) ili
+        <b>PRESKAČEM</b> — a to zadnje nije greška, nego znači da funkcija nije
+        uključena ili se ne može provjeriti bez vanjskog resursa (stvarni VPN
+        klijent, poštanski poslužitelj). Pokreni ga nakon svake veće izmjene i
+        nakon nadogradnje.
+      </div></details>
+
       <details class="help"><summary>Očvršćivanje — što svaka kvačica radi</summary><div>
         <b>Postavke → Očvršćivanje</b> nudi mjere koje OpenWrt zadano ne pali.
         Kvačice pokazuju stvarno stanje uređaja, pa se vidi i ako je nešto

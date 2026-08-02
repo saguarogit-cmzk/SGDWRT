@@ -180,6 +180,21 @@ nepoznat uređaj u mreži.
   ne nudi — lozinka SMTP računa ne smije putovati u čistom obliku. Koristi
   zaseban račun i lozinku aplikacije (Gmail, Microsoft 365).
 
+## Samoprovjera uređaja
+
+Uz svaku instalaciju dolazi i test koji provjerava **stvarno stanje** uređaja,
+ne samo postavke:
+
+```sh
+sh /opt/saguaro/selftest.sh              # ništa ne mijenja
+sh /opt/saguaro/selftest.sh --disruptive # uz to gasi OpenVPN i gleda vraća li se sam
+```
+
+Ispisuje **PROŠLO**, **PALO** (uz uputu kako popraviti) ili **PRESKAČEM** (nije
+greška — funkcija nije uključena ili se ne može provjeriti bez vanjskog
+resursa). Vrijedi ga pokrenuti nakon svake veće izmjene i nakon nadogradnje.
+Detalji i popis onoga što se mora provjeriti ručno: `docs/TESTOVI.md`.
+
 ## Očvršćivanje (Postavke)
 
 Sitne mjere koje OpenWrt zadano ne uključuje. Svaka je zasebna kvačica jer

@@ -49,6 +49,11 @@ tar -xzf "$TAR" -C "$TMP"
 cp "$TMP/saguaro-core" "$BASE/bin/saguaro-core"
 chmod 755 "$BASE/bin/saguaro-core"
 [ -d "$TMP/web" ] && cp "$TMP"/web/* "$BASE/web/"
+# samoprovjera uređaja: sh /opt/saguaro/selftest.sh
+if [ -f "$TMP/selftest.sh" ]; then
+    cp "$TMP/selftest.sh" "$BASE/selftest.sh"
+    chmod 755 "$BASE/selftest.sh"
+fi
 
 if [ -f "$TMP/init.d-saguaro-core" ]; then
     cp "$TMP/init.d-saguaro-core" /etc/init.d/saguaro-core

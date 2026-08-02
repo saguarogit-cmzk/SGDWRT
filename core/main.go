@@ -114,6 +114,10 @@ func main() {
 		cancel()
 	}
 
+	if err := ensureKeepList(*etcDir, *dataDir); err != nil {
+		log.Printf("upozorenje: popis za sysupgrade nije zapisan: %v", err)
+	}
+
 	go collectMetrics()
 	go s.monitorLoop()
 	go s.watchdogLoop()

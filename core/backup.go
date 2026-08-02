@@ -555,3 +555,24 @@ func replaceCronLine(marker, line string) error {
 	defer cancel()
 	return serviceReload(ctx, "cron", "restart")
 }
+
+// keepListFile govori OpenWrt-ovom sysupgradeu koje Saguaro datoteke mora
+// sačuvati. Bez toga bi se pri nadogradnji firmwarea (ili vraćanju backupa)
+// izgubile postavke izvan /etc/config: očvršćivanje jezgre, token, certifikati
+// i baza. Backup arhive i logovi se namjerno NE navode — bile bi kružne
+// odnosno nepotrebno velike.
+const keepListFile = "/lib/upgrade/keep.d/saguaro"
+
+func ensureKeepList(etcDir, dataDir string) error {
+	body := "# Saguaro — datoteke koje moraju preživjeti nadogradnju firmwarea\n" +
+		sysctlFile + "\n" +
+		etcDir + "\n" +
+		dataDir + "\n"
+	if old, err := os.ReadFile(keepListFile); err == nil && string(old) == body {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(keepListFile), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(keepListFile, []byte(body), 0o644)
+}

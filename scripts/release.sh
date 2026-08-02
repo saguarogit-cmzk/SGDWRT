@@ -15,6 +15,7 @@ cp dist/saguaro-core "$STAGE/"
 mkdir -p "$STAGE/web"
 cp dist/web/* "$STAGE/web/"
 cp image/files/etc/init.d/saguaro-core "$STAGE/init.d-saguaro-core"
+cp scripts/selftest.sh "$STAGE/selftest.sh"
 
 OUT="dist/saguaro-v$VER-linux-amd64.tar.gz"
 tar -czf "$OUT" -C "$STAGE" .

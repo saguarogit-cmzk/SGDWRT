@@ -1,35 +1,47 @@
 # Saguaro Infrastructure — korisnički priručnik
 
 Upravljačka platforma za IN100 (i kompatibilne OpenWrt 25.x x86_64) uređaje.
-Ista pomoć dostupna je i u samom sučelju: **Sustav → Pomoć**.
+Ista pomoć dostupna je i u samom sučelju: **System → Help**.
 
 ## Raspored sučelja
 
-Moduli su složeni u pet skupina, po načelu **jedan modul = jedan posao**:
+Moduli su složeni u šest skupina, po načelu **jedan modul = jedan posao**:
 
 | Skupina | Moduli |
 |---|---|
-| **Status** | Dashboard · Nadzor · Upozorenja · Promjene |
-| **Mreža** | Mreža · Multi-WAN · OSPF · QoS · DHCP · DNS |
-| **Zaštita** | Firewall · Objava servera · Blokade · Očvršćivanje |
+| **Status** | Dashboard · Monitoring · Alerts · Audit log |
+| **Network** | Interfaces · Multi-WAN · OSPF · QoS · DHCP · DNS |
+| **Firewall** | Firewall rules · Port forwarding / NAT · System access |
+| **Filtering** | IP blocklists · DNS filter · Scan detection |
 | **VPN** | WireGuard · OpenVPN |
-| **Sustav** | Postavke · Logovi · Backup · Uređaji · Ažuriranje · Pomoć |
+| **System** | Settings · System log · Backup · Inventory · Updates · Help |
 
-Lijevi stupac bira skupinu, kartice ispod naslova biraju modul unutar nje.
+**Vodoravna traka na vrhu** bira skupinu, **lijevi stupac** bira modul unutar
+nje. Moduli nose ustaljene stručne nazive (DHCP, QoS, Port forwarding, Backup…)
+jer se tako zovu i u ostaloj mrežnoj opremi i u uputama na internetu; hrvatsko
+objašnjenje stoji ispod naslova svake stranice.
+
+Svaka ploča ima gumb **▾** u naslovnoj traci — klik je sklopi ili rasklopi.
+Stanje se pamti u pregledniku, po modulu i ploči, pa ostaje i nakon
+osvježavanja stranice.
+
+Na dnu je statusna traka: stanje veze, vrijeme neprekidnog rada, opterećenje,
+prijavljeni korisnik i vrijeme zadnjeg osvježavanja podataka.
 
 ### Tražilica modula
 
-Iznad izbornika je polje **Traži modul…**. Traži se po nazivu **i po opisu**
-modula, pa nađe i ono što se ne zove onako kako razmišljaš:
+Gore desno je polje **Traži modul…**. Traži se po nazivu, po **hrvatskim
+pojmovima** i po opisu modula, pa nađe i ono što se ne zove onako kako
+razmišljaš:
 
 | Upišeš | Nađe |
 |---|---|
-| `dns` | DNS |
-| `skenir` | **Blokade** — ondje je detekcija skeniranja portova |
-| `lozink` | **Postavke** |
-| `vpn` | WireGuard i OpenVPN |
-| `promjen` | **Promjene** — trag izmjena konfiguracije |
-| `log` | **Logovi** |
+| `vatrozid` | **Firewall rules** |
+| `skenir` | **Scan detection** |
+| `reklam` | **DNS filter** — blokada reklamnih domena |
+| `lozink` | **Settings** |
+| `promjen` | **Audit log** — trag izmjena konfiguracije |
+| `kopij` | **Backup** |
 
 Strelicama gore/dolje biraš rezultat, **Enter** otvara modul, **Esc** zatvara
 popis. Uz svaki rezultat piše i skupina u kojoj modul živi, pa ga sljedeći put
@@ -57,7 +69,7 @@ servis. Bez objavljenih izdanja: `sh install.sh saguaro-vX.Y.Z-linux-amd64.tar.g
 (paket se gradi sa `scripts/release.sh`).
 
 Prva prijava na `https://<adresa>:8443/`: korisnik `admin`, lozinka
-`Sgs#2026`. **Odmah je promijeni** (Sustav → Postavke) i regeneriraj API
+`Sgs#2026`. **Odmah je promijeni** (System → Settings) i regeneriraj API
 token — zadane vrijednosti su iste na svakoj novoj instalaciji, pa uređaj s
 njima ne smije ostati u produkciji. (Ako je Saguaro postavljen ručno bez
 instalacijske skripte, lozinka je sadržaj `/opt/saguaro/etc/token`.)
@@ -71,7 +83,7 @@ grafovima zadnjih sat vremena), stanje fizičkih portova i mrežnih sučelja.
 **Internet veza** provjerava tri koraka: izlaz prema mreži (gateway), pretvorbu
 imena u adrese (DNS — npr. `google.com` → IP) i stvaran dohvat interneta.
 
-## Mreža
+## Interfaces — LAN, WAN i VLAN
 
 - **LAN adresa**: promjena adrese samog uređaja s validacijama; nakon primjene
   browser se preusmjeri na novu adresu (prijava ostaje ista).
@@ -132,7 +144,7 @@ susjedi prikazuju se u modulu.
   uključivanje postavlja pouzdane javne (ISP routeri često ne prosljeđuju
   DNSSEC podatke pa provjera bez toga ne bi radila).
 
-## Firewall i Objava servera
+## Firewall rules i Port forwarding / NAT
 
 - **Port forwardi (DNAT)**: usluga iz lokalne mreže postaje dostupna izvana
   (vanjski port ili raspon → interna adresa:port).
@@ -153,7 +165,7 @@ susjedi prikazuju se u modulu.
   Kad se pristupa imenom, uz hairpin postavi i **split DNS** (DNS modul);
   VLAN klijenti trebaju i forwarding pravilo prema mreži servera.
 
-## Blokade
+## Filtering — IP blocklists, DNS filter, Scan detection
 
 - **banIP**: promet prema/od poznatih zloćudnih adresa odbacuje se u
   firewallu (nftables setovi — praktički bez opterećenja). Izvori su kurirani
@@ -178,7 +190,7 @@ susjedi prikazuju se u modulu.
   - Pravila se pišu u `/etc/nftables.d/`, odakle ih firewall sam uvlači, pa
     preživljavaju restart.
 
-## Promjene (Status)
+## Audit log (Status)
 
 Uređaj svake minute usporedi svoje postavke s prošlim stanjem i zabilježi što
 se promijenilo. Klik na redak pokazuje točnu razliku, redak po redak.
@@ -229,13 +241,13 @@ Izvoz iz naredbenog retka (za skriptiranu isporuku):
 saguaro-core -ovpn-export ime-klijenta -out /tmp/klijent.ovpn
 ```
 
-## Uređaji (inventar)
+## Inventory — inventar opreme
 
 Ovaj uređaj upisuje se sam (hardver, serijski broj, verzije — osvježava se pri
 svakom startu); uređuju se samo lokacija, klijent i napomene. Susjednu i
 klijentsku opremu dodaješ ručno.
 
-## Upozorenja (Status)
+## Alerts (Status)
 
 Uređaj sam prati stanje i javlja kad se nešto promijeni. Svaka se vrsta
 upozorenja pali zasebno, a ista se poruka ne ponavlja češće od zadanog razmaka
@@ -274,7 +286,7 @@ greška — funkcija nije uključena ili se ne može provjeriti bez vanjskog
 resursa). Vrijedi ga pokrenuti nakon svake veće izmjene i nakon nadogradnje.
 Detalji i popis onoga što se mora provjeriti ručno: `docs/TESTOVI.md`.
 
-## Očvršćivanje (Zaštita)
+## System access — očvršćivanje (Firewall)
 
 Sitne mjere koje OpenWrt zadano ne uključuje. Svaka je zasebna kvačica jer
 neke ovise o tome kako je uređaj spojen, a kvačice pokazuju **stvarno stanje na
@@ -293,7 +305,7 @@ Sučelje Saguara uz to uvijek traži **TLS 1.2 ili noviji** i šalje zaglavlja k
 pregledniku zabranjuju ugrađivanje stranice u tuđi okvir i učitavanje skripti s
 drugih adresa.
 
-## Logovi (Sustav)
+## System log (System)
 
 Uređaj zadano drži logove samo u malom spremniku u memoriji (128 kB), pa nakon
 svakog ponovnog pokretanja **nestanu** — a s njima i odgovor na pitanje "što se
@@ -324,14 +336,14 @@ na vanjski syslog poslužitelj (kartica ispod).
   arhivom drugog uređaja (kloniranje) i nakon reinstalacije firmwarea.
 - **Raspored**: automatski dnevni ili tjedni backup u 03:00.
 
-## Ažuriranje
+## Updates — ažuriranje
 
 Modul provjerava zadnje izdanje na GitHubu; nadogradnja se pokreće gumbom ili
 ručnim učitavanjem paketa. Prije svake nadogradnje automatski se radi puni
 backup; nakon zamjene servis se sam ponovno pokreće. Objava izdanja:
 `git tag vX.Y.Z && git push --tags` — GitHub Actions sagradi i objavi paket.
 
-## Postavke
+## Settings — postavke
 
 Na uređaju postoje **dvije odvojene lozinke** i lako ih je pomiješati:
 

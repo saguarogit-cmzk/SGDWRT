@@ -11,7 +11,10 @@
 
 <div id="login" class="login hidden">
   <form id="login-form" class="login-card">
-    <div class="brand"><span class="brand-mark">SAGUARO</span><span class="brand-sub">Infrastructure</span></div>
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-txt"><strong>Saguaro</strong><span>Infrastructure</span></span>
+    </div>
     <label for="user-input">Korisničko ime</label>
     <input id="user-input" autocomplete="username" spellcheck="false"
            placeholder="admin" required>
@@ -20,11 +23,14 @@
     <p class="hint">Nakon svježe instalacije: korisnik <code>admin</code>,
       lozinka <code>Sgs#2026</code> — promijeni je odmah nakon prijave.</p>
     <p id="login-error" class="login-error hidden">Neispravna prijava ili uređaj nedostupan.</p>
-    <button type="submit">Prijava</button>
+    <button type="submit" class="primary">Prijava</button>
   </form>
 
   <form id="firstpw-form" class="login-card hidden">
-    <div class="brand"><span class="brand-mark">SAGUARO</span><span class="brand-sub">Infrastructure</span></div>
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-txt"><strong>Saguaro</strong><span>Infrastructure</span></span>
+    </div>
     <h2>Postavi svoju lozinku</h2>
     <p class="hint">Zadana lozinka je ista na svakom novom uređaju i javno je
       poznata. Dok je ne promijeniš, ostale funkcije nisu dostupne.</p>
@@ -35,32 +41,44 @@
     <input id="firstpw-rep" type="password" autocomplete="new-password"
            minlength="8" required>
     <p id="firstpw-error" class="login-error hidden"></p>
-    <button type="submit">Spremi i nastavi</button>
+    <button type="submit" class="primary">Spremi i nastavi</button>
   </form>
 </div>
 
 <div id="app" class="shell hidden">
-  <aside>
-    <div class="brand"><span class="brand-mark">SAGUARO</span></div>
-    <div class="subtitle">Infrastructure</div>
-    <div class="navsearch">
-      <input id="nav-search" type="search" autocomplete="off" spellcheck="false"
-             placeholder="Traži modul…" aria-label="Traži modul">
-      <div id="nav-results" class="navresults hidden"></div>
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-txt"><strong>Saguaro</strong><span>Infrastructure</span></span>
     </div>
-    <nav id="nav"></nav>
-    <button id="logout" class="logout">Odjava</button>
+    <div class="top-right">
+      <div class="navsearch">
+        <input id="nav-search" type="search" autocomplete="off" spellcheck="false"
+               placeholder="Traži modul…" aria-label="Traži modul">
+        <div id="nav-results" class="navresults hidden"></div>
+      </div>
+      <span id="hostname" class="host-chip">—</span>
+      <a href="#/help">Pomoć</a>
+      <button id="logout" class="linkbtn">Odjava</button>
+    </div>
+  </div>
+
+  <nav id="nav"></nav>
+
+  <div class="main">
+  <aside>
+    <div class="side-h" id="side-h">—</div>
+    <div id="subnav"></div>
+    <div class="side-foot" id="versions">—</div>
   </aside>
 
   <div class="content">
   <header>
     <div><h1 id="page-title">Dashboard</h1><p id="page-desc">—</p></div>
     <div class="head-right">
-      <span id="hostname" class="host-chip">—</span>
       <span id="health-badge" class="st">—</span>
     </div>
   </header>
-  <div id="subnav" class="subnav hidden"></div>
 
   <div class="view" id="view-dashboard">
     <section class="tiles">
@@ -317,7 +335,7 @@
       </div>
       <p class="hint">Usluga iz lokalne mreže postaje dostupna s interneta.
         Kad se serveru pristupa <b>imenom</b>, uz forward postavi i
-        <b>Split DNS</b> (Mreža → DNS) — inače lokalni korisnici idu "van pa
+        <b>Split DNS</b> (Network → DNS) — inače lokalni korisnici idu "van pa
         natrag" i često nikamo.</p>
       <div class="table-wrap">
         <table>
@@ -349,7 +367,7 @@
           <button id="n1-add" class="primary">Dodaj</button>
         </div>
         <p class="hint">Javna adresa mora postojati na WAN sučelju
-          (Mreža → WAN → adrese).</p>
+          (Network → Interfaces → WAN → adrese).</p>
         <div class="table-wrap">
           <table>
             <thead><tr>
@@ -431,9 +449,11 @@
   </div>
 
   <div class="view hidden" id="view-protection">
-    <section class="grid-2">
+    <section style="max-width:820px">
       <div class="card">
         <h2>Blokada zloćudnih IP adresa (banIP)</h2>
+        <!-- ovaj modul (IP blocklists) drži samo banIP karticu -->
+
         <p class="hint">Promet prema i od adresa s poznatih crnih lista odbacuje
           se izravno u firewallu — praktički bez opterećenja uređaja.</p>
         <label class="check-row"><input type="checkbox" id="bi-enabled"> Uključeno</label>
@@ -448,6 +468,11 @@
         <p class="hint" id="bi-status"></p>
         <p class="hint" id="bi-result"></p>
       </div>
+    </section>
+  </div>
+
+  <div class="view hidden" id="view-dnsfilter">
+    <section style="max-width:820px">
       <div class="card">
         <h2>Blokada domena (adblock-fast)</h2>
         <p class="hint">Reklamne i zloćudne domene blokiraju se na DNS razini —
@@ -464,7 +489,9 @@
         <p class="hint" id="ad-result"></p>
       </div>
     </section>
+  </div>
 
+  <div class="view hidden" id="view-scan">
     <section class="card">
       <div class="card-head">
         <h2>Detekcija skeniranja portova</h2>
@@ -934,20 +961,24 @@
         gumbom <b>Primijeni</b>. Prije svake primjene uređaj sam sprema backup
         konfiguracije, a Saguaro nikad ne dira postavke koje nije sam stvorio.</p>
 
-      <details class="help"><summary>Snalaženje — skupine, kartice i tražilica</summary><div>
-        Sučelje ima dvije razine: <b>lijevi stupac</b> bira skupinu (Status,
-        Mreža, Zaštita, VPN, Sustav), a <b>kartice ispod naslova</b> biraju
-        modul unutar te skupine.
-        <br><br>Ako ne znaš u kojoj je skupini nešto, upiši u <b>tražilicu</b>
-        iznad izbornika. Traži se po nazivu <i>i</i> po opisu modula, pa te
-        nađe i kad se modul ne zove onako kako razmišljaš:
+      <details class="help"><summary>Snalaženje — skupine, moduli i tražilica</summary><div>
+        Sučelje ima dvije razine: <b>vodoravna traka na vrhu</b> bira skupinu
+        (Status, Network, Firewall, Filtering, VPN, System), a <b>lijevi
+        stupac</b> bira modul unutar te skupine.
+        <br><br>Moduli nose ustaljene stručne nazive (DHCP, QoS, Port
+        forwarding, Backup…) jer se tako zovu i u svakoj drugoj mrežnoj opremi
+        i u uputama na internetu. Objašnjenje na hrvatskom stoji ispod naslova
+        svake stranice.
+        <br><br>Svaka ploča ima gumb ▾ u naslovnoj traci — klik je sklopi ili
+        rasklopi, a stanje ostaje zapamćeno i nakon osvježavanja.
+        <br><br>Ako ne znaš gdje je nešto, upiši u <b>tražilicu</b> gore desno.
+        Traži se po nazivu, po hrvatskim pojmovima <i>i</i> po opisu modula:
         <ul>
-          <li><code>dns</code> → DNS</li>
-          <li><code>skenir</code> → <b>Blokade</b> (ondje je detekcija
-            skeniranja portova, iako se modul ne zove tako)</li>
-          <li><code>lozink</code> → <b>Postavke</b></li>
-          <li><code>vpn</code> → WireGuard i OpenVPN</li>
-          <li><code>backup</code> → Backup</li>
+          <li><code>vatrozid</code> → <b>Firewall rules</b></li>
+          <li><code>skenir</code> → <b>Scan detection</b></li>
+          <li><code>lozink</code> → <b>Settings</b></li>
+          <li><code>reklam</code> → <b>DNS filter</b></li>
+          <li><code>kopij</code> → <b>Backup</b></li>
         </ul>
         Strelicama gore/dolje biraš rezultat, <b>Enter</b> otvara modul,
         <b>Esc</b> zatvara popis. Uz svaki rezultat piše i skupina u kojoj se
@@ -1120,7 +1151,7 @@
 
       <details class="help"><summary>Promjene konfiguracije — tko je što dirao</summary><div>
         Uređaj svake minute usporedi svoje postavke s prošlim stanjem
-        (<b>Nadzor → Promjene konfiguracije</b>). Klik na redak pokazuje točnu
+        (<b>Status → Audit log</b>). Klik na redak pokazuje točnu
         razliku, redak po redak.
         <br><br>Hvataju se i promjene napravljene <b>izvan Saguara</b> — kroz
         LuCI ili sa SSH-a — i tako se i označavaju. Razlog je što OpenWrt nema
@@ -1144,7 +1175,7 @@
       </div></details>
 
       <details class="help"><summary>Očvršćivanje — što svaka kvačica radi</summary><div>
-        <b>Zaštita → Očvršćivanje</b> nudi mjere koje OpenWrt zadano ne pali.
+        <b>Firewall → System access</b> nudi mjere koje OpenWrt zadano ne pali.
         Kvačice pokazuju stvarno stanje uređaja, pa se vidi i ako je nešto
         naknadno promijenjeno izvan Saguara.
         <ul>
@@ -1168,7 +1199,7 @@
         internet veze, promjena javne IP adrese, rad iza tuđeg NAT-a, pad VPN
         poslužitelja, spajanje korisnika, ponovno pokretanje, prelazak praga za
         procesor/memoriju/disk, neuspio backup, skori istek certifikata.
-        Svaka se vrsta pali zasebno (Status → Upozorenja), a ista se
+        Svaka se vrsta pali zasebno (Status → Alerts), a ista se
         poruka ne ponavlja češće od zadanog razmaka.
         <br><br><b>CGNAT</b> je upozorenje koje vrijedi shvatiti ozbiljno: ako
         uređaj nema vlastitu javnu adresu, objavljeni serveri i spajanje na VPN
@@ -1181,7 +1212,7 @@
       <details class="help"><summary>Logovi — zašto nestanu i kako ih sačuvati</summary><div>
         OpenWrt zadano drži logove samo u 128 kB spremnika u <b>memoriji</b>, pa
         nakon svakog ponovnog pokretanja nestanu. Uključi
-        <b>Sustav → Logovi</b> i logovi idu na disk, uz noćnu
+        <b>System → System log</b> i logovi idu na disk, uz noćnu
         rotaciju u dnevne datoteke koje se mogu preuzeti. Uređaj ima puno
         prostora, pa je 30 dana povijesti bezbolno. Neovisno o tome, kopija može
         ići i na vanjski syslog poslužitelj.
@@ -1888,10 +1919,14 @@
   </dialog>
 
   <footer>
-    <span id="versions">—</span>
-    <span id="refreshed">—</span>
+    <span>Stanje: <b id="sb-state">—</b></span>
+    <span>Radi neprekidno: <b id="sb-uptime">—</b></span>
+    <span>Opterećenje: <b id="sb-load">—</b></span>
+    <span>Prijavljen: <b id="sb-user">—</b></span>
+    <span class="push" id="refreshed">—</span>
   </footer>
   </div><!-- /.content -->
+  </div><!-- /.main -->
 </div>
 
 <script src="app.js"></script>

@@ -100,6 +100,11 @@ function renderStatus(x) {
   setMeter($("m-ram"), pct);
 
   $("t-uptime").textContent = fmtUptime(x.uptime_seconds);
+
+  // statusna traka na dnu stranice
+  $("sb-uptime").textContent = fmtUptime(x.uptime_seconds);
+  $("sb-load").textContent = x.load.map((n) => n.toFixed(2)).join("  ");
+  $("sb-user").textContent = localStorage.getItem("saguaro_user") || "—";
 }
 
 function renderStorage(x) {
@@ -116,6 +121,7 @@ function renderHealth(h) {
   const b = h.status === "ok" ? stGood("Sve radi") : stWarn("Dio provjera ne prolazi");
   b.id = "health-badge";
   badge.replaceWith(b);
+  $("sb-state").textContent = h.status === "ok" ? "povezan" : "provjeri vezu";
 
   const list = $("health-checks");
   list.replaceChildren();
@@ -1657,39 +1663,71 @@ function openWanDialog(wn) {
 
 // Moduli: id → [naslov, opis, loader]. Lijeva traka prikazuje grupe;
 // moduli aktivne grupe su tabovi iznad sadržaja (uzor: Saguaro Network Manager).
+// Nazivi modula su ustaljeni stručni pojmovi (DHCP, QoS, Port forwarding…) jer
+// se tako zovu i u svakoj drugoj opremi — prijevod bi ih učinio neprepoznatljivim.
+// Objašnjenje na hrvatskom stoji ispod naslova stranice i u tražilici.
 const MODULES = {
   dashboard: ["Dashboard", "Pregled stanja uređaja i mreže", () => null],
-  monitorx:  ["Nadzor", "Praćenje uređaja, događaji i potrošnja prometa", () => loadMonitorx()],
-  alerts:    ["Upozorenja", "Što uređaj javlja e-mailom i kome", () => loadAlertsView()],
-  audit:     ["Promjene", "Tko je i što promijenio u postavkama uređaja", () => loadAudit()],
-  network:   ["Mreža", "LAN adresa, WAN veze i VLAN mreže", () => loadNetwork()],
+  monitorx:  ["Monitoring", "Praćenje uređaja, događaji i potrošnja prometa", () => loadMonitorx()],
+  alerts:    ["Alerts", "Što uređaj javlja e-mailom i kome", () => loadAlertsView()],
+  audit:     ["Audit log", "Tko je i što promijenio u postavkama uređaja", () => loadAudit()],
+  network:   ["Interfaces", "LAN adresa, WAN veze i VLAN mreže", () => loadNetwork()],
   multiwan:  ["Multi-WAN", "Više internet veza — failover, raspodjela i nadzor", () => loadMultiwan()],
   ospf:      ["OSPF", "Dinamičko usmjeravanje — automatska razmjena ruta s routerima", () => loadOspf()],
   qos:       ["QoS", "Ograničenje brzine — glatki pozivi i pravedna raspodjela veze", () => loadQos()],
   dhcp:      ["DHCP", "Dodjela IP adresa i rezervacije za uređaje u mreži", () => loadDhcp()],
   dns:       ["DNS", "Lokalna imena uređaja (npr. nas.lan umjesto IP adrese)", () => loadDns()],
-  firewall:  ["Firewall", "Zone, pravila prometa i imenovane grupe adresa", () => loadFirewall()],
-  publish:   ["Objava servera", "Što je iz mreže dostupno s interneta — forwardi, DMZ, 1:1 NAT", () => loadFirewall()],
-  protection: ["Blokade", "Zloćudne adrese, reklamne domene i detekcija skeniranja", () => loadProtection()],
-  hardening: ["Očvršćivanje", "Dodatne mjere zaštite i tko smije do upravljanja", () => loadHardeningView()],
+  firewall:  ["Firewall rules", "Zone, pravila prometa i imenovane grupe adresa", () => loadFirewall()],
+  publish:   ["Port forwarding / NAT", "Što je iz mreže dostupno s interneta — forwardi, DMZ, 1:1 NAT", () => loadFirewall()],
+  hardening: ["System access", "Tko smije do upravljanja i dodatne mjere zaštite", () => loadHardeningView()],
+  protection: ["IP blocklists", "Blokada zloćudnih IP adresa s crnih lista (banIP)", () => loadProtection()],
+  dnsfilter: ["DNS filter", "Blokada reklamnih i zloćudnih domena (adblock)", () => loadProtection()],
+  scan:      ["Scan detection", "Prepoznavanje skeniranja portova i privremena blokada izvora", () => loadProtection()],
   wireguard: ["WireGuard", "Udaljeni pristup — moderni VPN s ključevima", () => loadWireguard()],
   openvpn:   ["OpenVPN", "Udaljeni pristup — klasični VPN s certifikatima", () => loadOpenvpn()],
-  devices:   ["Uređaji", "Inventar opreme — ovaj uređaj i susjedni", () => loadDevices()],
+  devices:   ["Inventory", "Inventar opreme — ovaj uređaj i susjedni", () => loadDevices()],
   backup:    ["Backup", "Sigurnosne kopije uređaja i vraćanje", () => loadBackup()],
-  update:    ["Ažuriranje", "Nadogradnja Saguaro sustava uz automatski backup", () => loadUpdate()],
-  settings:  ["Postavke", "Lozinke, sesije, vrijeme i API token", () => loadSettings()],
-  logs:      ["Logovi", "Sustavski log, trajno spremanje i slanje na poslužitelj", () => loadLogsView()],
-  help:      ["Pomoć", "Upute za rad — kako koristiti svaki modul", () => null],
+  update:    ["Updates", "Nadogradnja Saguaro sustava uz automatski backup", () => loadUpdate()],
+  settings:  ["Settings", "Lozinke, sesije, vrijeme i API token", () => loadSettings()],
+  logs:      ["System log", "Sustavski log, trajno spremanje i slanje na poslužitelj", () => loadLogsView()],
+  help:      ["Help", "Upute za rad — kako koristiti svaki modul", () => null],
 };
-// Načelo rasporeda: jedan modul = jedan posao. Kartica koja odgovara na
-// vlastito pitanje ("što uređaj javlja", "tko je što promijenio") ide u svoj
-// modul umjesto na dno Postavki, gdje se ne pronalazi.
+// Hrvatski pojmovi za tražilicu, da "vatrozid" nađe Firewall rules.
+const MODULE_KEYS = {
+  dashboard: "nadzorna ploča pregled stanje",
+  monitorx: "nadzor praćenje ping promet potrošnja",
+  alerts: "upozorenja obavijesti e-mail mail dojava",
+  audit: "promjene tko je mijenjao dnevnik izmjena",
+  network: "mreža sučelja lan wan vlan adresa",
+  multiwan: "više veza failover pričuvna veza rezervna",
+  ospf: "usmjeravanje rute routing",
+  qos: "brzina ograničenje prioritet promet",
+  dhcp: "dodjela adresa rezervacije zakup lease",
+  dns: "imena domene razlučivanje",
+  firewall: "vatrozid pravila zone promet blokiraj dopusti",
+  publish: "objava servera prosljeđivanje portova dmz nat",
+  hardening: "očvršćivanje pristup upravljanju sigurnost ssh",
+  protection: "blokade crne liste zloćudne adrese banip zemlje",
+  dnsfilter: "blokada reklama domene adblock oglasi",
+  scan: "skeniranje portova napad izviđanje detekcija",
+  wireguard: "vpn udaljeni pristup ključevi",
+  openvpn: "vpn udaljeni pristup certifikati ovpn",
+  devices: "uređaji inventar oprema",
+  backup: "sigurnosna kopija vraćanje arhiva",
+  update: "ažuriranje nadogradnja verzija",
+  settings: "postavke lozinka sesija vrijeme token",
+  logs: "logovi zapisi dnevnik syslog",
+  help: "pomoć upute priručnik",
+};
+// Skupine su razdvojene po poslu: filtriranje prometa po adresama i domenama
+// više nije u istoj skupini kao pravila vatrozida.
 const NAV_GROUPS = [
   ["Status", ["dashboard", "monitorx", "alerts", "audit"]],
-  ["Mreža", ["network", "multiwan", "ospf", "qos", "dhcp", "dns"]],
-  ["Zaštita", ["firewall", "publish", "protection", "hardening"]],
+  ["Network", ["network", "multiwan", "ospf", "qos", "dhcp", "dns"]],
+  ["Firewall", ["firewall", "publish", "hardening"]],
+  ["Filtering", ["protection", "dnsfilter", "scan"]],
   ["VPN", ["wireguard", "openvpn"]],
-  ["Sustav", ["settings", "logs", "backup", "devices", "update", "help"]],
+  ["System", ["settings", "logs", "backup", "devices", "update", "help"]],
 ];
 const groupOf = (id) => NAV_GROUPS.findIndex((g) => g[1].includes(id));
 const lastByGroup = {};
@@ -1710,21 +1748,79 @@ function renderNav(active) {
     nav.append(b);
   });
 
+  $("side-h").textContent = NAV_GROUPS[gi][0];
   const sub = $("subnav");
-  const ids = NAV_GROUPS[gi][1];
-  if (ids.length <= 1) {
-    sub.classList.add("hidden");
-    sub.replaceChildren();
-  } else {
-    sub.classList.remove("hidden");
-    sub.replaceChildren();
-    for (const id of ids) {
-      const b = document.createElement("button");
-      b.className = "subtab" + (id === active ? " active" : "");
-      b.textContent = MODULES[id][0];
-      b.onclick = () => { location.hash = "#/" + id; };
-      sub.append(b);
+  sub.replaceChildren();
+  for (const id of NAV_GROUPS[gi][1]) {
+    const b = document.createElement("button");
+    b.className = "subtab" + (id === active ? " active" : "");
+    b.textContent = MODULES[id][0];
+    b.title = MODULES[id][1];
+    b.onclick = () => { location.hash = "#/" + id; };
+    sub.append(b);
+  }
+}
+
+/* ---------- ploče: naslovna traka i sklapanje ----------
+   Kartice u HTML-u ostaju iste; ovdje im se doda gumb za sklapanje, a sadržaj
+   se omota u .panel-body da se može sakriti. Stanje se pamti po modulu i
+   naslovu ploče, pa ostaje i nakon osvježavanja stranice. */
+
+const PANEL_KEY = "sag.panels";
+let panelState = {};
+try { panelState = JSON.parse(localStorage.getItem(PANEL_KEY) || "{}"); } catch (e) { panelState = {}; }
+
+function savePanels() {
+  try { localStorage.setItem(PANEL_KEY, JSON.stringify(panelState)); } catch (e) { /* privatni način */ }
+}
+
+function upgradePanels() {
+  for (const card of document.querySelectorAll(".card")) {
+    if (card.dataset.panel) continue;
+    card.dataset.panel = "1";
+    let head = card.firstElementChild;
+    while (head && head.nodeType === 3) head = head.nextElementSibling;
+    // kartica bez naslova — samo dobije unutarnji razmak
+    if (!head || (head.tagName !== "H2" && !head.classList.contains("card-head"))) {
+      card.classList.add("plain");
+      continue;
     }
+    if (head.tagName === "H2") {                 // goli naslov → naslovna traka
+      const bar = document.createElement("div");
+      bar.className = "card-head";
+      card.insertBefore(bar, head);
+      bar.append(head);
+      head = bar;
+    } else {                                     // postojeći alati desno od naslova
+      const tools = document.createElement("div");
+      tools.className = "head-tools";
+      const h2 = head.querySelector("h2");
+      while (h2 && h2.nextElementSibling) tools.append(h2.nextElementSibling);
+      if (tools.childElementCount) head.append(tools);
+    }
+    const body = document.createElement("div");
+    body.className = "panel-body";
+    while (head.nextSibling) body.append(head.nextSibling);
+    card.append(body);
+
+    const view = card.closest(".view");
+    const title = (head.querySelector("h2") || {}).textContent || "";
+    const key = (view ? view.id : "?") + "|" + title.trim();
+    const chev = document.createElement("button");
+    chev.type = "button";
+    chev.className = "chev";
+    const paint = () => {
+      const closed = !!panelState[key];
+      body.classList.toggle("hidden", closed);
+      chev.textContent = closed ? "▸" : "▾";
+      chev.title = closed ? "Rasklopi" : "Sklopi";
+    };
+    const toggle = () => { panelState[key] = !panelState[key]; savePanels(); paint(); };
+    chev.onclick = toggle;
+    const h2 = head.querySelector("h2");
+    if (h2) h2.onclick = toggle;
+    head.prepend(chev);
+    paint();
   }
 }
 
@@ -1798,6 +1894,7 @@ async function start() {
   }
   $("login").classList.add("hidden");
   $("app").classList.remove("hidden");
+  upgradePanels();
   timers.push(setInterval(() => tickFast().catch(onTickError), 5000));
   timers.push(setInterval(() => tickSlow().catch(onTickError), 15000));
   route();
@@ -1841,6 +1938,7 @@ $("login-form").addEventListener("submit", async (ev) => {
     if (!r.ok) throw new Error(data.error || "HTTP " + r.status);
     token = data.token;
     localStorage.setItem("saguaro_token", token);
+    localStorage.setItem("saguaro_user", $("user-input").value.trim());
     const firstPass = $("pass-input").value;
     $("pass-input").value = "";
     // zadana lozinka s instalacije: uređaj do promjene ne dopušta ništa drugo
@@ -3348,10 +3446,12 @@ function searchModules(q) {
   for (const [id, m] of Object.entries(MODULES)) {
     const name = m[0].toLowerCase();
     const desc = m[1].toLowerCase();
+    const keys = (MODULE_KEYS[id] || "").toLowerCase();
     let score = -1;
     if (name.startsWith(q)) score = 0;
     else if (name.includes(q)) score = 1;
-    else if (desc.includes(q)) score = 2;
+    else if (keys.includes(q)) score = 2;
+    else if (desc.includes(q)) score = 3;
     if (score >= 0) hits.push({ id, name: m[0], desc: m[1], score });
   }
   hits.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name, "hr"));

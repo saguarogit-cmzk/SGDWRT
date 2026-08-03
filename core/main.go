@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.24.4"
+const version = "0.25.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -260,6 +260,11 @@ func main() {
 	mux.Handle("POST /api/v1/firewall/nat11", s.auth(s.handleNAT11Create))
 	mux.Handle("PUT /api/v1/firewall/nat11/{uuid}", s.auth(s.handleNAT11Update))
 	mux.Handle("DELETE /api/v1/firewall/nat11/{uuid}", s.auth(s.handleNAT11Delete))
+	mux.Handle("GET /api/v1/firewall/snat", s.auth(s.handleSNATList))
+	mux.Handle("POST /api/v1/firewall/snat", s.auth(s.handleSNATCreate))
+	mux.Handle("PUT /api/v1/firewall/snat/{uuid}", s.auth(s.handleSNATUpdate))
+	mux.Handle("DELETE /api/v1/firewall/snat/{uuid}", s.auth(s.handleSNATDelete))
+	mux.Handle("POST /api/v1/firewall/snat/{uuid}/move", s.auth(s.handleSNATMove))
 	mux.Handle("GET /api/v1/ospf", s.auth(s.handleOspfGet))
 	mux.Handle("POST /api/v1/ospf", s.auth(s.handleOspfSet))
 	mux.Handle("GET /api/v1/multiwan", s.auth(s.handleMultiwanGet))

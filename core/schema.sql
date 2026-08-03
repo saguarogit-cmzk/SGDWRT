@@ -298,3 +298,21 @@ CREATE TABLE IF NOT EXISTS config_changes (
     removed     INTEGER NOT NULL DEFAULT 0,
     diff        TEXT NOT NULL
 );
+
+-- Izlazna javna adresa po mreži (policy SNAT) — sag_snat_* nat sekcije u fw4.
+-- Redoslijed je bitan: paket obrađuje prvo pravilo koje mu odgovara.
+CREATE TABLE IF NOT EXISTS fw_snat (
+    uuid        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    pos         INTEGER NOT NULL DEFAULT 0,      -- redoslijed primjene
+    out_zone    TEXT NOT NULL DEFAULT 'wan',     -- izlazna zona (wan, wan2…)
+    src_ip      TEXT NOT NULL,                   -- mreža/host: IP, CIDR ili @alias
+    dest_ip     TEXT,                            -- prazno = bilo koje odredište
+    dest_port   TEXT,
+    proto       TEXT NOT NULL DEFAULT 'all',
+    snat_ip     TEXT NOT NULL,                   -- javna adresa s koje promet izlazi
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);

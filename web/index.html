@@ -344,6 +344,31 @@
       <p class="hint">Objave i pravila prometa dijele istu primjenu — ovaj gumb
         radi isto što i onaj u modulu Firewall rules.</p>
     </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Izlazne adrese (SNAT)</h2>
+        <span class="head-note" id="sn-note">—</span>
+        <button id="sn-add" class="primary">Dodaj pravilo</button>
+      </div>
+      <p class="hint">Kad uređaj ima <b>više javnih adresa</b>, zadano sav
+        odlazni promet izlazi s prve. Ovdje se za pojedinu mrežu bira druga —
+        npr. „računovodstvo na internet izlazi kao 203.0.113.11". Bitno je kad
+        druga strana filtrira po izvorišnoj adresi (banke, državni servisi,
+        ugled mail servera).</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:28px">#</th><th>Naziv</th><th>Iz mreže</th>
+            <th>Odredište</th><th>Proto</th><th>Izlazna adresa</th>
+            <th>Aktivan</th><th></th>
+          </tr></thead>
+          <tbody id="sn-rows"></tbody>
+        </table>
+      </div>
+      <p class="legend">Redoslijed je bitan — vrijedi prvo pravilo koje odgovara paketu. &nbsp;·&nbsp; ▲▼ pomak · ✔ uključeno · ☐ isključeno · ✎ uredi · 🗑 obriši</p>
+    </section>
+
     <section class="grid-2">
       <div class="card">
         <h2>DMZ</h2>
@@ -1545,6 +1570,43 @@
       </div>
       <div class="form-actions">
         <button type="button" class="ghost" id="n1-cancel">Odustani</button>
+        <button type="submit" class="primary">Spremi</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="sn-dialog">
+    <form id="sn-form">
+      <h2 id="sn-dialog-title">Izlazna adresa</h2>
+      <div class="form-grid">
+        <label>Naziv<input name="name" required placeholder="racunovodstvo-preko-11"></label>
+        <label>Izlazna veza (zona)<input name="out_zone" placeholder="wan"></label>
+        <label class="wide">Iz mreže — IP, CIDR ili @alias
+          <input name="src_ip" required placeholder="192.168.60.0/24"></label>
+        <label class="wide">Ponuđene lokalne mreže
+          <select id="sn-net"><option value="">— odaberi pa se upiše gore —</option></select></label>
+        <label>Izlazna adresa
+          <input name="snat_ip" required placeholder="203.0.113.11" list="sn-wanips"></label>
+        <datalist id="sn-wanips"></datalist>
+        <label>Protokol
+          <select name="proto">
+            <option value="all">svi</option>
+            <option value="tcp">tcp</option>
+            <option value="udp">udp</option>
+            <option value="tcp udp">tcp + udp</option>
+          </select>
+        </label>
+        <label>Odredište (prazno = sva)<input name="dest_ip" placeholder="opcionalno"></label>
+        <label>Odredišni port (prazno = svi)<input name="dest_port" placeholder="opcionalno"></label>
+        <label class="wide">Napomene<textarea name="notes" rows="2"></textarea></label>
+        <label class="check"><input type="checkbox" name="enabled" checked>
+          Aktivan — uključi u primjenu</label>
+      </div>
+      <p class="hint">Izlazna adresa mora stvarno postojati na WAN sučelju —
+        inače bi promet te mreže tiho nestajao. Dodatne javne adrese upisuju se
+        u <b>Network → Interfaces → WAN → Adrese</b>.</p>
+      <div class="form-actions">
+        <button type="button" class="ghost" id="sn-cancel">Odustani</button>
         <button type="submit" class="primary">Spremi</button>
       </div>
     </form>

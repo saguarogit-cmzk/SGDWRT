@@ -575,10 +575,12 @@ let dmzEnabled = false;
 let editAlUUID = null;
 
 async function loadFirewall() {
-  const [st, fw, rl, dmz, n1, al] = await Promise.all([
+  const [st, fw, rl, dmz, n1, al, sn] = await Promise.all([
     api("/firewall/status"), api("/firewall/forwards"), api("/firewall/rules"),
     api("/firewall/dmz"), api("/firewall/nat11"), api("/firewall/aliases"),
+    api("/firewall/snat"),
   ]);
+  renderSnat(sn);
 
   const ab = $("al-rows");
   ab.replaceChildren();
@@ -1493,6 +1495,8 @@ const ROW_ICONS = {
   "Prikaži": "👁",
   "Vrati": "↺",
   "U rezervacije": "📌",
+  "Gore": "▲",
+  "Dolje": "▼",
 };
 
 function btnSm(label, danger, onclick) {
@@ -2532,6 +2536,131 @@ function openN1Dialog(n) {
   }
   $("n1-dialog").showModal();
 }
+/* ---------- izlazne adrese (SNAT) ---------- */
+
+// Zadnji odgovor uređaja — treba za padajući popis mreža i javnih adresa
+// u dijalogu, da se ne prepisuju ručno.
+let snatData = { snat: [], wan_ips: {}, networks: {} };
+let editSnUUID = null;
+
+function renderSnat(x) {
+  snatData = x;
+  const tb = $("sn-rows");
+  tb.replaceChildren();
+  const list = x.snat || [];
+  x.snat.forEach((n, i) => {
+    const tr = document.createElement("tr");
+    const tdI = document.createElement("td");
+    tdI.textContent = String(i + 1);
+    tr.append(tdI);
+    for (const v of [n.name, n.src_ip, n.dest_ip || "sva",
+      n.proto === "all" ? "svi" : n.proto]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdA = document.createElement("td");
+    const b = document.createElement("b");
+    b.className = "zone z-wan";
+    b.textContent = n.snat_ip;
+    tdA.append(b);
+    const z = document.createElement("span");
+    z.textContent = " (" + n.out_zone + ")";
+    tdA.append(z);
+    tr.append(tdA);
+    const tdE = document.createElement("td");
+    tdE.append(tick(!!n.enabled, async () => {
+      await api("/firewall/snat/" + n.uuid, "PUT",
+        { ...n, enabled: !n.enabled }).catch(alertErr);
+      loadFirewall().catch(alertErr);
+    }, n.name));
+    tr.append(tdE);
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    const move = async (dir) => {
+      await api("/firewall/snat/" + n.uuid + "/move", "POST", { dir }).catch(alertErr);
+      loadFirewall().catch(alertErr);
+    };
+    const up = btnSm("Gore", false, () => move("up"));
+    up.disabled = i === 0;
+    const down = btnSm("Dolje", false, () => move("down"));
+    down.disabled = i === list.length - 1;
+    tdAct.append(up, down,
+      btnSm("Uredi", false, () => openSnDialog(n)),
+      btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati pravilo "${n.name}"?`)) return;
+        await api("/firewall/snat/" + n.uuid, "DELETE").catch(alertErr);
+        loadFirewall().catch(alertErr);
+      }));
+    tr.append(tdAct);
+    tb.append(tr);
+  });
+  const nAddr = Object.values(x.wan_ips || {}).reduce((a, v) => a + v.length, 0);
+  setNote("sn-note", list.length
+    ? `${list.length} pravila · javnih adresa na WAN-u: ${nAddr}`
+    : `nema pravila — sve izlazi sa zadanom adresom · javnih adresa na WAN-u: ${nAddr}`);
+}
+
+function openSnDialog(n) {
+  const f = $("sn-form");
+  editSnUUID = n ? n.uuid : null;
+  $("sn-dialog-title").textContent = editSnUUID ? "Uredi izlaznu adresu" : "Nova izlazna adresa";
+  f.elements.name.value = n ? n.name : "";
+  f.elements.out_zone.value = n ? n.out_zone : "wan";
+  f.elements.src_ip.value = n ? n.src_ip : "";
+  f.elements.snat_ip.value = n ? n.snat_ip : "";
+  f.elements.proto.value = n ? n.proto : "all";
+  f.elements.dest_ip.value = n ? n.dest_ip || "" : "";
+  f.elements.dest_port.value = n ? n.dest_port || "" : "";
+  f.elements.notes.value = n ? n.notes || "" : "";
+  f.elements.enabled.checked = n ? !!n.enabled : true;
+
+  // ponuda stvarnih javnih adresa s uređaja
+  const dl = $("sn-wanips");
+  dl.replaceChildren();
+  for (const [iface, addrs] of Object.entries(snatData.wan_ips || {})) {
+    for (const a of addrs) {
+      const o = document.createElement("option");
+      o.value = a;
+      o.label = iface;
+      dl.append(o);
+    }
+  }
+  // ponuda lokalnih mreža — odabir upiše CIDR u polje izvora
+  const sel = $("sn-net");
+  sel.replaceChildren();
+  const first = document.createElement("option");
+  first.value = "";
+  first.textContent = "— odaberi pa se upiše gore —";
+  sel.append(first);
+  for (const [name, cidr] of Object.entries(snatData.networks || {})) {
+    const o = document.createElement("option");
+    o.value = cidr;
+    o.textContent = `${name} (${cidr})`;
+    sel.append(o);
+  }
+  sel.onchange = () => { if (sel.value) f.elements.src_ip.value = sel.value; };
+  $("sn-dialog").showModal();
+}
+
+$("sn-add").addEventListener("click", () => openSnDialog(null));
+$("sn-cancel").addEventListener("click", () => $("sn-dialog").close());
+$("sn-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {};
+  for (const n of ["name", "out_zone", "src_ip", "snat_ip", "proto",
+    "dest_ip", "dest_port", "notes"])
+    body[n] = f.elements[n].value.trim();
+  body.enabled = f.elements.enabled.checked;
+  try {
+    if (editSnUUID) await api("/firewall/snat/" + editSnUUID, "PUT", body);
+    else await api("/firewall/snat", "POST", body);
+    $("sn-dialog").close();
+    await loadFirewall();
+  } catch (e) { alertErr(e); }
+});
+
 $("n1-add").addEventListener("click", () => openN1Dialog(null));
 $("n1-cancel").addEventListener("click", () => $("n1-dialog").close());
 $("n1-form").addEventListener("submit", async (ev) => {

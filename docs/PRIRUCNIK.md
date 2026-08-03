@@ -165,6 +165,21 @@ susjedi prikazuju se u modulu.
   jedan interni host. Taj host je potpuno izložen — koristiti s oprezom.
 - **1:1 NAT**: javna adresa ↔ interni server u oba smjera (javna adresa mora
   postojati na WAN sučelju).
+- **Izlazne adrese (SNAT)**: kad uređaj ima **više javnih adresa**, zadano sav
+  odlazni promet izlazi s prve. Ovdje se za pojedinu mrežu, podmrežu ili host
+  bira druga — npr. „računovodstvo na internet izlazi kao 203.0.113.11". Bitno
+  je kad druga strana filtrira po izvorišnoj adresi (banke, državni servisi,
+  ugled mail servera).
+  - Izvor se bira iz padajućeg popisa lokalnih mreža ili se upiše IP/CIDR/@alias;
+    izlazna adresa nudi se iz popisa adresa **stvarno postavljenih** na WAN-u.
+    Adresa koje na uređaju nema odbija se s greškom — inače bi promet te mreže
+    tiho nestajao.
+  - Po želji se pravilo suzi na odredište, port i protokol.
+  - **Redoslijed je bitan** (vrijedi prvo pravilo koje odgovara paketu) i mijenja
+    se strelicama ▲▼. Pravila stoje **ispred** općeg maskiranja, a **iza** 1:1
+    NAT-a, jer je par javna↔interna adresa uži slučaj.
+  - Dodatne javne adrese upisuju se u *Network → Interfaces → WAN → Adrese*
+    (više adresa na istom portu, odvojenih razmakom).
 - **Čarobnjak "Objavi server"**: interni server (može se izabrati iz
   inventara) + usluge (web, mail, SSH, RDP, vlastiti portovi) + po želji
   konkretna javna adresa → čarobnjak stvori sve potrebne forwarde odjednom.

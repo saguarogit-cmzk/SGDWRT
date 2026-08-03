@@ -160,6 +160,16 @@ else
         "zaostali lanci obrisanih zona — riješi s: /etc/init.d/firewall restart"
 fi
 
+# pravila koja je fw4 odbio (npr. kriva opcija) tiho ne rade — a korisnik u
+# sučelju vidi da "postoje"
+REJ=$(fw4 print 2>&1 | grep -c "^\[!\]")
+if [ "$REJ" = "0" ]; then
+    ok "fw4 je prihvatio sva pravila"
+else
+    bad "fw4 je odbio $REJ pravila" \
+        "pogledaj: fw4 print 2>&1 | grep '^\[!\]'"
+fi
+
 # upravljanje ne smije biti otvoreno prema internetu
 OPEN=""
 for p in 22 80 443 8443; do

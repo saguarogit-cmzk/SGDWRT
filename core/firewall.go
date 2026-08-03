@@ -969,7 +969,8 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 		if (strings.HasPrefix(name, pfPrefix) && t == "redirect") ||
 			(strings.HasPrefix(name, rlPrefix) && t == "rule") ||
 			(strings.HasPrefix(name, n1dPrefix) && t == "redirect") ||
-			(strings.HasPrefix(name, n1sPrefix) && t == "nat") {
+			(strings.HasPrefix(name, n1sPrefix) && t == "nat") ||
+			(strings.HasPrefix(name, snatPrefix) && t == "nat") {
 			fmt.Fprintf(&b, "delete firewall.%s\n", name)
 			removed++
 		}
@@ -1085,6 +1086,17 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&b, "set firewall.%s%s.snat_ip=%s\n", n1sPrefix, id, n.PublicIP)
 		fmt.Fprintf(&b, "set firewall.%s%s.proto=all\n", n1sPrefix, id)
 	}
+	// izlazne adrese po mreži idu iza 1:1 NAT-a: par javna↔interna adresa je
+	// uži slučaj i mora dobiti prednost pred općim pravilom po mreži
+	snats, err := s.snatList()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.writeSNATSections(&b, snats); err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
 	b.WriteString("commit firewall\n")
 
 	if err := uciBatch(ctx, b.String()); err != nil {
@@ -1100,6 +1112,7 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 		"applied_forwards": len(forwards),
 		"applied_rules":    len(rules),
 		"applied_nat11":    len(nats),
+		"applied_snat":     len(snats),
 		"removed":          removed,
 		"backup":           backupName,
 	})

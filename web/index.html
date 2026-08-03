@@ -159,33 +159,12 @@
   </div>
 
   <div class="view hidden" id="view-dhcp">
-    <section class="grid-2">
-      <div class="card">
-        <h2>DHCP poolovi</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr>
-              <th>Sučelje</th><th>Raspon</th><th>Lease</th><th style="width:70px">Uključen</th>
-            </tr></thead>
-            <tbody id="dhcp-pool-rows"></tbody>
-          </table>
-        </div>
-        <p class="hint" id="dhcp-srv-hint"></p>
-        <p class="hint" id="dhcp-toggle-result"></p>
-      </div>
-      <div class="card">
-        <h2>Primjena na uređaj</h2>
-        <p class="hint" id="dhcp-sync-info">—</p>
-        <div class="form-actions" style="justify-content:flex-start">
-          <button id="dhcp-apply" class="primary">Primijeni rezervacije</button>
-        </div>
-        <p class="hint" id="dhcp-apply-result"></p>
-      </div>
-    </section>
     <section class="card">
       <div class="card-head">
         <h2>Rezervacije (iz inventoryja)</h2>
+        <span class="head-note" id="dhcp-sync-info">—</span>
         <button id="host-add" class="primary">Dodaj host</button>
+        <button id="dhcp-apply" class="primary">Primijeni rezervacije</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -197,6 +176,24 @@
         </table>
       </div>
       <p class="legend">✔ upravlja Saguaro · ☐ ne upravlja · ✎ uredi · 🗑 obriši</p>
+      <p class="hint" id="dhcp-apply-result"></p>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>DHCP poolovi</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Sučelje</th><th>Raspon</th><th>Lease</th><th style="width:70px">Uključen</th>
+          </tr></thead>
+          <tbody id="dhcp-pool-rows"></tbody>
+        </table>
+      </div>
+      <p class="legend">✔ pool dijeli adrese (klik isključuje) · ☐ isključen (klik uključuje)</p>
+      <p class="hint" id="dhcp-srv-hint"></p>
+      <p class="hint" id="dhcp-toggle-result"></p>
     </section>
     <section class="card">
       <h2>Aktivni leaseovi</h2>
@@ -212,24 +209,26 @@
   </div>
 
   <div class="view hidden" id="view-dns">
-    <section class="grid-2">
-      <div class="card">
-        <h2>DNS poslužitelj</h2>
-        <dl class="kv" id="dns-server-kv"></dl>
-        <div class="form-actions" style="justify-content:flex-start">
-          <button id="dnssec-toggle" class="ghost hidden">—</button>
-        </div>
-        <p class="hint" id="dnssec-result"></p>
+    <section class="card">
+      <div class="card-head">
+        <h2>Lokalni DNS zapisi</h2>
+        <span class="head-note" id="dns-sync-info">—</span>
+        <button id="rec-add" class="primary">Dodaj zapis</button>
+        <button id="dns-apply" class="primary">Primijeni DNS zapise</button>
       </div>
-      <div class="card">
-        <h2>Primjena na uređaj</h2>
-        <p class="hint" id="dns-sync-info">—</p>
-        <div class="form-actions" style="justify-content:flex-start">
-          <button id="dns-apply" class="primary">Primijeni DNS zapise</button>
-        </div>
-        <p class="hint" id="dns-apply-result"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Naziv</th><th>Tip</th><th>Vrijednost</th><th>Aktivan</th>
+            <th>Napomene</th><th></th>
+          </tr></thead>
+          <tbody id="rec-rows"></tbody>
+        </table>
       </div>
+      <p class="legend">✔ uključeno · ☐ isključeno · ✎ uredi · 🗑 obriši</p>
+      <p class="hint" id="dns-apply-result"></p>
     </section>
+
     <section class="card">
       <div class="card-head">
         <h2>Split DNS — vlastite domene prema internom serveru</h2>
@@ -255,50 +254,21 @@
     </section>
     <section class="card">
       <div class="card-head">
-        <h2>Lokalni DNS zapisi</h2>
-        <button id="rec-add" class="primary">Dodaj zapis</button>
+        <h2>DNS poslužitelj</h2>
+        <button id="dnssec-toggle" class="ghost hidden">—</button>
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Naziv</th><th>Tip</th><th>Vrijednost</th><th>Aktivan</th>
-            <th>Napomene</th><th></th>
-          </tr></thead>
-          <tbody id="rec-rows"></tbody>
-        </table>
-      </div>
-      <p class="legend">✔ uključeno · ☐ isključeno · ✎ uredi · 🗑 obriši</p>
+      <dl class="kv" id="dns-server-kv"></dl>
+      <p class="hint" id="dnssec-result"></p>
     </section>
   </div>
 
   <div class="view hidden" id="view-firewall">
-    <section class="grid-2">
-      <div class="card">
-        <h2>Zone</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr>
-              <th>Zona</th><th>Ulaz</th><th>Forward</th><th>NAT</th><th>Mreže</th>
-            </tr></thead>
-            <tbody id="zone-rows"></tbody>
-          </table>
-        </div>
-      </div>
-      <div class="card">
-        <h2>Primjena na uređaj</h2>
-        <p class="hint" id="fw-sync-info">—</p>
-        <div class="form-actions" style="justify-content:flex-start">
-          <button id="fw-apply" class="primary">Primijeni firewall</button>
-        </div>
-        <p class="hint" id="fw-apply-result"></p>
-        <p class="hint">Primjena upravlja samo Saguaro zapisima (sag_pf_*, sag_rl_*) —
-          postojeća OpenWrt pravila i zone se ne diraju.</p>
-      </div>
-    </section>
     <section class="card">
       <div class="card-head">
         <h2>Pravila prometa</h2>
+        <span class="head-note" id="fw-sync-info">—</span>
         <button id="rl-add" class="primary">Dodaj pravilo</button>
+        <button id="fw-apply" class="primary">Primijeni firewall</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -309,6 +279,10 @@
           <tbody id="rl-rows"></tbody>
         </table>
       </div>
+      <p class="legend">✔ uključeno · ☐ isključeno · ✎ uredi · 🗑 obriši</p>
+      <p class="hint" id="fw-apply-result"></p>
+      <p class="hint">Primjena upravlja samo Saguaro zapisima (sag_pf_*, sag_rl_*) —
+        postojeća OpenWrt pravila i zone se ne diraju.</p>
     </section>
     <section class="card">
       <div class="card-head">
@@ -326,16 +300,30 @@
       </div>
       <p class="legend">✎ uredi · 🗑 obriši</p>
     </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Zone</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Zona</th><th>Ulaz</th><th>Forward</th><th>NAT</th><th>Mreže</th>
+          </tr></thead>
+          <tbody id="zone-rows"></tbody>
+        </table>
+      </div>
+    </section>
   </div>
 
   <div class="view hidden" id="view-publish">
     <section class="card">
       <div class="card-head">
         <h2>Port forwardi (DNAT)</h2>
-        <div class="row-actions">
-          <button id="pub-wizard" class="ghost">Objavi server (čarobnjak)</button>
-          <button id="pf-add" class="primary">Dodaj forward</button>
-        </div>
+        <span class="head-note" id="pub-sync-info">—</span>
+        <button id="pub-wizard" class="ghost">Objavi server (čarobnjak)</button>
+        <button id="pf-add" class="primary">Dodaj forward</button>
+        <button id="pub-apply" class="primary">Primijeni</button>
       </div>
       <p class="hint">Usluga iz lokalne mreže postaje dostupna s interneta.
         Kad se serveru pristupa <b>imenom</b>, uz forward postavi i
@@ -351,6 +339,9 @@
         </table>
       </div>
       <p class="legend">✔ uključeno · ☐ isključeno · ✎ uredi · 🗑 obriši</p>
+      <p class="hint" id="pub-apply-result"></p>
+      <p class="hint">Objave i pravila prometa dijele istu primjenu — ovaj gumb
+        radi isto što i onaj u modulu Firewall rules.</p>
     </section>
     <section class="grid-2">
       <div class="card">
@@ -384,62 +375,17 @@
         </div>
       </div>
     </section>
-    <section class="card">
-      <h2>Primjena na uređaj</h2>
-      <p class="hint" id="pub-sync-info">—</p>
-      <p class="hint">Objave i pravila prometa dijele istu primjenu — ovaj gumb
-        radi isto što i onaj u modulu Firewall.</p>
-      <div class="form-actions" style="justify-content:flex-start">
-        <button id="pub-apply" class="primary">Primijeni</button>
-      </div>
-      <p class="hint" id="pub-apply-result"></p>
-    </section>
   </div>
 
   <div class="view hidden" id="view-wireguard">
-    <section class="grid-2">
-      <div class="card">
-        <h2>WireGuard poslužitelj</h2>
-        <form id="wg-form">
-          <div class="form-grid">
-            <label>UDP port<input name="listen_port" placeholder="51820"></label>
-            <label>Adresa tunela (CIDR)<input name="address" required placeholder="10.6.0.1/24"></label>
-            <label>Endpoint za klijente<input name="endpoint_host" placeholder="vpn.tvrtka.hr ili javni IP"></label>
-            <label>DNS za klijente<input name="client_dns" placeholder="192.168.50.222"></label>
-            <label class="wide">Promet klijenata kroz tunel (AllowedIPs)
-          <input name="client_allowed_ips" placeholder="prazno = samo lokalna mreža (split tunnel)"></label>
-            <label class="wide check"><input type="checkbox" name="allow_mgmt">
-              Dopusti VPN korisnicima pristup upravljanju uređajem (SSH, LuCI, Saguaro)</label>
-          </div>
-          <p class="hint">Privatni ključ poslužitelja generira se automatski i ne
-            napušta uređaj. Prazno polje prometa = <b>split tunnel</b>: korisnici
-            kroz tunel dosežu samo lokalnu mrežu, a na internet idu preko vlastite
-            veze. Za sav promet kroz tunel upiši <code>0.0.0.0/0</code>.</p>
-          <p class="hint">VPN korisnici zadano dosežu <b>samo mrežu</b> — prema
-            samom uređaju smiju jedino DNS i ping. Kvačica iznad otvara i prijavu
-            na upravljanje; uključi je samo ako se administrira preko VPN-a.</p>
-          <p class="hint" id="wg-server-result"></p>
-          <div class="form-actions" style="justify-content:flex-start">
-            <button type="submit" class="primary">Spremi postavke</button>
-          </div>
-        </form>
-      </div>
-      <div class="card">
-        <h2>Stanje i primjena</h2>
-        <dl class="kv" id="wg-kv"></dl>
-        <p class="hint" id="wg-sync-info">—</p>
-        <div class="form-actions" style="justify-content:flex-start">
-          <button id="wg-apply" class="primary">Primijeni peerove</button>
-          <button id="wg-access" class="ghost">—</button>
-        </div>
-        <p class="hint" id="wg-access-hint"></p>
-        <p class="hint" id="wg-apply-result"></p>
-      </div>
-    </section>
     <section class="card">
       <div class="card-head">
         <h2>Peerovi</h2>
+        <span class="st" id="wg-state">—</span>
+        <span class="head-note" id="wg-sum">—</span>
         <button id="peer-add" class="primary">Dodaj peer</button>
+        <button id="wg-apply" class="primary">Primijeni peerove</button>
+        <button id="wg-access" class="ghost">—</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -451,6 +397,41 @@
         </table>
       </div>
       <p class="legend">✔ uključeno (klik isključuje) · ☐ isključeno (klik uključuje) · ⤓ preuzmi config · 👁 prikaži config · 🔑 pristup · ✎ uredi · 🗑 obriši</p>
+      <p class="hint" id="wg-apply-result"></p>
+      <p class="hint" id="wg-access-hint"></p>
+      <p class="hint" id="wg-sync-info">—</p>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Postavke poslužitelja</h2>
+      </div>
+      <form id="wg-form">
+        <div class="form-grid wide-4">
+          <label>UDP port<input name="listen_port" placeholder="51820"></label>
+          <label>Adresa tunela (CIDR)<input name="address" required placeholder="10.6.0.1/24"></label>
+          <label>Endpoint za klijente<input name="endpoint_host" placeholder="vpn.tvrtka.hr ili javni IP"></label>
+          <label>DNS za klijente<input name="client_dns" placeholder="192.168.50.222"></label>
+          <label>Promet klijenata kroz tunel (AllowedIPs)
+            <input name="client_allowed_ips" placeholder="prazno = samo lokalna mreža (split tunnel)"></label>
+          <label class="check"><input type="checkbox" name="allow_mgmt">
+            Dopusti VPN korisnicima pristup upravljanju uređajem (SSH, LuCI, Saguaro)</label>
+        </div>
+        <p class="hint">Javni ključ poslužitelja: <code id="wg-pubkey">—</code></p>
+        <p class="hint" id="wg-server-result"></p>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button type="submit" class="primary">Spremi postavke</button>
+        </div>
+        <details class="help"><summary>Kako ovo radi — ključevi, split tunnel i pristup</summary><div>
+          Privatni ključ poslužitelja generira se automatski i ne napušta
+          uređaj. Prazno polje prometa = <b>split tunnel</b>: korisnici kroz
+          tunel dosežu samo lokalnu mrežu, a na internet idu preko vlastite
+          veze. Za sav promet kroz tunel upiši <code>0.0.0.0/0</code>.
+          <br><br>VPN korisnici zadano dosežu <b>samo mrežu</b> — prema samom
+          uređaju smiju jedino DNS i ping. Kvačica otvara i prijavu na
+          upravljanje; uključi je samo ako se uređaj administrira preko VPN-a.
+        </div></details>
+      </form>
     </section>
   </div>
 

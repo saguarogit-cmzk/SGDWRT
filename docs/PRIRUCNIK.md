@@ -55,6 +55,12 @@ nađeš i bez tražilice.
   konfiguracijske datoteke prije nego je promijeni (vidljivo u Backup modulu).
 - **Tuđe se ne dira**: Saguaro upravlja isključivo zapisima koje je sam stvorio
   (`sag_*` oznake). Ručne izmjene i LuCI postavke ostaju netaknute.
+- **Raspored modula je svugdje isti**: gore je tablica s poslom (pravila,
+  klijenti, rezervacije, zapisi), a **stanje i gumb za primjenu su u njezinoj
+  naslovnoj traci**. Postavke i objašnjenja idu ispod, preko cijele širine.
+- **Zone su obojene** kao i drugdje u struci: LAN zelena, WAN crvena, DMZ
+  narančasta, GOST plava, VPN ljubičasta. Akcija pravila je isto obojena —
+  *DOPUSTI* zeleno, *ODBIJ* narančasto, *ODBACI* crveno.
 - **Oznake u tablicama su svugdje iste**, a ispod svake tablice stoji legenda:
   ✔ uključeno (gdje se smije, klik isključuje) · ☐ isključeno ·
   ✎ uredi · 🗑 obriši · ⤓ preuzmi · 👁 prikaži · 🔑 pristup · ⛔ ukloni lozinku.

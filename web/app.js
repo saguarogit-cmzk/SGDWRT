@@ -56,6 +56,14 @@ const stGood = (t) => st("st-good", "✓", t);
 const stWarn = (t) => st("st-warn", "△", t);
 const stCrit = (t) => st("st-crit", "✕", t);
 const stOff  = (t) => st("st-off", "○", t);
+// setNote piše kratku napomenu uz naslov ploče; cijeli tekst ostaje u oblačiću
+// jer se u uskoj traci skraćuje
+function setNote(id, text) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = text;
+  el.title = text;
+}
 // setPill mijenja postojeću pilulu na mjestu, pa joj id i mjesto ostaju isti
 const pillIcon = { good: "✓", warn: "△", crit: "✕", off: "○" };
 function setPill(el, kind, text) {
@@ -359,7 +367,7 @@ async function loadDhcp() {
   let info = `U bazi upravljanih hostova: ${managedDB} · Saguaro rezervacija na uređaju: ${sagOnDev}`;
   if (foreign > 0) info += ` · ostalih (ručnih/LuCI, ne diraju se): ${foreign}`;
   if (managedDB !== sagOnDev) info += " — ⚠ razlika, potrebna primjena";
-  $("dhcp-sync-info").textContent = info;
+  setNote("dhcp-sync-info", info);
 
   // hosts iz inventoryja
   const tb = $("host-rows");
@@ -501,7 +509,7 @@ async function loadDns() {
   let info = `U bazi aktivnih zapisa: ${enabledDB} · Saguaro zapisa na uređaju: ${sagOnDev}`;
   if (foreign > 0) info += ` · ostalih (ručnih/LuCI, ne diraju se): ${foreign}`;
   if (enabledDB !== sagOnDev) info += " — ⚠ razlika, potrebna primjena";
-  $("dns-sync-info").textContent = info;
+  setNote("dns-sync-info", info);
 
   const tb = $("rec-rows");
   tb.replaceChildren();
@@ -633,7 +641,8 @@ async function loadFirewall() {
   zb.replaceChildren();
   for (const z of st.zones) {
     const tr = document.createElement("tr");
-    for (const v of [z.name, z.input, z.forward, z.masq ? "masq" : "—",
+    tr.append(zoneCell(z.name, ""));
+    for (const v of [z.input, z.forward, z.masq ? "da" : "ne",
       z.networks.join(", ") || "—"]) {
       const td = document.createElement("td");
       td.textContent = v;
@@ -651,20 +660,21 @@ async function loadFirewall() {
   let info = `U bazi: ${enFw} forwarda, ${enRl} pravila · na uređaju: ${devFw} + ${devRl}`;
   if (foreign > 0) info += ` · ostalih (OpenWrt/ručnih): ${foreign}`;
   if (enFw !== devFw || enRl !== devRl) info += " — ⚠ razlika, potrebna primjena";
-  $("fw-sync-info").textContent = info;
-  $("pub-sync-info").textContent = info;
+  setNote("fw-sync-info", info);
+  setNote("pub-sync-info", info);
 
   const pb = $("pf-rows");
   pb.replaceChildren();
   for (const f of fw.forwards) {
     const tr = document.createElement("tr");
-    for (const v of [f.name, f.proto,
-      `${f.src_zone}:${f.src_dport}`,
-      `${f.dest_ip}${f.dest_port ? ":" + f.dest_port : ""} (${f.dest_zone})`]) {
+    for (const v of [f.name, f.proto]) {
       const td = document.createElement("td");
       td.textContent = v;
       tr.append(td);
     }
+    tr.append(zoneCell(f.src_zone, "", ":" + f.src_dport));
+    tr.append(zoneCell(f.dest_zone, f.dest_ip +
+      (f.dest_port ? ":" + f.dest_port : "")));
     const tdE = document.createElement("td");
     tdE.append(tick(!!f.enabled, null));
     tr.append(tdE);
@@ -688,14 +698,17 @@ async function loadFirewall() {
   rb.replaceChildren();
   for (const f of rl.rules) {
     const tr = document.createElement("tr");
-    const src = f.src_zone + (f.src_ip ? " " + f.src_ip : "");
-    const dst = (f.dest_zone || "uređaj") + (f.dest_ip ? " " + f.dest_ip : "") +
-      (f.dest_port ? " :" + f.dest_port : "");
-    for (const v of [f.name, f.proto, src, dst, f.target]) {
+    for (const v of [f.name, f.proto]) {
       const td = document.createElement("td");
       td.textContent = v;
       tr.append(td);
     }
+    tr.append(zoneCell(f.src_zone, f.src_ip));
+    tr.append(zoneCell(f.dest_zone || "uređaj", f.dest_ip,
+      f.dest_port ? ":" + f.dest_port : ""));
+    const tdT = document.createElement("td");
+    tdT.append(targetMark(f.target));
+    tr.append(tdT);
     const tdE = document.createElement("td");
     tdE.append(tick(!!f.enabled, null));
     tr.append(tdE);
@@ -773,25 +786,22 @@ async function loadWireguard() {
   f.elements.allow_mgmt.checked = !!srv.allow_mgmt;
   wgNextIP = srv.next_tunnel_ip || "";
 
-  const kv = $("wg-kv");
-  kv.replaceChildren();
-  const rows = [
-    ["Paketi", st.installed ? "instalirani" : "nedostaju (kmod-wireguard, wireguard-tools)"],
-    ["Sučelje " + "sag_wg0", st.running ? "aktivno" : srv.configured ? "neaktivno" : "nije konfigurirano"],
-    ["Javni ključ", srv.public_key || "—"],
-    ["Port", srv.listen_port || "—"],
-  ];
-  for (const [k, v] of rows) {
-    const dt = document.createElement("dt"); dt.textContent = k;
-    const dd = document.createElement("dd"); dd.textContent = v;
-    dd.style.wordBreak = "break-all";
-    kv.append(dt, dd);
-  }
+  // stanje ide u naslovnu traku peerova, kao i kod OpenVPN-a
+  const badge = $("wg-state");
+  if (!st.installed) setPill(badge, "crit", "paketi nedostaju");
+  else if (st.running) setPill(badge, "good", "aktivno");
+  else if (srv.configured) setPill(badge, "crit", "neaktivno");
+  else setPill(badge, "off", "nije postavljeno");
+  $("wg-sum").textContent = [
+    (srv.addresses || []).join(", ") || "bez adrese tunela",
+    srv.listen_port ? "UDP " + srv.listen_port : "",
+  ].filter(Boolean).join(" · ");
+  $("wg-pubkey").textContent = srv.public_key || "—";
 
   const enabledDB = ps.peers.filter((p) => p.enabled).length;
   let info = `U bazi aktivnih peerova: ${enabledDB} · na uređaju: ${st.uci_peers}`;
   if (enabledDB !== st.uci_peers) info += " — ⚠ razlika, potrebna primjena";
-  $("wg-sync-info").textContent = info;
+  setNote("wg-sync-info", info);
 
   wgAccessMode = st.access_mode || "full";
   $("wg-access").textContent = wgAccessMode === "full"
@@ -1500,6 +1510,38 @@ function tick(on, onclick, what) {
   if (onclick) b.onclick = onclick;
   else b.disabled = true;
   return b;
+}
+
+// Zone se boje kao u klasičnim firewall sučeljima: lokalna zelena, internet
+// crven, DMZ narančast, gosti plavi, VPN ljubičast. Nepoznata ostaje siva.
+const ZONE_CLASS = {
+  lan: "z-lan", wan: "z-wan", dmz: "z-dmz", gost: "z-gost", guest: "z-gost",
+  vpn: "z-vpn", sagwg: "z-vpn", sagovpn: "z-vpn",
+};
+function zoneCell(zone, ip, extra) {
+  const td = document.createElement("td");
+  const z = document.createElement("b");
+  z.className = "zone " + (ZONE_CLASS[String(zone).toLowerCase()] || "");
+  z.textContent = String(zone).toUpperCase();
+  td.append(z);
+  const rest = [ip, extra].filter(Boolean).join(" ");
+  if (rest) {
+    const s = document.createElement("span");
+    s.textContent = " " + rest;
+    td.append(s);
+  }
+  return td;
+}
+
+// akcija pravila: dopusti/odbij/odbaci — bojom, ne samo riječju
+function targetMark(target) {
+  const t = String(target || "").toUpperCase();
+  const s = document.createElement("b");
+  s.className = "zone " + (t === "ACCEPT" ? "z-lan" : t === "DROP" ? "z-wan" : "z-dmz");
+  s.textContent = t === "ACCEPT" ? "DOPUSTI" : t === "DROP" ? "ODBACI"
+    : t === "REJECT" ? "ODBIJ" : t;
+  s.title = t;
+  return s;
 }
 
 // legenda ispod tablice — objašnjava kvačicu i ikone radnji

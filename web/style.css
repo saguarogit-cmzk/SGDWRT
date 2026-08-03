@@ -136,7 +136,8 @@ header p{margin:0;color:var(--muted);font-size:11.5px}
 .card>.card-head>.head-tools{margin-left:auto;display:flex;align-items:center;gap:7px;
   flex-wrap:wrap;justify-content:flex-end}
 /* kratak sažetak stanja uz naslov ploče (npr. mreža tunela, broj spojenih) */
-.head-note{color:var(--muted);font-size:11.5px;white-space:nowrap}
+.head-note{color:var(--muted);font-size:11.5px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
 .chev{width:16px;height:16px;padding:0;border:1px solid var(--line);border-radius:2px;
   background:#fff;color:var(--ink);display:grid;place-items:center;font-size:10px;
   flex:0 0 auto;line-height:1}

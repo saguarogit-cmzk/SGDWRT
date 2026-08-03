@@ -205,9 +205,13 @@ kroz Saguaro nose ime korisnika koji ih je napravio.
 Dva ravnopravna VPN-a — WireGuard je brži i moderniji, OpenVPN kompatibilniji
 sa starijom opremom. Zajednički model:
 
-- Korisnik se dodaje s **adresom u tunelu**; gumb **Config** daje gotovu
-  datoteku (WireGuard conf / .ovpn s ugrađenim certifikatima) za njegovu
-  aplikaciju.
+- Korisnik se dodaje s **adresom u tunelu**. Uređaj sam ponudi **prvu slobodnu
+  adresu** (redom od `.2` naviše) i upiše je u dijalog — dovoljno ju je
+  potvrditi, a može se i prepisati. Zauzeta adresa se odbija uz poruku tko je
+  već koristi, a mrežna adresa, adresa uređaja u tunelu (`.1`) i broadcast se
+  ne mogu dodijeliti.
+- Gumb **Config** daje gotovu datoteku (WireGuard conf / .ovpn s ugrađenim
+  certifikatima) za korisnikovu aplikaciju.
 - Veze su **split tunnel**: kroz tunel ide samo promet prema lokalnoj mreži,
   na internet korisnik ide vlastitom vezom (za sav promet kroz tunel u
   WireGuardu upiši `0.0.0.0/0` u polje prometa).

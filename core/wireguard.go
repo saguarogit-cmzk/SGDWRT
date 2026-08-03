@@ -155,8 +155,14 @@ func (s *server) handleWGStatus(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		// prijedlog za sljedećeg peera: prva slobodna adresa u tunelu
+		nextIP := ""
+		if n := s.wgServerNet(); n != nil {
+			nextIP = nextFreeTunnelIP(n, s.usedTunnelIPs("wg_peers"))
+		}
 		srv = map[string]any{
 			"configured":         true,
+			"next_tunnel_ip":     nextIP,
 			"listen_port":        sectStr(sec, "listen_port"),
 			"addresses":          addrs,
 			"public_key":         pub,
@@ -450,9 +456,15 @@ func (s *server) validateWGPeer(w http.ResponseWriter, p *WGPeer) bool {
 		writeErr(w, http.StatusBadRequest, "neispravna adresa u tunelu")
 		return false
 	}
-	if n := s.wgServerNet(); n != nil && !n.Contains(ip) {
+	n := s.wgServerNet()
+	if n != nil && !n.Contains(ip) {
 		writeErr(w, http.StatusBadRequest,
 			"adresa "+p.TunnelIP+" nije u mreži tunela "+n.String())
+		return false
+	}
+	if tunnelIPReserved(n, ip) {
+		writeErr(w, http.StatusBadRequest, "adresa "+p.TunnelIP+
+			" je rezervirana (mrežna adresa, adresa uređaja u tunelu ili broadcast)")
 		return false
 	}
 	if p.Keepalive < 0 || p.Keepalive > 65535 {

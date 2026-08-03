@@ -767,6 +767,8 @@ function openRlDialog(f) {
 /* ---------- wireguard ---------- */
 
 let editPeerUUID = null;
+// prva slobodna adresa u tunelu — uređaj je izračuna, dijalog je ponudi
+let wgNextIP = "";
 let wgAccessMode = "full";
 let vpnRulesPeer = null;
 
@@ -794,6 +796,7 @@ async function loadWireguard() {
     f.elements.client_allowed_ips.value = srv.client_allowed_ips || "";
   }
   f.elements.allow_mgmt.checked = !!srv.allow_mgmt;
+  wgNextIP = srv.next_tunnel_ip || "";
 
   const kv = $("wg-kv");
   kv.replaceChildren();
@@ -924,7 +927,11 @@ function openPeerDialog(p) {
   editPeerUUID = p ? p.uuid : null;
   $("peer-dialog-title").textContent = editPeerUUID ? "Uredi peer" : "Novi peer";
   f.elements.name.value = p ? p.name : "";
-  f.elements.tunnel_ip.value = p ? p.tunnel_ip : "";
+  // novi peer dobiva ponuđenu prvu slobodnu adresu; može se prepisati
+  f.elements.tunnel_ip.value = p ? p.tunnel_ip : wgNextIP;
+  $("peer-ip-hint").textContent = p ? ""
+    : wgNextIP ? "Ponuđena je prva slobodna adresa u tunelu — potvrdi ili upiši drugu."
+      : "Mreža tunela još nije postavljena, pa nema prijedloga adrese.";
   f.elements.public_key.value = p ? p.public_key : "";
   // ključ je identitet peera — kod uređivanja se ne mijenja
   f.elements.public_key.disabled = !!editPeerUUID;
@@ -1202,6 +1209,8 @@ function renderMwRules() {
 let editOvcUUID = null;
 // traži li poslužitelj lozinku uz certifikat (određuje je li polje obavezno)
 let ovpnPassAuth = false;
+// prva slobodna adresa u tunelu — uređaj je izračuna, dijalog je ponudi
+let ovpnNextIP = "";
 let ovAccessMode = "full";
 
 async function loadOpenvpn() {
@@ -1221,6 +1230,7 @@ async function loadOpenvpn() {
   f.elements.allow_mgmt.checked = !!srv.allow_mgmt;
   f.elements.pass_auth.checked = !!srv.pass_auth;
   ovpnPassAuth = !!srv.pass_auth;
+  ovpnNextIP = srv.next_tunnel_ip || "";
 
   const kv = $("ov-kv");
   kv.replaceChildren();
@@ -1322,7 +1332,11 @@ function openOvcDialog(c) {
   $("ovc-dialog-title").textContent = editOvcUUID ? "Uredi klijenta" : "Novi klijent";
   f.elements.name.value = c ? c.name : "";
   f.elements.name.disabled = !!editOvcUUID; // naziv je CN certifikata
-  f.elements.tunnel_ip.value = c ? c.tunnel_ip : "";
+  // novi klijent dobiva ponuđenu prvu slobodnu adresu; može se prepisati
+  f.elements.tunnel_ip.value = c ? c.tunnel_ip : ovpnNextIP;
+  $("ovc-ip-hint").textContent = c ? ""
+    : ovpnNextIP ? "Ponuđena je prva slobodna adresa u tunelu — potvrdi ili upiši drugu."
+      : "Mreža tunela još nije postavljena, pa nema prijedloga adrese.";
   f.elements.notes.value = c ? c.notes || "" : "";
   f.elements.enabled.checked = c ? !!c.enabled : true;
   f.elements.password.value = "";

@@ -327,20 +327,23 @@ func (s *server) handleOvpnStatus(w http.ResponseWriter, r *http.Request) {
 
 	srv := map[string]any{"configured": false}
 	if sec, ok := cfg[ovpnUciSection]; ok {
-		network := ""
+		network, nextIP := "", ""
 		if n := s.ovpnServerNet(cfg); n != nil {
 			network = n.String()
+			// prijedlog za sljedećeg klijenta: prva slobodna adresa u tunelu
+			nextIP = nextFreeTunnelIP(n, s.usedTunnelIPs("ovpn_clients"))
 		}
 		srv = map[string]any{
-			"configured":    true,
-			"port":          sectStr(sec, "port"),
-			"proto":         sectStr(sec, "proto"),
-			"network":       network,
-			"endpoint_host": s.getSetting("ovpn_endpoint_host", ""),
-			"client_dns":    s.getSetting("ovpn_client_dns", ""),
-			"push_lan":      s.getSetting("ovpn_push_lan", "1") == "1",
-			"allow_mgmt":    s.getSetting("ovpn_allow_mgmt", "0") == "1",
-			"pass_auth":     s.ovpnPassAuth(),
+			"configured":     true,
+			"next_tunnel_ip": nextIP,
+			"port":           sectStr(sec, "port"),
+			"proto":          sectStr(sec, "proto"),
+			"network":        network,
+			"endpoint_host":  s.getSetting("ovpn_endpoint_host", ""),
+			"client_dns":     s.getSetting("ovpn_client_dns", ""),
+			"push_lan":       s.getSetting("ovpn_push_lan", "1") == "1",
+			"allow_mgmt":     s.getSetting("ovpn_allow_mgmt", "0") == "1",
+			"pass_auth":      s.ovpnPassAuth(),
 		}
 	}
 
@@ -726,7 +729,7 @@ func ovpnPassHash(w http.ResponseWriter, pw string) (string, bool) {
 	return h, true
 }
 
-func (s *server) validateOvpnClient(w http.ResponseWriter, c *OvpnClient) bool {
+func (s *server) validateOvpnClient(w http.ResponseWriter, c *OvpnClient, uuid string) bool {
 	c.Name = strings.ToLower(strings.TrimSpace(c.Name))
 	c.TunnelIP = strings.TrimSpace(c.TunnelIP)
 	if !reClientName.MatchString(c.Name) {
@@ -741,11 +744,26 @@ func (s *server) validateOvpnClient(w http.ResponseWriter, c *OvpnClient) bool {
 	}
 	cfg, err := uciGetConfig(context.Background(), "openvpn")
 	if err == nil {
-		if n := s.ovpnServerNet(cfg); n != nil && !n.Contains(ip) {
+		n := s.ovpnServerNet(cfg)
+		if n != nil && !n.Contains(ip) {
 			writeErr(w, http.StatusBadRequest,
 				"adresa "+c.TunnelIP+" nije u mreži tunela "+n.String())
 			return false
 		}
+		if tunnelIPReserved(n, ip) {
+			writeErr(w, http.StatusBadRequest, "adresa "+c.TunnelIP+
+				" je rezervirana (mrežna adresa, adresa uređaja u tunelu ili broadcast)")
+			return false
+		}
+	}
+	// dvije iste adrese u tunelu = promet jednog korisnika ide drugome
+	var other string
+	err = s.db.QueryRow(`SELECT name FROM ovpn_clients WHERE tunnel_ip = ? AND uuid <> ?`,
+		c.TunnelIP, uuid).Scan(&other)
+	if err == nil {
+		writeErr(w, http.StatusConflict,
+			"adresu "+c.TunnelIP+" već koristi klijent "+other)
+		return false
 	}
 	return true
 }
@@ -756,7 +774,7 @@ func (s *server) handleOvpnClientCreate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	c := &in.OvpnClient
-	if !s.validateOvpnClient(w, c) {
+	if !s.validateOvpnClient(w, c, "") {
 		return
 	}
 	if err := s.ensureOvpnPKI(); err != nil {
@@ -812,7 +830,7 @@ func (s *server) handleOvpnClientUpdate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	c.Name = name
-	if !s.validateOvpnClient(w, c) {
+	if !s.validateOvpnClient(w, c, uuid) {
 		return
 	}
 	passHash, okPw := ovpnPassHash(w, in.Password)

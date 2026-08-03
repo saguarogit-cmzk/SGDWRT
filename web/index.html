@@ -1075,7 +1075,10 @@
       <details class="help"><summary>WireGuard i OpenVPN — udaljeni pristup</summary><div>
         Oba VPN-a rade isto, razlika je u klijentima: WireGuard je brži i
         jednostavniji, OpenVPN radi i na starijoj opremi. Dodaš korisnika s
-        adresom u tunelu, gumb <b>Config</b> daje gotovu datoteku za njegovu
+        adresom u tunelu — uređaj sam ponudi prvu slobodnu (redom od
+        <code>.2</code> naviše), dovoljno ju je potvrditi. Zauzetu adresu ne
+        dopušta, a ne dopušta ni adresu samog uređaja u tunelu.
+        Gumb <b>Config</b> daje gotovu datoteku za njegovu
         aplikaciju. Veze su <b>split tunnel</b>: korisnik kroz tunel vidi samo
         lokalnu mrežu, na internet ide svojom vezom. <b>Pristup</b>: u
         ograničenom načinu svaki korisnik doseže samo ono što mu izričito
@@ -1658,6 +1661,7 @@
       <div class="form-grid">
         <label>Naziv (malim slovima)<input name="name" required placeholder="goran-laptop"></label>
         <label>Adresa u tunelu<input name="tunnel_ip" required placeholder="10.7.0.2"></label>
+        <p class="hint wide" id="ovc-ip-hint" style="grid-column:1/-1;margin:0"></p>
         <label class="wide">Lozinka korisnika
           <input name="password" type="password" autocomplete="new-password"
                  minlength="8" placeholder="najmanje 8 znakova"></label>
@@ -1823,6 +1827,7 @@
       <div class="form-grid">
         <label>Naziv<input name="name" required placeholder="goran-laptop"></label>
         <label>Adresa u tunelu<input name="tunnel_ip" required placeholder="10.6.0.2"></label>
+        <p class="hint" id="peer-ip-hint" style="grid-column:1/-1;margin:0"></p>
         <label class="wide" id="peer-pubkey-label">Javni ključ (prazno = generiraj par na uređaju)
           <input name="public_key" placeholder="ostavi prazno za automatski par"></label>
         <label>Keepalive (s)<input name="keepalive" placeholder="25"></label>

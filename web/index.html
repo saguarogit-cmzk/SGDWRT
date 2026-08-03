@@ -919,6 +919,46 @@
         </div>
       </form>
     </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>IPv6</h2>
+        <span class="st" id="v6-state">—</span>
+        <span class="head-note" id="v6-note">—</span>
+        <button id="v6-save" class="primary">Primijeni</button>
+      </div>
+      <p class="hint">Jedan prekidač pali IPv6 <b>na svim razinama odjednom</b>:
+        traženje prefiksa od pružatelja, raspodjelu svim mrežama (LAN i svaki
+        VLAN), objavu adresa uređajima i prikaz stanja. Nove mreže iz čarobnjaka
+        odmah dobivaju svoj /64.</p>
+      <div class="form-grid" style="max-width:900px">
+        <label class="wide">Način rada
+          <select id="v6-mode">
+            <option value="off">Isključen — mreže rade samo na IPv4 (zadano)</option>
+            <option value="auto">Automatski — prefiks se traži od pružatelja (DHCPv6-PD)</option>
+            <option value="manual">Ručno — koristi se vlastiti prefiks</option>
+          </select>
+        </label>
+        <label class="wide hidden" id="v6-prefix-row">Vlastiti prefiks (/48 ili /56)
+          <input id="v6-prefix" placeholder="fd12:3456:789a::/48"></label>
+      </div>
+      <p class="hint"><b>Pazi:</b> IPv6 nema NAT — svaki uređaj u mreži dobiva
+        javnu adresu i jedina zaštita je vatrozid. Zato ostaje na snazi
+        <b>potpuna zabrana dolaznog prometa</b>, a server se objavljuje
+        izričitim pravilom u modulu <i>Firewall rules</i> (obitelj: IPv6),
+        ne port forwardom — kod IPv6 se ne prevodi adresa, nego se promet
+        propušta do interne adrese.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Mreža</th><th>Prefiks (ip6assign)</th><th>Objava (RA)</th>
+            <th>DHCPv6</th><th>Adrese na uređaju</th>
+          </tr></thead>
+          <tbody id="v6-rows"></tbody>
+        </table>
+      </div>
+      <p class="hint" id="v6-result"></p>
+    </section>
   </div>
 
   <dialog id="host-dialog">
@@ -1067,6 +1107,13 @@
         zasebna mreža — za DMZ sa serverom, WiFi pristupnu točku ili
         gostinsku mrežu). Za klasičan DMZ odaberi pristup "samo internet", pa
         serveru objavi usluge port forwardima.
+        <br><br><b>IPv6</b>: jedan prekidač pali IPv6 na svim razinama —
+        prefiks od pružatelja (automatski) ili vlastiti (ručno), raspodjela
+        LAN-u i svakom VLAN-u, objava adresa uređajima. Kod IPv6 <b>nema
+        NAT-a</b>: svaki uređaj dobiva javnu adresu, pa je jedina zaštita
+        vatrozid — dolazni promet ostaje potpuno zabranjen, a server se
+        objavljuje pravilom u <i>Firewall rules</i> s obitelji IPv6, ne port
+        forwardom.
       </div></details>
 
       <details class="help"><summary>OSPF — automatska razmjena ruta</summary><div>
@@ -1854,6 +1901,13 @@
       <h2 id="rl-dialog-title">Pravilo</h2>
       <div class="form-grid">
         <label>Naziv<input name="name" required placeholder="blokiraj-goste-prema-lan"></label>
+        <label>Obitelj
+          <select name="family">
+            <option value="any">IPv4 i IPv6</option>
+            <option value="ipv4">samo IPv4</option>
+            <option value="ipv6">samo IPv6</option>
+          </select>
+        </label>
         <label>Protokol
           <select name="proto">
             <option value="tcp udp">TCP + UDP</option>

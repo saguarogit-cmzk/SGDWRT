@@ -43,6 +43,7 @@ func (s *server) watchdogLoop() {
 		s.checkFailedLogins(ctx)
 		if tick%5 == 0 { // svakih 5 minuta
 			s.checkPublicIP(ctx)
+			s.checkIPv6Prefix(ctx)
 		}
 		if tick%720 == 0 { // jednom dnevno
 			s.checkCerts()
@@ -217,6 +218,24 @@ func (s *server) checkPublicIP(ctx context.Context) {
 				"To znači da uređaj nema vlastitu javnu adresu: objavljeni "+
 				"serveri i spajanje na VPN izvana neće raditi.\n\n%s",
 			what, local, ip, fix))
+	}
+}
+
+// checkIPv6Prefix javlja promjenu prefiksa dobivenog od pružatelja. Kod IPv6
+// nema NAT-a, pa promjena prefiksa mijenja adrese *svih* uređaja u mreži —
+// pravila i DNS zapisi koji spominju stare adrese prestaju vrijediti.
+func (s *server) checkIPv6Prefix(ctx context.Context) {
+	_, prefix := v6Addresses(ctx)
+	if prefix == "" {
+		return // IPv6 nije uključen ili pružatelj nije dodijelio prefiks
+	}
+	s.setSetting("ipv6_prefix", prefix)
+	if changed, prev := s.alertValue("pubip6", prefix); changed && prev != "" {
+		s.alert("pubip", "info", fmt.Sprintf(
+			"IPv6 prefiks od pružatelja se promijenio: %s → %s.\n\n"+
+				"Kod IPv6 nema NAT-a, pa su se promijenile adrese svih uređaja u "+
+				"mreži. Provjeri pravila vatrozida i DNS zapise koji spominju "+
+				"stare adrese.", prev, prefix))
 	}
 }
 
@@ -499,6 +518,7 @@ func (s *server) handleWatchdogRun(w http.ResponseWriter, r *http.Request) {
 	s.checkResources(ctx)
 	s.checkVPNClients(ctx)
 	s.checkPublicIP(ctx)
+	s.checkIPv6Prefix(ctx)
 	s.checkCerts()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"checked":   true,

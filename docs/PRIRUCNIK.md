@@ -109,6 +109,31 @@ imena u adrese (DNS — npr. `google.com` → IP) i stvaran dohvat interneta.
     serverom, WiFi pristupna točka, gostinski port). Port mora biti slobodan;
     ako je član LAN bridgea, prvo ga treba osloboditi.
 
+### IPv6
+
+Jedan prekidač u modulu *Interfaces* pali IPv6 **na svim razinama odjednom** —
+traženje prefiksa, raspodjelu svim mrežama, objavu adresa uređajima i prikaz
+stanja. Nove mreže iz čarobnjaka odmah dobivaju svoj `/64`.
+
+| Način | Što radi |
+|---|---|
+| **Isključen** | mreže rade samo na IPv4; uređaj ne traži prefiks od pružatelja (zadano) |
+| **Automatski** | prefiks se traži od pružatelja (DHCPv6-PD) i sam se dijeli LAN-u i svakom VLAN-u |
+| **Ručno** | koristi se vlastiti prefiks (npr. ULA `fd…::/48`) — radi i kad pružatelj ne daje IPv6 |
+
+Uz svaku mrežu piše dodijeljeni prefiks, objavljuje li se (RA), radi li DHCPv6
+i koje adrese uređaj stvarno ima.
+
+> **Kod IPv6 nema NAT-a.** Svaki uređaj u mreži dobiva javnu adresu, pa je
+> jedina zaštita vatrozid. Zato ostaje **potpuna zabrana dolaznog prometa**, a
+> server se objavljuje **izričitim pravilom** u modulu *Firewall rules* s
+> obitelji **IPv6** i internom IPv6 adresom kao odredištem — ne port
+> forwardom, jer se kod IPv6 adresa ne prevodi nego se promet propušta.
+
+Svako pravilo vatrozida ima izbor obitelji: *IPv4 i IPv6* (zadano), *samo
+IPv4* ili *samo IPv6*. Promjenu prefiksa dobivenog od pružatelja uređaj javlja
+e-mailom — kod IPv6 se time mijenjaju adrese svih uređaja u mreži.
+
 ## Multi-WAN
 
 Za uređaje s više internet veza:

@@ -750,9 +750,82 @@ function openRlDialog(f) {
     if (el.type === "checkbox") el.checked = f ? !!f[el.name] : true;
     else el.value = f ? f[el.name] || "" : "";
   }
-  if (!f) { d.elements.proto.value = "tcp udp"; d.elements.target.value = "ACCEPT"; }
+  if (!f) {
+    d.elements.proto.value = "tcp udp";
+    d.elements.target.value = "ACCEPT";
+    d.elements.family.value = "any";
+  }
   $("rl-dialog").showModal();
 }
+
+/* ---------- IPv6 ---------- */
+
+const V6_LABEL = { off: "isključen", auto: "automatski", manual: "ručni prefiks" };
+
+async function loadIPv6() {
+  const x = await api("/ipv6");
+  $("v6-mode").value = x.mode;
+  $("v6-prefix").value = x.ula_prefix || "";
+  $("v6-prefix-row").classList.toggle("hidden", x.mode !== "manual");
+
+  const badge = $("v6-state");
+  if (x.mode === "off") setPill(badge, "off", "isključen");
+  else if (x.mode === "auto") setPill(badge,
+    x.wan6 && x.wan6.prefix ? "good" : "warn",
+    x.wan6 && x.wan6.prefix ? "radi" : "čeka prefiks od pružatelja");
+  else setPill(badge, "good", "vlastiti prefiks");
+  const parts = [];
+  if (x.mode === "auto" && x.wan6) parts.push(x.wan6.prefix
+    ? "prefiks od pružatelja: " + x.wan6.prefix
+    : "pružatelj još nije dodijelio prefiks");
+  if (x.mode === "manual") parts.push("prefiks: " + (x.ula_prefix || "—"));
+  parts.push(x.networks.length + " mreža");
+  setNote("v6-note", parts.join(" · "));
+
+  const tb = $("v6-rows");
+  tb.replaceChildren();
+  for (const n of x.networks) {
+    const tr = document.createElement("tr");
+    for (const v of [n.name, n.ip6assign ? "/" + n.ip6assign : "—"]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    for (const v of [n.ra, n.dhcpv6]) {
+      const td = document.createElement("td");
+      td.append(v === "server" ? stGood("objavljuje") : stOff(v || "isključeno"));
+      tr.append(td);
+    }
+    const tdA = document.createElement("td");
+    tdA.textContent = (n.addresses || []).join(", ") || "—";
+    tdA.style.wordBreak = "break-all";
+    tr.append(tdA);
+    tb.append(tr);
+  }
+}
+
+$("v6-mode").addEventListener("change", () => {
+  $("v6-prefix-row").classList.toggle("hidden", $("v6-mode").value !== "manual");
+});
+
+$("v6-save").addEventListener("click", async () => {
+  const mode = $("v6-mode").value;
+  if (mode !== "off" && !confirm(
+    "Uključivanje IPv6\n\n" +
+    "Svaki uređaj u mreži dobiva javnu IPv6 adresu — kod IPv6 nema NAT-a.\n" +
+    "Dolazni promet ostaje potpuno zabranjen; server se objavljuje izričitim " +
+    "pravilom (Firewall rules, obitelj IPv6).\n\nNastaviti?")) return;
+  $("v6-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/ipv6", "POST",
+      { mode, prefix: $("v6-prefix").value.trim() });
+    $("v6-result").textContent =
+      `Postavljeno: ${V6_LABEL[r.mode]} · mreža: ${r.networks} · backup: ${r.backup}`;
+    await loadIPv6();
+  } catch (e) {
+    $("v6-result").textContent = "Greška: " + (e.message || e);
+  }
+});
 
 /* ---------- wireguard ---------- */
 
@@ -1638,6 +1711,7 @@ async function loadNetwork() {
   const [x, ws, vl, dd] = await Promise.all([
     api("/network/lan"), api("/network/wans"), api("/network/vlans"),
     api("/ddns")]);
+  loadIPv6().catch(() => setPill($("v6-state"), "off", "nedostupno"));
 
   $("dd-enabled").checked = !!dd.enabled;
   const sel = $("dd-provider");
@@ -2479,7 +2553,7 @@ $("rl-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const f = ev.target;
   const body = {};
-  for (const n of ["name", "proto", "src_zone", "src_ip", "dest_zone",
+  for (const n of ["name", "family", "proto", "src_zone", "src_ip", "dest_zone",
     "dest_ip", "dest_port", "target", "start_time", "stop_time", "weekdays",
     "notes"]) body[n] = f.elements[n].value.trim();
   body.enabled = f.elements.enabled.checked;

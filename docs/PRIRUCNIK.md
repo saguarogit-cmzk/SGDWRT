@@ -55,6 +55,10 @@ nađeš i bez tražilice.
   konfiguracijske datoteke prije nego je promijeni (vidljivo u Backup modulu).
 - **Tuđe se ne dira**: Saguaro upravlja isključivo zapisima koje je sam stvorio
   (`sag_*` oznake). Ručne izmjene i LuCI postavke ostaju netaknute.
+- **Oznake u tablicama su svugdje iste**, a ispod svake tablice stoji legenda:
+  ✔ uključeno (gdje se smije, klik isključuje) · ☐ isključeno ·
+  ✎ uredi · 🗑 obriši · ⤓ preuzmi · 👁 prikaži · 🔑 pristup · ⛔ ukloni lozinku.
+  Puni naziv radnje piše u oblačiću kad se mišem zadrži nad ikonom.
 
 ## Instalacija na novi uređaj
 

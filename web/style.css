@@ -118,7 +118,7 @@ header p{margin:0;color:var(--muted);font-size:11.5px}
 .st{font-size:11px;font-weight:700;padding:1px 8px;border-radius:2px;
   border:1px solid var(--line);color:var(--muted);background:#f6f8f9;
   display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
-.st::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+/* pilula već nosi znak (✓ △ ✕ ○), pa joj ne treba još i točka */
 .st-good{color:var(--ok);border-color:#55871f55;background:#f0f6e6}
 .st-warn{color:var(--warn);border-color:#c07d1055;background:#fbf3e2}
 .st-crit{color:var(--crit);border-color:#c0392b55;background:#fbeeec}
@@ -133,7 +133,10 @@ header p{margin:0;color:var(--muted);font-size:11.5px}
   display:flex;align-items:center;gap:8px;padding:4px 9px;margin:0;min-height:27px}
 .card>.card-head>h2{margin:0;font-size:12.5px;font-weight:700;color:var(--ink);cursor:pointer}
 .card>.card-head>h2:hover{color:var(--green-d)}
-.card>.card-head>.head-tools{margin-left:auto;display:flex;align-items:center;gap:7px}
+.card>.card-head>.head-tools{margin-left:auto;display:flex;align-items:center;gap:7px;
+  flex-wrap:wrap;justify-content:flex-end}
+/* kratak sažetak stanja uz naslov ploče (npr. mreža tunela, broj spojenih) */
+.head-note{color:var(--muted);font-size:11.5px;white-space:nowrap}
 .chev{width:16px;height:16px;padding:0;border:1px solid var(--line);border-radius:2px;
   background:#fff;color:var(--ink);display:grid;place-items:center;font-size:10px;
   flex:0 0 auto;line-height:1}
@@ -185,7 +188,17 @@ tbody tr:nth-child(even){background:#fafbfc}
 tbody tr:hover{background:#f4f8ee}
 tbody tr:last-child td{border-bottom:0}
 td.num{text-align:right}
-.row-actions{display:inline-flex;gap:5px;white-space:nowrap}
+.row-actions{display:inline-flex;gap:4px;white-space:nowrap}
+/* radnja kao ikona — isti razmak u svakoj tablici */
+.btn-ico{width:22px;height:20px;padding:0;justify-content:center;font-size:12px;line-height:1}
+/* kvačica stanja u tablici */
+.tick{width:22px;height:20px;padding:0;justify-content:center;border:1px solid var(--line);
+  background:#fff;color:var(--faint);font-size:12px;line-height:1}
+.tick.on{color:var(--green-d);border-color:#6aa62a66;background:#f4f8ec}
+.tick:disabled{opacity:1;cursor:default}
+.tick:hover:not(:disabled){border-color:var(--green)}
+/* legenda ispod tablice */
+.legend{color:var(--muted);font-size:11px;margin:7px 2px 0}
 .badge{border:1px solid var(--line);border-radius:2px;padding:0 6px;color:var(--muted);
   background:#f4f6f8;font-size:10.5px;font-weight:600;margin-left:7px}
 
@@ -202,6 +215,12 @@ dialog h2{margin:0 0 12px;padding:5px 9px;font-size:12.5px;font-weight:700;color
   background:linear-gradient(var(--head1),var(--head2));
   border:1px solid var(--line);border-radius:2px}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* obrazac preko cijele širine ploče: četiri stupca na širem ekranu */
+@media(min-width:1250px){
+  .form-grid.wide-4{grid-template-columns:repeat(4,1fr);gap:10px 16px}
+  .form-grid.wide-4 label.check{grid-column:auto}
+}
+.form-grid.wide-4{max-width:1500px}
 .form-grid label{display:grid;gap:4px;color:var(--muted);font-size:11.5px;font-weight:600}
 .form-grid label.wide{grid-column:1 / -1}
 .form-grid label.check{grid-column:1 / -1;display:flex;flex-direction:row;align-items:center;

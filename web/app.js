@@ -56,6 +56,12 @@ const stGood = (t) => st("st-good", "✓", t);
 const stWarn = (t) => st("st-warn", "△", t);
 const stCrit = (t) => st("st-crit", "✕", t);
 const stOff  = (t) => st("st-off", "○", t);
+// setPill mijenja postojeću pilulu na mjestu, pa joj id i mjesto ostaju isti
+const pillIcon = { good: "✓", warn: "△", crit: "✕", off: "○" };
+function setPill(el, kind, text) {
+  el.className = "st st-" + kind;
+  el.textContent = (pillIcon[kind] || "") + " " + text;
+}
 
 /* ---------- render ---------- */
 
@@ -267,21 +273,13 @@ async function loadDevices() {
 
     const tdAct = document.createElement("td");
     tdAct.className = "row-actions";
-    const edit = document.createElement("button");
-    edit.className = "btn-sm";
-    edit.textContent = "Uredi";
-    edit.onclick = () => openDeviceDialog(d);
-    tdAct.append(edit);
+    tdAct.append(btnSm("Uredi", false, () => openDeviceDialog(d)));
     if (!d.is_self) {
-      const del = document.createElement("button");
-      del.className = "btn-sm danger";
-      del.textContent = "Obriši";
-      del.onclick = async () => {
+      tdAct.append(btnSm("Obriši", true, async () => {
         if (!confirm(`Obrisati uređaj "${d.hostname}"?`)) return;
         await api("/inventory/devices/" + d.uuid, "DELETE").catch(alertErr);
         loadDevices().catch(onTickError);
-      };
-      tdAct.append(del);
+      }));
     }
     tr.append(tdAct);
     tb.append(tr);
@@ -327,15 +325,9 @@ async function loadDhcp() {
       td.textContent = v;
       tr.append(td);
     }
+    // kvačica je i prikaz i prekidač — jedan stupac umjesto pilule i gumba
     const tdS = document.createElement("td");
-    tdS.append(sv.ignore ? stOff("Isključen") : stGood("Aktivan"));
-    tr.append(tdS);
-    const tdAct = document.createElement("td");
-    tdAct.className = "row-actions";
-    const tog = document.createElement("button");
-    tog.className = "btn-sm" + (sv.ignore ? "" : " danger");
-    tog.textContent = sv.ignore ? "Uključi" : "Isključi";
-    tog.onclick = async () => {
+    tdS.append(tick(!sv.ignore, async () => {
       const next = !!sv.ignore;
       const q = next
         ? `Uključiti DHCP pool na "${sv.interface}"?\n\nAko u toj mreži već ` +
@@ -351,9 +343,8 @@ async function loadDhcp() {
       } catch (e) {
         $("dhcp-toggle-result").textContent = "Greška: " + (e.message || e);
       }
-    };
-    tdAct.append(tog);
-    tr.append(tdAct);
+    }, "DHCP pool " + sv.interface));
+    tr.append(tdS);
     pb.append(tr);
   }
   $("dhcp-srv-hint").textContent = anyActive
@@ -383,7 +374,7 @@ async function loadDhcp() {
       tr.append(td);
     }
     const tdM = document.createElement("td");
-    tdM.append(h.managed ? stGood("Da") : stOff("Ne"));
+    tdM.append(tick(!!h.managed, null, "upravlja Saguaro"));
     tr.append(tdM);
     for (const v of [h.customer || "—", h.notes || "—"]) {
       const td = document.createElement("td");
@@ -392,19 +383,13 @@ async function loadDhcp() {
     }
     const tdAct = document.createElement("td");
     tdAct.className = "row-actions";
-    const edit = document.createElement("button");
-    edit.className = "btn-sm";
-    edit.textContent = "Uredi";
-    edit.onclick = () => openHostDialog(h);
-    const del = document.createElement("button");
-    del.className = "btn-sm danger";
-    del.textContent = "Obriši";
-    del.onclick = async () => {
-      if (!confirm(`Obrisati host "${h.hostname || h.mac}"?`)) return;
-      await api("/inventory/hosts/" + h.uuid, "DELETE").catch(alertErr);
-      loadDhcp().catch(alertErr);
-    };
-    tdAct.append(edit, del);
+    tdAct.append(
+      btnSm("Uredi", false, () => openHostDialog(h)),
+      btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati host "${h.hostname || h.mac}"?`)) return;
+        await api("/inventory/hosts/" + h.uuid, "DELETE").catch(alertErr);
+        loadDhcp().catch(alertErr);
+      }));
     tr.append(tdAct);
     tb.append(tr);
   }
@@ -423,13 +408,9 @@ async function loadDhcp() {
     const tdAct = document.createElement("td");
     tdAct.className = "row-actions";
     if (!knownMacs.has(l.mac)) {
-      const add = document.createElement("button");
-      add.className = "btn-sm";
-      add.textContent = "U rezervacije";
-      add.onclick = () => openHostDialog({
+      tdAct.append(btnSm("U rezervacije", false, () => openHostDialog({
         hostname: l.hostname, mac: l.mac, ipv4: l.ip, managed: true,
-      });
-      tdAct.append(add);
+      })));
     }
     tr.append(tdAct);
     lb.append(tr);
@@ -475,7 +456,7 @@ async function loadDns() {
     tdI.textContent = x.ip;
     tr.append(tdI);
     const tdE = document.createElement("td");
-    tdE.append(x.enabled ? stGood("Da") : stOff("Ne"));
+    tdE.append(tick(!!x.enabled, null));
     tr.append(tdE);
     const tdN = document.createElement("td");
     tdN.textContent = x.notes || "—";
@@ -533,7 +514,7 @@ async function loadDns() {
       tr.append(td);
     }
     const tdE = document.createElement("td");
-    tdE.append(rec.enabled ? stGood("Da") : stOff("Ne"));
+    tdE.append(tick(!!rec.enabled, null, "DNS zapis"));
     tr.append(tdE);
     const tdN = document.createElement("td");
     tdN.textContent = rec.notes || "—";
@@ -541,19 +522,13 @@ async function loadDns() {
 
     const tdAct = document.createElement("td");
     tdAct.className = "row-actions";
-    const edit = document.createElement("button");
-    edit.className = "btn-sm";
-    edit.textContent = "Uredi";
-    edit.onclick = () => openRecDialog(rec);
-    const del = document.createElement("button");
-    del.className = "btn-sm danger";
-    del.textContent = "Obriši";
-    del.onclick = async () => {
-      if (!confirm(`Obrisati DNS zapis "${rec.name}"?`)) return;
-      await api("/dns/records/" + rec.uuid, "DELETE").catch(alertErr);
-      loadDns().catch(alertErr);
-    };
-    tdAct.append(edit, del);
+    tdAct.append(
+      btnSm("Uredi", false, () => openRecDialog(rec)),
+      btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati DNS zapis "${rec.name}"?`)) return;
+        await api("/dns/records/" + rec.uuid, "DELETE").catch(alertErr);
+        loadDns().catch(alertErr);
+      }));
     tr.append(tdAct);
     tb.append(tr);
   }
@@ -639,7 +614,7 @@ async function loadFirewall() {
       tr.append(td);
     }
     const tdE = document.createElement("td");
-    tdE.append(n.enabled ? stGood("Da") : stOff("Ne"));
+    tdE.append(tick(!!n.enabled, null));
     tr.append(tdE);
     const tdAct = document.createElement("td");
     tdAct.className = "row-actions";
@@ -691,7 +666,7 @@ async function loadFirewall() {
       tr.append(td);
     }
     const tdE = document.createElement("td");
-    tdE.append(f.enabled ? stGood("Da") : stOff("Ne"));
+    tdE.append(tick(!!f.enabled, null));
     tr.append(tdE);
     const tdN = document.createElement("td");
     tdN.textContent = f.notes || "—";
@@ -722,7 +697,7 @@ async function loadFirewall() {
       tr.append(td);
     }
     const tdE = document.createElement("td");
-    tdE.append(f.enabled ? stGood("Da") : stOff("Ne"));
+    tdE.append(tick(!!f.enabled, null));
     tr.append(tdE);
     const tdAct = document.createElement("td");
     tdAct.className = "row-actions";
@@ -837,7 +812,13 @@ async function loadWireguard() {
       tr.append(td);
     }
     const tdE = document.createElement("td");
-    tdE.append(p.enabled ? stGood("Da") : stOff("Ne"));
+    tdE.append(tick(!!p.enabled, async () => {
+      await api("/wireguard/peers/" + p.uuid, "PUT", {
+        name: p.name, tunnel_ip: p.tunnel_ip, keepalive: p.keepalive,
+        enabled: !p.enabled, notes: p.notes,
+      }).catch(alertErr);
+      loadWireguard().catch(alertErr);
+    }, "peer " + p.name));
     tr.append(tdE);
     const tdH = document.createElement("td");
     tdH.textContent = stat ? fmtAgo(stat.latest_handshake) : "—";
@@ -865,23 +846,14 @@ async function loadWireguard() {
           } catch (e) { alertErr(e); }
         }));
     }
-    const acc = document.createElement("button");
-    acc.className = "btn-sm";
-    acc.textContent = "Pristup";
-    acc.onclick = () => openVpnRulesDialog(p);
-    const edit = document.createElement("button");
-    edit.className = "btn-sm";
-    edit.textContent = "Uredi";
-    edit.onclick = () => openPeerDialog(p);
-    const del = document.createElement("button");
-    del.className = "btn-sm danger";
-    del.textContent = "Obriši";
-    del.onclick = async () => {
-      if (!confirm(`Obrisati peer "${p.name}"? Njegov ključ se ne može vratiti.`)) return;
-      await api("/wireguard/peers/" + p.uuid, "DELETE").catch(alertErr);
-      loadWireguard().catch(alertErr);
-    };
-    tdAct.append(acc, edit, del);
+    tdAct.append(
+      btnSm("Pristup", false, () => openVpnRulesDialog(p)),
+      btnSm("Uredi", false, () => openPeerDialog(p)),
+      btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati peer "${p.name}"? Njegov ključ se ne može vratiti.`)) return;
+        await api("/wireguard/peers/" + p.uuid, "DELETE").catch(alertErr);
+        loadWireguard().catch(alertErr);
+      }));
     tr.append(tdAct);
     tb.append(tr);
   }
@@ -1232,19 +1204,19 @@ async function loadOpenvpn() {
   ovpnPassAuth = !!srv.pass_auth;
   ovpnNextIP = srv.next_tunnel_ip || "";
 
-  const kv = $("ov-kv");
-  kv.replaceChildren();
-  const rows = [
-    ["Paket", st.installed ? "instaliran" : "nedostaje (openvpn-openssl)"],
-    ["Poslužitelj", st.running ? "radi" : srv.configured ? "ne radi" : "nije postavljen"],
-    ["Mreža tunela", srv.network || "—"],
-    ["Trenutno spojeno", String((st.connected || []).length)],
-  ];
-  for (const [k, v] of rows) {
-    const dt = document.createElement("dt"); dt.textContent = k;
-    const dd = document.createElement("dd"); dd.textContent = v;
-    kv.append(dt, dd);
-  }
+  // stanje stoji u naslovnoj traci klijenata — bez zasebne ploče za koju se
+  // mora skrolati gore
+  const badge = $("ov-state");
+  const nConn = (st.connected || []).length;
+  if (!st.installed) setPill(badge, "crit", "paket nedostaje");
+  else if (st.running) setPill(badge, "good", "radi");
+  else if (srv.configured) setPill(badge, "crit", "ne radi");
+  else setPill(badge, "off", "nije postavljen");
+  $("ov-sum").textContent = [
+    srv.network || "bez mreže tunela",
+    srv.port ? "UDP " + srv.port : "",
+    "spojeno " + nConn,
+  ].filter(Boolean).join(" · ");
 
   ovAccessMode = st.access_mode || "full";
   $("ov-access").textContent = ovAccessMode === "full"
@@ -1275,7 +1247,12 @@ async function loadOpenvpn() {
     else tdP.append(stOff("Nema"));
     tr.append(tdP);
     const tdE = document.createElement("td");
-    tdE.append(c.enabled ? stGood("Da") : stOff("Ne"));
+    tdE.append(tick(!!c.enabled, async () => {
+      await api("/openvpn/clients/" + c.uuid, "PUT", {
+        tunnel_ip: c.tunnel_ip, enabled: !c.enabled, notes: c.notes,
+      }).catch(alertErr);
+      loadOpenvpn().catch(alertErr);
+    }, "klijent " + c.name));
     tr.append(tdE);
     const tdC = document.createElement("td");
     tdC.append(live ? stGood("Spojen (" + live.real_addr.split(":")[0] + ")")
@@ -1302,9 +1279,7 @@ async function loadOpenvpn() {
         } catch (e) { alertErr(e); }
       }),
       ...(c.has_pass ? [btnSm("Ukloni lozinku", true, async () => {
-        if (!confirm(`Ukloniti lozinku korisnika ""?
-
-` +
+        if (!confirm(`Ukloniti lozinku korisnika "${c.name}"?\n\n` +
           "Ako poslužitelj traži lozinku, taj se korisnik više neće moći " +
           "prijaviti dok mu se ne postavi nova.")) return;
         await api("/openvpn/clients/" + c.uuid, "PUT", {
@@ -1478,12 +1453,64 @@ function backupRow(b, actions) {
   return tr;
 }
 
+/* ---------- radnje u tablicama ----------
+   Iste oznake u svim tablicama: radnja je ikona (puni naziv ostaje u
+   tooltipu), a ispod tablice stoji legenda. Tako red stane u jedan pogled
+   umjesto da ga zauzmu četiri gumba s tekstom. */
+
+const ROW_ICONS = {
+  "Uredi": "✎",
+  "Obriši": "🗑",
+  "Ukloni": "🗑",
+  "Pristup": "🔑",
+  "Ukloni lozinku": "⛔",
+  "Preuzmi": "⤓",
+  "Preuzmi .ovpn": "⤓",
+  "Preuzmi .conf": "⤓",
+  "Prikaži": "👁",
+  "Vrati": "↺",
+  "U rezervacije": "📌",
+};
+
 function btnSm(label, danger, onclick) {
   const b = document.createElement("button");
   b.className = "btn-sm" + (danger ? " danger" : "");
-  b.textContent = label;
+  const icon = ROW_ICONS[label];
+  if (icon) {
+    b.classList.add("btn-ico");
+    b.textContent = icon;
+    b.title = label;
+    b.setAttribute("aria-label", label);
+  } else {
+    b.textContent = label;
+  }
   b.onclick = onclick;
   return b;
+}
+
+// tick je kvačica stanja: zelena ✔ = uključeno, siva ☐ = isključeno.
+// Uz onclick se klikom mijenja stanje (kao u klasičnim firewall sučeljima).
+function tick(on, onclick, what) {
+  const b = document.createElement("button");
+  b.className = "tick" + (on ? " on" : "");
+  b.textContent = on ? "✔" : "☐";
+  b.title = (on ? "Uključeno" : "Isključeno") +
+    (onclick ? (on ? " — klik isključuje" : " — klik uključuje") : "") +
+    (what ? " (" + what + ")" : "");
+  if (onclick) b.onclick = onclick;
+  else b.disabled = true;
+  return b;
+}
+
+// legenda ispod tablice — objašnjava kvačicu i ikone radnji
+function tableLegend(labels, withTick) {
+  const p = document.createElement("p");
+  p.className = "legend";
+  const parts = [];
+  if (withTick) parts.push("✔ uključeno (klik isključuje)", "☐ isključeno (klik uključuje)");
+  for (const l of labels) parts.push((ROW_ICONS[l] || "") + " " + l.toLowerCase());
+  p.textContent = parts.join("   ·   ");
+  return p;
 }
 
 async function loadBackup() {
@@ -1806,10 +1833,17 @@ function upgradePanels() {
       bar.append(head);
       head = bar;
     } else {                                     // postojeći alati desno od naslova
+      // pilule stanja i kratki sažetak ostaju uz naslov, gumbi idu desno
       const tools = document.createElement("div");
       tools.className = "head-tools";
       const h2 = head.querySelector("h2");
-      while (h2 && h2.nextElementSibling) tools.append(h2.nextElementSibling);
+      let el = h2 && h2.nextElementSibling;
+      while (el) {
+        const next = el.nextElementSibling;
+        if (!el.classList.contains("st") && !el.classList.contains("head-note"))
+          tools.append(el);
+        el = next;
+      }
       if (tools.childElementCount) head.append(tools);
     }
     const body = document.createElement("div");

@@ -154,6 +154,7 @@
           <tbody id="dev-rows"></tbody>
         </table>
       </div>
+      <p class="legend">✎ uredi · 🗑 obriši</p>
     </section>
   </div>
 
@@ -164,7 +165,7 @@
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th>Sučelje</th><th>Raspon</th><th>Lease</th><th>Stanje</th><th></th>
+              <th>Sučelje</th><th>Raspon</th><th>Lease</th><th style="width:70px">Uključen</th>
             </tr></thead>
             <tbody id="dhcp-pool-rows"></tbody>
           </table>
@@ -195,6 +196,7 @@
           <tbody id="host-rows"></tbody>
         </table>
       </div>
+      <p class="legend">✔ upravlja Saguaro · ☐ ne upravlja · ✎ uredi · 🗑 obriši</p>
     </section>
     <section class="card">
       <h2>Aktivni leaseovi</h2>
@@ -265,6 +267,7 @@
           <tbody id="rec-rows"></tbody>
         </table>
       </div>
+      <p class="legend">✔ uključeno · ☐ isključeno · ✎ uredi · 🗑 obriši</p>
     </section>
   </div>
 
@@ -321,6 +324,7 @@
           <tbody id="al-rows"></tbody>
         </table>
       </div>
+      <p class="legend">✎ uredi · 🗑 obriši</p>
     </section>
   </div>
 
@@ -346,6 +350,7 @@
           <tbody id="pf-rows"></tbody>
         </table>
       </div>
+      <p class="legend">✔ uključeno · ☐ isključeno · ✎ uredi · 🗑 obriši</p>
     </section>
     <section class="grid-2">
       <div class="card">
@@ -445,6 +450,7 @@
           <tbody id="peer-rows"></tbody>
         </table>
       </div>
+      <p class="legend">✔ uključeno (klik isključuje) · ☐ isključeno (klik uključuje) · ⤓ preuzmi config · 👁 prikaži config · 🔑 pristup · ✎ uredi · 🗑 obriši</p>
     </section>
   </div>
 
@@ -677,54 +683,16 @@
   </div>
 
   <div class="view hidden" id="view-openvpn">
-    <section class="grid-2">
-      <div class="card">
-        <h2>OpenVPN poslužitelj</h2>
-        <form id="ov-form">
-          <div class="form-grid">
-            <label>UDP port<input name="port" placeholder="1194"></label>
-            <label>Mreža tunela (CIDR)<input name="network" placeholder="10.7.0.0/24"></label>
-            <label>Endpoint za klijente<input name="endpoint_host" placeholder="vpn.tvrtka.hr ili javni IP"></label>
-            <label>DNS za klijente<input name="client_dns" placeholder="192.168.50.222"></label>
-            <label class="check"><input type="checkbox" name="push_lan" checked>
-              Klijentima pošalji rutu prema LAN mreži</label>
-            <label class="check"><input type="checkbox" name="allow_mgmt">
-              Dopusti VPN korisnicima pristup upravljanju uređajem</label>
-            <label class="check"><input type="checkbox" name="pass_auth">
-              Uz certifikat traži i korisničko ime i lozinku</label>
-          </div>
-          <p class="hint">Certifikat je „nešto što imaš" — tko dobije
-            <code>.ovpn</code> datoteku, spojio se. Lozinka dodaje „nešto što
-            znaš", pa ukradena datoteka više nije dovoljna. Kad je uključeno,
-            svaki korisnik mora imati postavljenu lozinku; oni bez nje se ne
-            mogu prijaviti. Korisničko ime je naziv klijenta.</p>
-          <p class="hint">Certifikate (CA, server, klijenti) uređaj izdaje sam —
-            ništa se ne unosi ručno. Veza je <b>split tunnel</b>: korisnici kroz
-            tunel dosežu samo lokalnu mrežu, a na internet idu preko vlastite veze.</p>
-          <p class="hint">Prema samom uređaju VPN korisnici zadano smiju jedino
-            DNS i ping. Brisanjem klijenta njegov se certifikat <b>trajno
-            opoziva</b> (CRL) — ne vrijedi ni ako se stara datoteka vrati iz backupa.</p>
-          <p class="hint" id="ov-server-result"></p>
-          <div class="form-actions" style="justify-content:flex-start">
-            <button type="submit" class="primary">Spremi postavke</button>
-          </div>
-        </form>
-      </div>
-      <div class="card">
-        <h2>Stanje i primjena</h2>
-        <dl class="kv" id="ov-kv"></dl>
-        <div class="form-actions" style="justify-content:flex-start">
-          <button id="ov-apply" class="primary">Primijeni klijente</button>
-          <button id="ov-access" class="ghost">—</button>
-        </div>
-        <p class="hint" id="ov-access-hint"></p>
-        <p class="hint" id="ov-apply-result"></p>
-      </div>
-    </section>
+    <!-- Klijenti su svakodnevni posao, pa su na vrhu; stanje i primjena su
+         u naslovnoj traci te iste ploče da se ne skače gore-dolje. -->
     <section class="card">
       <div class="card-head">
         <h2>Klijenti</h2>
+        <span class="st" id="ov-state">—</span>
+        <span class="head-note" id="ov-sum">—</span>
         <button id="ovc-add" class="primary">Dodaj klijenta</button>
+        <button id="ov-apply" class="primary">Primijeni klijente</button>
+        <button id="ov-access" class="ghost">—</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -735,8 +703,49 @@
           <tbody id="ovc-rows"></tbody>
         </table>
       </div>
+      <p class="legend">✔ uključeno (klik isključuje) · ☐ isključeno (klik uključuje) · ⤓ preuzmi .ovpn · 👁 prikaži config · ⛔ ukloni lozinku · 🔑 pristup · ✎ uredi · 🗑 obriši</p>
+      <p class="hint" id="ov-apply-result"></p>
+      <p class="hint" id="ov-access-hint"></p>
       <p class="hint">Isključen klijent gubi mogućnost spajanja nakon
-        primjene (poslužitelj prihvaća samo klijente s dodijeljenom adresom).</p>
+        primjene (poslužitelj prihvaća samo klijente s dodijeljenom adresom).
+        Promjene klijenata vrijede tek nakon <b>Primijeni klijente</b>.</p>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Postavke poslužitelja</h2>
+      </div>
+      <form id="ov-form">
+        <div class="form-grid wide-4">
+          <label>UDP port<input name="port" placeholder="1194"></label>
+          <label>Mreža tunela (CIDR)<input name="network" placeholder="10.7.0.0/24"></label>
+          <label>Endpoint za klijente<input name="endpoint_host" placeholder="vpn.tvrtka.hr ili javni IP"></label>
+          <label>DNS za klijente<input name="client_dns" placeholder="192.168.50.222"></label>
+          <label class="check"><input type="checkbox" name="push_lan" checked>
+            Klijentima pošalji rutu prema LAN mreži</label>
+          <label class="check"><input type="checkbox" name="allow_mgmt">
+            Dopusti VPN korisnicima pristup upravljanju uređajem</label>
+          <label class="check"><input type="checkbox" name="pass_auth">
+            Uz certifikat traži i korisničko ime i lozinku</label>
+        </div>
+        <p class="hint" id="ov-server-result"></p>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button type="submit" class="primary">Spremi postavke</button>
+        </div>
+        <details class="help"><summary>Kako ovo radi — certifikati, lozinke i pristup</summary><div>
+          Certifikat je „nešto što imaš" — tko dobije <code>.ovpn</code>
+          datoteku, spojio se. Lozinka dodaje „nešto što znaš", pa ukradena
+          datoteka više nije dovoljna. Kad je traženje lozinke uključeno, svaki
+          korisnik mora imati postavljenu lozinku; oni bez nje se ne mogu
+          prijaviti. Korisničko ime je naziv klijenta.
+          <br><br>Certifikate (CA, server, klijenti) uređaj izdaje sam — ništa
+          se ne unosi ručno. Veza je <b>split tunnel</b>: korisnici kroz tunel
+          dosežu samo lokalnu mrežu, a na internet idu preko vlastite veze.
+          <br><br>Prema samom uređaju VPN korisnici zadano smiju jedino DNS i
+          ping. Brisanjem klijenta njegov se certifikat <b>trajno opoziva</b>
+          (CRL) — ne vrijedi ni ako se stara datoteka vrati iz backupa.
+        </div></details>
+      </form>
     </section>
   </div>
 

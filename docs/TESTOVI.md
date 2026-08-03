@@ -162,3 +162,28 @@ tijela je prošao i dobio odgovor — nedostaje samo javno dostupno ime.
 Za provjeru na lokaciji s javnom adresom: dodaj stranicu s **probnim
 poslužiteljem (staging)**, zatraži certifikat i pogledaj ispis. Kad staging
 prođe, isključi ga i zatraži pravi.
+
+## Nadogradnja OpenWrt-a 25.12.4 → 25.12.5 (03.08.2026.)
+
+Provedena stvarna nadogradnja kroz sučelje, na uređaju u pogonu.
+
+| Korak | Ishod |
+|---|---|
+| Slika naručena s popisom paketa uređaja (178) | **radi** — servis vratio `ext4-combined` (BIOS), 30,6 MB |
+| SHA256 pri preuzimanju i prije upisa | **radi** — `sha256sum` na uređaju odgovara otisku servisa |
+| Puni backup prije upisa | **radi** — arhiva napravljena automatski i preuzeta na radnu stanicu |
+| `sysupgrade` odvojen od HTTP zahtjeva | **radi** — odgovor je stigao, uređaj se digao za ~1 min |
+| Verzija nakon dizanja | **25.12.5** (r33051-f5dae5ece4), jezgra 6.12.94 |
+| Paketi | **svih 178 preživjelo** — provjera „nedostaje" prazna |
+| Konfiguracija (firewall, VPN, DHCP, banIP, detekcija skeniranja) | **preživjela** — OpenVPN klijent, banIP i 7 `sag_scan` pravila na mjestu |
+| Saguaro baza i certifikati | **preživjeli** |
+
+**Dva propusta koja je ova nadogradnja otkrila** (oba popravljena u v0.29.2):
+
+1. Keep lista nije čuvala `/etc/rc.d/S95saguaro-core`, pa se servis nakon
+   dizanja **nije sam pokrenuo** — sučelje je bilo nedostupno dok se ne pokrene
+   ručno (SSH je radio cijelo vrijeme).
+2. Keep lista je nabrajala pojedine mape, pa su **arhive backupa i skripta
+   samoprovjere nestale**. Sad se čuva cijeli `/opt/saguaro`.
+
+Nakon popravka keep liste i nove arhive: samoprovjera **41 prošlo / 0 palo**.

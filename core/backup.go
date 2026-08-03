@@ -568,11 +568,24 @@ const keepListFile = "/lib/upgrade/keep.d/saguaro"
 const defaultEtcDir = "/opt/saguaro/etc"
 const defaultDataDir = "/opt/saguaro/data"
 
+// ensureKeepList popisuje sve što mora preživjeti nadogradnju firmwarea.
+// Uz konfiguraciju i bazu tu su i sam program, sučelje i init skripta —
+// bez njih bi se uređaj nakon nadogradnje digao bez Saguara, a upravljanje
+// bi ostalo samo na SSH-u.
 func ensureKeepList(etcDir, dataDir string) error {
+	// cijeli direktorij, a ne pojedine mape: uz program, sučelje, bazu i
+	// certifikate tu su i arhive backupa i samoprovjera — sve to mora ostati
+	// upravo kad se dira firmware
+	root := filepath.Dir(etcDir)
+	if filepath.Dir(dataDir) != root {
+		root = etcDir + "\n" + dataDir
+	}
 	body := "# Saguaro — datoteke koje moraju preživjeti nadogradnju firmwarea\n" +
 		sysctlFile + "\n" +
-		etcDir + "\n" +
-		dataDir + "\n"
+		root + "\n" +
+		"/etc/init.d/saguaro-core\n" +
+		// bez ove poveznice servis se nakon nadogradnje ne bi sam pokrenuo
+		"/etc/rc.d/S95saguaro-core\n"
 	if old, err := os.ReadFile(keepListFile); err == nil && string(old) == body {
 		return nil
 	}

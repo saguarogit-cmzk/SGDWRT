@@ -1360,6 +1360,11 @@ let upHasStaged = false;
 let upHasLatest = false;
 
 async function loadUpdate() {
+  // stanje OpenWrt-a se dohvaća usporedo; provjera izdanja ide preko interneta
+  // pa ne smije zadržavati prikaz Saguaro dijela
+  loadOpenWrt().catch(() => {
+    setPill($("ow-state"), "off", "nedostupno");
+  });
   const x = await api("/update/status");
   const kv = $("up-kv");
   kv.replaceChildren();
@@ -1787,7 +1792,7 @@ const MODULES = {
   openvpn:   ["OpenVPN", "Udaljeni pristup — klasični VPN s certifikatima", () => loadOpenvpn()],
   devices:   ["Inventory", "Inventar opreme — ovaj uređaj i susjedni", () => loadDevices()],
   backup:    ["Backup", "Sigurnosne kopije uređaja i vraćanje", () => loadBackup()],
-  update:    ["Updates", "Nadogradnja Saguaro sustava uz automatski backup", () => loadUpdate()],
+  update:    ["Updates", "Nadogradnja Saguara i sustava uređaja (OpenWrt)", () => loadUpdate()],
   settings:  ["Settings", "Lozinke, sesije, vrijeme i API token", () => loadSettings()],
   logs:      ["System log", "Sustavski log, trajno spremanje i slanje na poslužitelj", () => loadLogsView()],
   help:      ["Help", "Upute za rad — kako koristiti svaki modul", () => null],
@@ -3097,6 +3102,188 @@ $("sl-save").addEventListener("click", async () => {
       ? "Logovi se šalju. Backup: " + r.backup : "Slanje logova isključeno.";
   } catch (e) {
     $("sl-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+/* ---------- nadogradnja OpenWrt-a ---------- */
+
+// Zadnji odgovor uređaja o stanju sustava; drži i podatke o pripremljenoj
+// slici, pa gumbi znaju smije li se ići dalje.
+let owStatus = {};
+
+async function loadOpenWrt() {
+  const x = await api("/openwrt/status");
+  owStatus = x;
+  const kv = $("ow-kv");
+  kv.replaceChildren();
+  const rows = [
+    ["Instalirano", `OpenWrt ${x.version} (${x.revision})`],
+    ["Platforma", `${x.target} · ${x.rootfs} · pokretanje ${x.boot_mode}`],
+    ["Paketa na uređaju", String(x.packages)],
+    ["Zadnji backup", x.last_backup
+      ? `${x.last_backup} (prije ${x.last_backup_age_min} min)` : "nema"],
+  ];
+  if (x.candidate) rows.splice(1, 0, ["Dostupno izdanje", x.candidate]);
+  if (x.staged) {
+    rows.push(["Pripremljena slika",
+      `${x.staged.image || "(vlastita)"} · ${fmtBytes(x.staged.size)}`]);
+  }
+  for (const [k, v] of rows) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    kv.append(dt, dd);
+  }
+
+  const badge = $("ow-state");
+  if (x.latest_error) setPill(badge, "warn", "nema pristupa servisu");
+  else if (x.candidate) setPill(badge, "warn", "dostupno " + x.candidate);
+  else setPill(badge, "good", "najnovije u grani");
+  setNote("ow-note", x.latest_error || (x.latest
+    ? "grane: " + x.latest.join(", ") : ""));
+
+  $("ow-confirm").placeholder = x.hostname || "ime uređaja";
+  $("ow-fetch").disabled = !owBuilt;
+  $("ow-flash").disabled = !x.staged;
+
+  // provjera paketa nakon nadogradnje
+  try {
+    const p = await api("/openwrt/packages");
+    if (p.checked && p.missing && p.missing.length) {
+      $("ow-pkg-note").textContent =
+        `Nakon nadogradnje nedostaje ${p.missing.length} paketa: ` +
+        p.missing.slice(0, 12).join(", ") + (p.missing.length > 12 ? "…" : "");
+      $("ow-pkg-actions").classList.remove("hidden");
+    } else {
+      $("ow-pkg-note").textContent = p.checked
+        ? "Svi paketi s popisa prije nadogradnje su na uređaju." : "";
+      $("ow-pkg-actions").classList.add("hidden");
+    }
+  } catch { /* popis nije obavezan */ }
+}
+
+let owBuilt = null; // {url, sha256, image, version}
+
+$("ow-refresh").addEventListener("click", () => loadOpenWrt().catch(alertErr));
+
+$("ow-build").addEventListener("click", async () => {
+  $("ow-build-result").textContent =
+    "Naručujem sliku s popisom paketa ovog uređaja… (prvi put zna trajati par minuta)";
+  try {
+    let r = await api("/openwrt/build", "POST", {});
+    // servis gradi u pozadini — pitaj ponovno dok ne bude gotovo
+    for (let i = 0; r.state === "building" && i < 30; i++) {
+      $("ow-build-result").textContent =
+        `Servis gradi sliku (${r.status || "u tijeku"})… pokušaj ${i + 1}/30`;
+      await new Promise((res) => setTimeout(res, 10000));
+      r = await api("/openwrt/build", "POST", {});
+    }
+    if (r.state !== "ready") {
+      $("ow-build-result").textContent =
+        "Slika još nije gotova — pokušaj ponovno za koju minutu.";
+      return;
+    }
+    owBuilt = r;
+    $("ow-fetch").disabled = false;
+    $("ow-build-result").textContent =
+      `Slika je spremna: ${r.image} (otisak ${r.sha256.slice(0, 16)}…). ` +
+      "Sljedeći korak: preuzmi je na uređaj.";
+  } catch (e) {
+    $("ow-build-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("ow-fetch").addEventListener("click", async () => {
+  if (!owBuilt) return;
+  $("ow-build-result").textContent = "Preuzimam sliku na uređaj…";
+  try {
+    const r = await api("/openwrt/fetch", "POST", owBuilt);
+    $("ow-build-result").textContent =
+      `Slika je na uređaju (${fmtBytes(r.size_bytes)}), otisak provjeren.`;
+    await loadOpenWrt();
+  } catch (e) {
+    $("ow-build-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("ow-upload").addEventListener("click", async () => {
+  const f = $("ow-file").files[0];
+  if (!f) { alert("Odaberi .img.gz sliku."); return; }
+  $("ow-build-result").textContent = "Učitavam sliku…";
+  try {
+    const r = await fetch(API + "/openwrt/upload", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "X-Filename": f.name },
+      body: f,
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.status === 401) throw { unauthorized: true };
+    if (!r.ok) throw new Error(data.error || "HTTP " + r.status);
+    $("ow-build-result").textContent =
+      `Slika učitana (${fmtBytes(data.size_bytes)}), otisak ${data.sha256.slice(0, 16)}…`;
+    $("ow-file").value = "";
+    await loadOpenWrt();
+  } catch (e) {
+    if (e && e.unauthorized) { logout(true); return; }
+    $("ow-build-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("ow-flash").addEventListener("click", async () => {
+  const name = $("ow-confirm").value.trim();
+  if (!confirm(
+    "Nadogradnja sustava uređaja\n\n" +
+    "Uređaj se ponovno pokreće i 1–3 minute nije dostupan.\n" +
+    "Ako slika ne odgovara uređaju, za oporavak treba fizički pristup.\n\n" +
+    "Nastaviti?")) return;
+  $("ow-flash-result").textContent = "Radim backup i pokrećem nadogradnju…";
+  try {
+    const r = await api("/openwrt/flash", "POST", { confirm: name });
+    $("ow-flash-result").textContent =
+      `Nadogradnja pokrenuta (backup ${r.backup}). ${r.note}`;
+    stopTimers();
+    owWaitForDevice();
+  } catch (e) {
+    $("ow-flash-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+// owWaitForDevice čeka da se uređaj digne i sam osvježi sučelje
+function owWaitForDevice() {
+  let n = 0;
+  const tick = async () => {
+    n++;
+    $("ow-flash-result").textContent =
+      `Uređaj se nadograđuje i ponovno pokreće… (${n * 10} s)`;
+    try {
+      const r = await fetch(API + "/health", { cache: "no-store" });
+      if (r.ok) {
+        $("ow-flash-result").textContent =
+          "Uređaj je opet dostupan. Osvježavam sučelje…";
+        setTimeout(() => location.reload(), 2000);
+        return;
+      }
+    } catch { /* još se diže */ }
+    if (n * 10 > 600) {
+      $("ow-flash-result").textContent =
+        "Uređaj se ne javlja ni nakon 10 minuta. Provjeri ima li struju i vezu; " +
+        "ako se ne digne, potreban je fizički pristup (slika se vraća s USB-a).";
+      return;
+    }
+    setTimeout(tick, 10000);
+  };
+  setTimeout(tick, 20000);
+}
+
+$("ow-pkg-restore").addEventListener("click", async () => {
+  $("ow-pkg-note").textContent = "Doinstaliram…";
+  try {
+    const r = await api("/openwrt/packages/restore", "POST", {});
+    $("ow-pkg-note").textContent = r.installed.length
+      ? "Doinstalirano: " + r.installed.join(", ")
+      : "Nema paketa za doinstalaciju.";
+    await loadOpenWrt();
+  } catch (e) {
+    $("ow-pkg-note").textContent = "Greška: " + (e.message || e);
   }
 });
 

@@ -367,10 +367,43 @@ na vanjski syslog poslužitelj (kartica ispod).
 
 ## Updates — ažuriranje
 
+### Saguaro
+
 Modul provjerava zadnje izdanje na GitHubu; nadogradnja se pokreće gumbom ili
 ručnim učitavanjem paketa. Prije svake nadogradnje automatski se radi puni
 backup; nakon zamjene servis se sam ponovno pokreće. Objava izdanja:
 `git tag vX.Y.Z && git push --tags` — GitHub Actions sagradi i objavi paket.
+
+### OpenWrt (sustav samog uređaja)
+
+Ploča **OpenWrt** nadograđuje sustav uređaja. Tijek ima tri koraka:
+
+1. **Naruči sliku** — uređaj traži od službenog servisa
+   (`sysupgrade.openwrt.org`, isti koji koristi alat `owut`) sliku **s popisom
+   paketa ovog uređaja**. To je bitno: obična slika s downloads.openwrt.org
+   sadrži samo zadane pakete, pa bi nakon nadogradnje nestali mwan3, banIP,
+   OpenVPN, bird2 i ostalo. Prva gradnja traje par minuta, kasnije je
+   gotova odmah (servis pamti izgrađeno).
+2. **Preuzmi na uređaj** — slika se sprema u RAM (`/tmp`) i odmah se provjerava
+   **SHA256 otisak**; ako ne odgovara, datoteka se briše i postupak staje.
+3. **Nadogradi** — upiše se ime uređaja kao potvrda, napravi se puni backup i
+   pokrene `sysupgrade`. Uređaj se ponovno pokreće; sučelje čeka i samo se
+   osvježi kad se javi (obično 1–3 minute).
+
+Uređaj bez pristupa internetu: slika se može **učitati s računala**
+(`.img.gz`), otisak se izračuna pri prijenosu i provjerava ponovno neposredno
+prije upisa.
+
+> **Ovo je jedina radnja u sustavu koja se ne može poništiti na daljinu.**
+> Ako slika ne odgovara uređaju, za oporavak treba fizički pristup. Zato ploča
+> pokazuje **vrstu pokretanja** (EFI ili BIOS) i **datotečni sustav**
+> (ext4/squashfs), a bira se točno odgovarajuća slika — kriva slika je
+> najbrži način da uređaj ostane bez sustava.
+
+Što preživi nadogradnju: sve iz `/etc/config`, te Saguaro (binary, baza,
+certifikati, VPN PKI) preko popisa `/lib/upgrade/keep.d/saguaro`. Popis paketa
+sprema se prije nadogradnje, pa modul nakon dizanja javi ako nešto ipak
+nedostaje i ponudi **doinstalaciju jednim klikom**.
 
 ## Settings — postavke
 

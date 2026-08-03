@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.25.0"
+const version = "0.26.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -309,6 +309,13 @@ func main() {
 	mux.Handle("GET /api/v1/update/status", s.auth(s.handleUpdateStatus))
 	mux.Handle("POST /api/v1/update/upload", s.auth(s.handleUpdateUpload))
 	mux.Handle("POST /api/v1/update/apply", s.auth(s.handleUpdateApply))
+	mux.Handle("GET /api/v1/openwrt/status", s.auth(s.handleOpenWrtStatus))
+	mux.Handle("POST /api/v1/openwrt/build", s.auth(s.handleOpenWrtBuild))
+	mux.Handle("POST /api/v1/openwrt/fetch", s.auth(s.handleOpenWrtFetch))
+	mux.Handle("POST /api/v1/openwrt/upload", s.auth(s.handleOpenWrtUpload))
+	mux.Handle("POST /api/v1/openwrt/flash", s.auth(s.handleOpenWrtFlash))
+	mux.Handle("GET /api/v1/openwrt/packages", s.auth(s.handleOpenWrtPackages))
+	mux.Handle("POST /api/v1/openwrt/packages/restore", s.auth(s.handleOpenWrtPackagesRestore))
 	mux.HandleFunc("/", s.handleRoot)
 
 	srv := &http.Server{
@@ -377,7 +384,9 @@ func mutatingRequest(method, path string) bool {
 	switch path {
 	case "/api/v1/audit/run", "/api/v1/alerts/run", "/api/v1/notify/test",
 		"/api/v1/rollback/confirm", "/api/v1/auth/logout",
-		"/api/v1/auth/logout-others", "/api/v1/backup/offsite/test":
+		"/api/v1/auth/logout-others", "/api/v1/backup/offsite/test",
+		// priprema slike ne dira konfiguraciju uređaja
+		"/api/v1/openwrt/build", "/api/v1/openwrt/fetch", "/api/v1/openwrt/upload":
 		return false
 	}
 	return true

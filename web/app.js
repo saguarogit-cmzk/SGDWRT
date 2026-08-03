@@ -1048,6 +1048,16 @@ async function loadOspf() {
   $("os-status").textContent = x.running
     ? (x.status_text || "OSPF radi — nema podataka o susjedima.")
     : x.enabled ? "Servis se pokreće…" : "OSPF je isključen.";
+
+  const badge = $("os-state");
+  if (!x.enabled) setPill(badge, "off", "isključen");
+  else if (x.running) setPill(badge, "good", "radi");
+  else setPill(badge, "crit", "ne radi");
+  const chosenNames = (x.interfaces || []).map((i) => i.name);
+  setNote("os-note", [
+    "area " + (x.area || "0"),
+    chosenNames.length ? "sučelja: " + chosenNames.join(", ") : "bez odabranih sučelja",
+  ].join(" · "));
 }
 
 /* ---------- blokade (banIP + adblock-fast) ---------- */
@@ -1117,6 +1127,10 @@ async function loadMultiwan() {
   mwRules = x.rules || [];
   mwWanNames = (x.wans || []).map((w) => w.name);
 
+  // postavke i stvarno stanje veze stoje u istom retku — bez druge tablice
+  const ifaces = (x.status && x.status.interfaces) || {};
+  let online = 0, offline = 0;
+
   const tb = $("mw-wan-rows");
   tb.replaceChildren();
   for (const wn of x.wans || []) {
@@ -1136,32 +1150,31 @@ async function loadMultiwan() {
       inp.className = cls; inp.value = val; inp.style.width = width + "px";
       td.append(inp); tr.append(td);
     }
-    tb.append(tr);
-  }
-
-  renderMwRules();
-
-  const sb = $("mw-status-rows");
-  sb.replaceChildren();
-  const ifaces = (x.status && x.status.interfaces) || {};
-  for (const [name, st] of Object.entries(ifaces)) {
-    if (!mwWanNames.includes(name)) continue;
-    const tr = document.createElement("tr");
-    const tdN = document.createElement("td"); tdN.textContent = name; tr.append(tdN);
+    const st = ifaces[wn.name] || {};
+    if (st.status === "online") online++;
+    else if (st.status === "offline") offline++;
     const tdS = document.createElement("td");
     tdS.append(st.status === "online" ? stGood("Radi")
       : st.status === "offline" ? stCrit("Pala")
-      : stOff(st.status === "disabled" ? "Isključena" : st.status));
+      : stOff(st.status === "disabled" ? "Isključena" : st.status || "nepoznato"));
     tr.append(tdS);
     const tdP = document.createElement("td");
     tdP.textContent = (st.track_ip || [])
       .map((t) => `${t.ip}: ${t.status === "up" ? t.latency + " ms" : t.status}`)
       .join(" · ") || "—";
     tr.append(tdP);
-    sb.append(tr);
+    tb.append(tr);
   }
-  $("mw-status-hint").textContent = x.managed
-    ? "" : "Multi-WAN još nije konfiguriran kroz Saguaro — spremi postavke lijevo.";
+
+  renderMwRules();
+
+  const badge = $("mw-state");
+  if (!x.enabled) setPill(badge, "off", "isključen");
+  else if (offline) setPill(badge, "crit", offline + " veza ne radi");
+  else if (online) setPill(badge, "good", online + " veza radi");
+  else setPill(badge, "warn", "bez podataka o vezama");
+  setNote("mw-status-hint", x.managed
+    ? "" : "Multi-WAN još nije konfiguriran kroz Saguaro — spremi postavke.");
 }
 
 function renderMwRules() {
@@ -1789,7 +1802,7 @@ const MODULE_KEYS = {
   dns: "imena domene razlučivanje",
   firewall: "vatrozid pravila zone promet blokiraj dopusti",
   publish: "objava servera prosljeđivanje portova dmz nat",
-  hardening: "očvršćivanje pristup upravljanju sigurnost ssh",
+  hardening: "očvršćivanje hardening pristup upravljanju sigurnost ssh acl",
   protection: "blokade crne liste zloćudne adrese banip zemlje",
   dnsfilter: "blokada reklama domene adblock oglasi",
   scan: "skeniranje portova napad izviđanje detekcija",
@@ -3332,12 +3345,14 @@ $("os-test").addEventListener("click", async () => {
   }
 });
 
-/* ---------- očvršćivanje (Postavke) ---------- */
+/* ---------- hardening: dodatne mjere zaštite ---------- */
 
 async function loadHardening() {
   const h = await api("/hardening");
   const box = $("hd-items");
   box.replaceChildren();
+  const on = h.items.filter((i) => i.enabled).length;
+  setNote("hd-note", `uključeno ${on} od ${h.items.length} mjera`);
   for (const it of h.items) {
     const wrap = document.createElement("div");
     wrap.className = "hd-item";
@@ -3496,7 +3511,7 @@ async function loadAlertsView() {
   $("sm-to").value = em.to || "";
 }
 
-// Očvršćivanje: kvačice + ograničenje upravljačkog pristupa.
+// System access: mjere zaštite (hardening) + tko smije do upravljanja (ACL).
 async function loadHardeningView() {
   const [, sys] = await Promise.all([loadHardening(), api("/settings/system")]);
   const acl = sys.mgmt_acl || {};

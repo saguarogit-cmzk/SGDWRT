@@ -249,6 +249,7 @@
           <tbody id="sp-rows"></tbody>
         </table>
       </div>
+      <p class="legend">✔ uključeno · ☐ isključeno · ✎ uredi · 🗑 obriši</p>
       <p class="hint">Vrijedi za sve koji koriste ovaj uređaj kao DNS. Uređaji u
         VLAN-ovima uz ovo trebaju i firewall dopuštenje prema serveru.</p>
     </section>
@@ -373,6 +374,7 @@
             <tbody id="n1-rows"></tbody>
           </table>
         </div>
+      <p class="legend">✔ uključeno · ☐ isključeno · ✎ uredi · 🗑 obriši</p>
       </div>
     </section>
   </div>
@@ -522,6 +524,7 @@
             <tbody id="nm-rows"></tbody>
           </table>
         </div>
+      <p class="legend">✎ uredi · 🗑 obriši</p>
         <label class="check-row"><input type="checkbox" id="nm-unknown">
           Alarmiraj kad se u mreži pojavi nepoznat uređaj</label>
         <p class="hint" id="nm-result"></p>
@@ -573,75 +576,67 @@
   </div>
 
   <div class="view hidden" id="view-ospf">
-    <section class="grid-2">
-      <div class="card">
-        <h2>OSPF postavke</h2>
-        <label class="check-row"><input type="checkbox" id="os-enabled"> Uključeno</label>
-        <div class="form-grid">
-          <label>Router ID<input id="os-rid" placeholder="prazno = LAN adresa uređaja"></label>
-          <label>Area<input id="os-area" placeholder="0"></label>
-        </div>
-        <p class="hint">Sučelja koja sudjeluju u OSPF-u (kvačica "stub" = mreža
-          se objavljuje drugima, ali se na njoj ne traže susjedni routeri —
-          za mreže s računalima):</p>
-        <div id="os-ifaces" class="checklist"></div>
-        <div class="form-actions" style="justify-content:flex-start">
-          <button id="os-save" class="primary">Spremi i primijeni</button>
-        </div>
-        <p class="hint" id="os-result"></p>
+    <section class="card">
+      <div class="card-head">
+        <h2>OSPF</h2>
+        <span class="st" id="os-state">—</span>
+        <span class="head-note" id="os-note">—</span>
+        <button id="os-save" class="primary">Spremi i primijeni</button>
       </div>
-      <div class="card">
-        <div class="card-head">
-          <h2>Stanje protokola i susjedi</h2>
-          <button id="os-refresh" class="ghost">Osvježi</button>
-        </div>
-        <pre id="os-status" style="font-size:12px;overflow-x:auto;background:#f6f8fa;border:1px solid var(--line);border-radius:8px;padding:10px;min-height:80px">—</pre>
-        <p class="hint">OSPF automatski razmjenjuje rute s drugim routerima —
-          mreže iza njih postaju dostupne bez ručnog upisivanja ruta.</p>
+      <div class="form-grid wide-4">
+        <label class="check"><input type="checkbox" id="os-enabled"> Uključeno</label>
+        <label>Router ID<input id="os-rid" placeholder="prazno = LAN adresa uređaja"></label>
+        <label>Area<input id="os-area" placeholder="0"></label>
       </div>
+      <p class="hint">Sučelja koja sudjeluju u OSPF-u (kvačica „stub" = mreža
+        se objavljuje drugima, ali se na njoj ne traže susjedni routeri —
+        za mreže s računalima):</p>
+      <div id="os-ifaces" class="checklist"></div>
+      <p class="hint" id="os-result"></p>
+      <p class="hint">OSPF automatski razmjenjuje rute s drugim routerima —
+        mreže iza njih postaju dostupne bez ručnog upisivanja ruta.</p>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Stanje protokola i susjedi</h2>
+        <button id="os-refresh" class="ghost">Osvježi</button>
+      </div>
+      <pre id="os-status" style="font-size:12px;overflow-x:auto;background:#f6f8fa;border:1px solid var(--line);border-radius:3px;padding:10px;min-height:80px;margin:0">—</pre>
     </section>
   </div>
 
   <div class="view hidden" id="view-multiwan">
-    <section class="grid-2">
-      <div class="card">
-        <h2>Način rada</h2>
-        <div class="form-grid">
-          <label class="check" style="grid-column:auto"><input type="checkbox" id="mw-enabled">
-            Multi-WAN uključen</label>
-          <label>Način
-            <select id="mw-mode">
-              <option value="failover">Failover — pričuvna veza preuzima kad glavna padne</option>
-              <option value="balanced">Raspodjela — promet se dijeli po vezama</option>
-            </select>
-          </label>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr>
-              <th>WAN</th><th>Koristi</th><th>Prioritet</th><th>Udio</th><th>Nadzorne IP</th>
-            </tr></thead>
-            <tbody id="mw-wan-rows"></tbody>
-          </table>
-        </div>
-        <p class="hint">Failover: manji prioritet = glavna veza. Raspodjela:
-          veći udio = više prometa. Veza se smatra palom kad nadzorne adrese
-          prestanu odgovarati na ping.</p>
-        <div class="form-actions" style="justify-content:flex-start">
-          <button id="mw-save" class="primary">Spremi i primijeni</button>
-        </div>
-        <p class="hint" id="mw-result"></p>
+    <section class="card">
+      <div class="card-head">
+        <h2>Internet veze</h2>
+        <span class="st" id="mw-state">—</span>
+        <span class="head-note" id="mw-status-hint">—</span>
+        <button id="mw-save" class="primary">Spremi i primijeni</button>
       </div>
-      <div class="card">
-        <h2>Stanje veza</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Veza</th><th>Stanje</th><th>Nadzor (ping)</th></tr></thead>
-            <tbody id="mw-status-rows"></tbody>
-          </table>
-        </div>
-        <p class="hint" id="mw-status-hint"></p>
+      <div class="form-grid" style="max-width:820px">
+        <label class="check" style="grid-column:auto"><input type="checkbox" id="mw-enabled">
+          Multi-WAN uključen</label>
+        <label>Način
+          <select id="mw-mode">
+            <option value="failover">Failover — pričuvna veza preuzima kad glavna padne</option>
+            <option value="balanced">Raspodjela — promet se dijeli po vezama</option>
+          </select>
+        </label>
       </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>WAN</th><th>Koristi</th><th>Prioritet</th><th>Udio</th>
+            <th>Nadzorne IP</th><th>Stanje</th><th>Nadzor (ping)</th>
+          </tr></thead>
+          <tbody id="mw-wan-rows"></tbody>
+        </table>
+      </div>
+      <p class="hint">Failover: manji prioritet = glavna veza. Raspodjela:
+        veći udio = više prometa. Veza se smatra palom kad nadzorne adrese
+        prestanu odgovarati na ping.</p>
+      <p class="hint" id="mw-result"></p>
     </section>
     <section class="card">
       <div class="card-head">
@@ -660,6 +655,7 @@
           <tbody id="mwr-rows"></tbody>
         </table>
       </div>
+      <p class="legend">✎ uredi · 🗑 obriši</p>
     </section>
   </div>
 
@@ -796,6 +792,7 @@
           <tbody id="bk-rows"></tbody>
         </table>
       </div>
+      <p class="legend">⤓ preuzmi · ↺ vrati · 🗑 obriši</p>
     </section>
     <section class="card" style="max-width:560px">
       <h2>Automatski raspored</h2>
@@ -1167,7 +1164,7 @@
         nakon nadogradnje.
       </div></details>
 
-      <details class="help"><summary>Očvršćivanje — što svaka kvačica radi</summary><div>
+      <details class="help"><summary>Hardening — što svaka kvačica radi</summary><div>
         <b>Firewall → System access</b> nudi mjere koje OpenWrt zadano ne pali.
         Kvačice pokazuju stvarno stanje uređaja, pa se vidi i ako je nešto
         naknadno promijenjeno izvan Saguara.
@@ -1404,19 +1401,22 @@
 
   <div class="view hidden" id="view-hardening">
     <section class="card">
-      <h2>Očvršćivanje</h2>
+      <div class="card-head">
+        <h2>Hardening — dodatne mjere zaštite</h2>
+        <span class="head-note" id="hd-note">—</span>
+        <button id="hd-save" class="primary">Primijeni</button>
+      </div>
       <p class="hint">Sitne mjere koje OpenWrt zadano ne uključuje. Svaka je
         zasebna jer neke ovise o tome kako je uređaj spojen — pored svake piše
         što radi i kad je <b>ne</b> treba paliti. Kvačice pokazuju stvarno
         stanje na uređaju, ne što je netko namjeravao.</p>
       <div id="hd-items"></div>
-      <div class="form-actions" style="justify-content:flex-start">
-        <button id="hd-save" class="primary">Primijeni</button>
-      </div>
       <p class="hint" id="hd-result"></p>
     </section>
-    <section class="card" style="max-width:720px">
-      <h2>Ograničenje upravljačkog pristupa (ACL)</h2>
+    <section class="card" style="max-width:760px">
+      <div class="card-head">
+        <h2>Tko smije do upravljanja (ACL)</h2>
+      </div>
       <p class="hint">Pristup ovom sučelju i SSH-u dopušten samo s navedenih
         adresa/mreža. Promjena je pod <b>safe modeom</b>: ako sam sebe
         zaključaš, vraća se sama za 2 minute.</p>

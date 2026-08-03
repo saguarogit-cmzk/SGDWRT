@@ -300,7 +300,7 @@ greška — funkcija nije uključena ili se ne može provjeriti bez vanjskog
 resursa). Vrijedi ga pokrenuti nakon svake veće izmjene i nakon nadogradnje.
 Detalji i popis onoga što se mora provjeriti ručno: `docs/TESTOVI.md`.
 
-## System access — očvršćivanje (Firewall)
+## System access — hardening i ACL (Firewall)
 
 Sitne mjere koje OpenWrt zadano ne uključuje. Svaka je zasebna kvačica jer
 neke ovise o tome kako je uređaj spojen, a kvačice pokazuju **stvarno stanje na

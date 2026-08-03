@@ -140,9 +140,9 @@ paketa. Trud je procijenjen u danima rada.
 
 | # | Mogućnost | Što korisnik dobiva | Kako | Trud | Preporuka |
 |---|---|---|---|---|---|
-| **A1** | **Izlazna javna adresa po mreži (policy SNAT)** | „Računovodstvo izlazi kao .11, ostali kao .10" — bitno kad pružatelj usluge gleda izvorišnu adresu | nftables `snat to` pravilo po zoni/izvoru; nema novih paketa | 2 dana | **visoka** |
+| ~~A1~~ | **NAPRAVLJENO (v0.25.0)** — izlazna javna adresa po mreži | „Računovodstvo izlazi kao .11, ostali kao .10" — bitno kad pružatelj usluge gleda izvorišnu adresu | nftables `snat to` pravilo po zoni/izvoru; nema novih paketa | 2 dana | **visoka** |
 | **A2** | **Statičke rute** | ruta prema mreži iza drugog routera bez OSPF-a | `config route` u `/etc/config/network` | 1 dan | **visoka** (osnovna stvar koja nedostaje) |
-| **A3** | **IPv6** | adresiranje, firewall i objava servera preko IPv6 — sve više pružatelja ga daje | `dhcpv6`/`odhcpd` već na uređaju; treba GUI, zone i pravila | 5–8 dana | **srednja** (veliki, ali sve traženiji zahvat) |
+| ~~A3~~ | **NAPRAVLJENO (v0.27.0)** — IPv6 | adresiranje, firewall i objava servera preko IPv6 — sve više pružatelja ga daje | `dhcpv6`/`odhcpd` već na uređaju; treba GUI, zone i pravila | 5–8 dana | **srednja** (veliki, ali sve traženiji zahvat) |
 | **A4** | **4G/5G pričuvna veza** | uređaj sam prelazi na mobilnu vezu kad optika padne | `modemmanager` ili `uqmi` + USB modem; mwan3 već postoji | 2–3 dana | srednja (traži modem) |
 | **A5** | **VRRP / dva uređaja u paru (HA)** | drugi uređaj preuzme cijeli promet ako prvi otkaže | `keepalived` | 4–6 dana | srednja (za kritične lokacije) |
 | **A6** | **mDNS preko VLAN-ova** | pisač ili Chromecast iz jedne mreže vidljiv u drugoj, bez spajanja mreža | `mdns-repeater` | 1 dan | srednja |
@@ -193,14 +193,14 @@ paketa. Trud je procijenjen u danima rada.
 | **E2** | **Dvofaktorska prijava (TOTP)** | ukradena lozinka nije dovoljna | u Go-u, bez novih paketa | 1–2 dana | **visoka** |
 | **E3** | **Pravi certifikat za sučelje** | nema više upozorenja preglednika | `acme-acmesh` (Let's Encrypt) ili unos vlastitog certifikata | 1–2 dana | **visoka** |
 | **E4** | **Prijava kroz Active Directory / LDAP** | korisnici iz domene, bez zasebnih lozinka | LDAP klijent u Go-u | 3–4 dana | srednja |
-| **E5** | **Nadogradnja OpenWrt-a iz sučelja** | firmware uz automatski backup i keep listu (koja već radi) | `sysupgrade` + provjera potpisa | 2–3 dana | srednja |
+| ~~E5~~ | **NAPRAVLJENO (v0.26.0)** — nadogradnja OpenWrt-a iz sučelja | firmware uz automatski backup i keep listu (koja već radi) | `sysupgrade` + provjera potpisa | 2–3 dana | srednja |
 | **E6** | **Zakazane izmjene** | primjena rizične promjene u dogovorenom terminu | raspored + postojeći safe mode | 1–2 dana | niska |
 
 ### F. Usluge na samom uređaju
 
 | # | Mogućnost | Što korisnik dobiva | Kako | Trud | Preporuka |
 |---|---|---|---|---|---|
-| **F1** | **Obrnuti proxy (reverse proxy)** | više servera iza **jedne** javne adrese, razdvojenih po imenu; certifikati na jednom mjestu | `haproxy` ili `nginx` | 3–5 dana | **visoka** ako korisnik ima više web servisa |
+| ~~F1~~ | **NAPRAVLJENO (v0.28.0)** — obrnuti proxy | više servera iza **jedne** javne adrese, razdvojenih po imenu; certifikati na jednom mjestu | `haproxy` ili `nginx` | 3–5 dana | **visoka** ako korisnik ima više web servisa |
 | **F2** | Web filtar s pravilima po korisniku | filtriranje po kategorijama sadržaja | `privoxy`/`tinyproxy` (bez HTTPS uvida) | 3 dana | niska — na HTTPS-u daje malo, DNS filtar radi više uz manje |
 | **F3** | UPnP | konzole i igre same otvaraju portove | `miniupnpd-nftables` | 1 dan | **s oprezom** — svaki uređaj u mreži smije sam otvoriti port prema internetu |
 | **F4** | Dijeljenje datoteka (SMB), medijski poslužitelj | mali NAS na uređaju (ima 220 GB slobodno) | `samba4-server`, `minidlna` | 2 dana | niska — miješa uloge firewalla i servera |

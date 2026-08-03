@@ -316,3 +316,18 @@ CREATE TABLE IF NOT EXISTS fw_snat (
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Obrnuti proxy: više servisa iza jedne javne adrese, razdvojenih po imenu.
+-- HTTPS ide prosljeđivanjem po SNI imenu (certifikat ostaje na internom
+-- serveru), HTTP po Host zaglavlju.
+CREATE TABLE IF NOT EXISTS rp_sites (
+    uuid        TEXT PRIMARY KEY,
+    hostname    TEXT NOT NULL UNIQUE,           -- npr. mail.tvrtka.hr
+    proto       TEXT NOT NULL DEFAULT 'https',  -- https (SNI) | http
+    dest_ip     TEXT NOT NULL,
+    dest_port   INTEGER NOT NULL DEFAULT 443,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);

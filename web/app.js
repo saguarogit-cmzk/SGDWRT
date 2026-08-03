@@ -758,6 +758,157 @@ function openRlDialog(f) {
   $("rl-dialog").showModal();
 }
 
+/* ---------- obrnuti proxy ---------- */
+
+let editRpUUID = null;
+
+async function loadProxy() {
+  const x = await api("/proxy");
+  const tb = $("rp-rows");
+  tb.replaceChildren();
+  for (const st of x.sites) {
+    const tr = document.createElement("tr");
+    const tdH = document.createElement("td");
+    const b = document.createElement("b");
+    b.textContent = st.hostname;
+    tdH.append(b);
+    tr.append(tdH);
+    for (const v of [st.proto === "http" ? "HTTP" : "HTTPS (SNI)",
+      `${st.dest_ip}:${st.dest_port}`]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdE = document.createElement("td");
+    tdE.append(tick(!!st.enabled, async () => {
+      await api("/proxy/sites/" + st.uuid, "PUT",
+        { ...st, enabled: !st.enabled }).catch(alertErr);
+      loadProxy().catch(alertErr);
+    }, st.hostname));
+    tr.append(tdE);
+    const tdN = document.createElement("td");
+    tdN.textContent = st.notes || "—";
+    tr.append(tdN);
+    const tdA = document.createElement("td");
+    tdA.className = "row-actions";
+    tdA.append(
+      btnSm("Uredi", false, () => openRpDialog(st)),
+      btnSm("Obriši", true, async () => {
+        if (!confirm(`Ukloniti "${st.hostname}" iz objave?`)) return;
+        await api("/proxy/sites/" + st.uuid, "DELETE").catch(alertErr);
+        loadProxy().catch(alertErr);
+      }));
+    tr.append(tdA);
+    tb.append(tr);
+  }
+
+  const active = x.sites.filter((s) => s.enabled).length;
+  const badge = $("rp-state");
+  if (!x.installed) setPill(badge, "off", "nije instaliran");
+  else if (x.running) setPill(badge, "good", "radi");
+  else if (active) setPill(badge, "crit", "ne radi");
+  else setPill(badge, "off", "nema objavljenih stranica");
+  const ips = Object.values(x.wan_ips || {}).flat();
+  setNote("rp-note", [
+    `${active} aktivnih od ${x.sites.length}`,
+    ips.length ? "javne adrese: " + ips.join(", ") : "",
+  ].filter(Boolean).join(" · "));
+
+  // preduvjeti
+  const list = $("rp-checks");
+  list.replaceChildren();
+  const items = [
+    ["HAProxy instaliran", x.installed ? "spreman" : "paket nedostaje", x.installed],
+    ["Portovi", `s interneta 80 i 443 → proxy na ${x.http_port} i ${x.https_port}`, true],
+    ["Konfiguracijom upravlja Saguaro",
+      x.config_managed ? "da" : "još nije primijenjeno", x.config_managed],
+  ];
+  for (const [name, detail, ok] of items) {
+    const li = document.createElement("li");
+    const left = document.createElement("span");
+    const what = document.createElement("span");
+    what.className = "what";
+    what.textContent = name;
+    const d = document.createElement("span");
+    d.className = "detail";
+    d.textContent = detail;
+    left.append(what, d);
+    li.append(left, ok ? stGood("u redu") : stWarn("treba riješiti"));
+    list.append(li);
+  }
+  $("rp-install").classList.toggle("hidden", x.installed);
+  setNote("rp-prereq-note", x.installed ? "sve je spremno" : "treba instalirati HAProxy");
+}
+
+function openRpDialog(st) {
+  const f = $("rp-form");
+  editRpUUID = st ? st.uuid : null;
+  $("rp-dialog-title").textContent = editRpUUID ? "Uredi stranicu" : "Nova stranica";
+  f.elements.hostname.value = st ? st.hostname : "";
+  f.elements.proto.value = st ? st.proto : "https";
+  f.elements.dest_ip.value = st ? st.dest_ip : "";
+  f.elements.dest_port.value = st ? st.dest_port : "";
+  f.elements.notes.value = st ? st.notes || "" : "";
+  f.elements.enabled.checked = st ? !!st.enabled : true;
+  $("rp-dialog").showModal();
+}
+
+$("rp-add").addEventListener("click", () => openRpDialog(null));
+$("rp-cancel").addEventListener("click", () => $("rp-dialog").close());
+$("rp-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {
+    hostname: f.elements.hostname.value.trim(),
+    proto: f.elements.proto.value,
+    dest_ip: f.elements.dest_ip.value.trim(),
+    dest_port: parseInt(f.elements.dest_port.value, 10) || 0,
+    notes: f.elements.notes.value.trim(),
+    enabled: f.elements.enabled.checked,
+  };
+  try {
+    if (editRpUUID) await api("/proxy/sites/" + editRpUUID, "PUT", body);
+    else await api("/proxy/sites", "POST", body);
+    $("rp-dialog").close();
+    await loadProxy();
+  } catch (e) { alertErr(e); }
+});
+
+$("rp-apply").addEventListener("click", async () => {
+  $("rp-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/proxy/apply", "POST", {});
+    $("rp-result").textContent = r.sites
+      ? `Primijenjeno: ${r.sites} stranica, servis ${r.running ? "radi" : "ne radi"}.`
+      : "Nema aktivnih stranica — proxy je zaustavljen i portovi zatvoreni.";
+    await loadProxy();
+  } catch (e) {
+    $("rp-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("rp-install").addEventListener("click", async () => {
+  $("rp-prereq-result").textContent = "Instaliram HAProxy…";
+  try {
+    await api("/proxy/install", "POST", {});
+    $("rp-prereq-result").textContent = "HAProxy je instaliran.";
+    await loadProxy();
+  } catch (e) {
+    $("rp-prereq-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("rp-showcfg").addEventListener("click", async () => {
+  const pre = $("rp-cfg");
+  if (!pre.classList.contains("hidden")) { pre.classList.add("hidden"); return; }
+  try {
+    const r = await api("/proxy/config");
+    pre.textContent = r.generated +
+      (r.same === "true" ? "" : "\n\n# (na uređaju je trenutno druga verzija — primijeni)");
+    pre.classList.remove("hidden");
+  } catch (e) { alertErr(e); }
+});
+
 /* ---------- IPv6 ---------- */
 
 const V6_LABEL = { off: "isključen", auto: "automatski", manual: "ručni prefiks" };
@@ -1862,6 +2013,7 @@ const MODULES = {
   protection: ["IP blocklists", "Blokada zloćudnih IP adresa s crnih lista (banIP)", () => loadProtection()],
   dnsfilter: ["DNS filter", "Blokada reklamnih i zloćudnih domena (adblock)", () => loadProtection()],
   scan:      ["Scan detection", "Prepoznavanje skeniranja portova i privremena blokada izvora", () => loadProtection()],
+  rproxy:    ["Reverse proxy", "Više web servisa iza jedne javne adrese, razdvojenih po imenu", () => loadProxy()],
   wireguard: ["WireGuard", "Udaljeni pristup — moderni VPN s ključevima", () => loadWireguard()],
   openvpn:   ["OpenVPN", "Udaljeni pristup — klasični VPN s certifikatima", () => loadOpenvpn()],
   devices:   ["Inventory", "Inventar opreme — ovaj uređaj i susjedni", () => loadDevices()],
@@ -1889,6 +2041,7 @@ const MODULE_KEYS = {
   protection: "blokade crne liste zloćudne adrese banip zemlje",
   dnsfilter: "blokada reklama domene adblock oglasi",
   scan: "skeniranje portova napad izviđanje detekcija",
+  rproxy: "obrnuti proxy reverse haproxy objava web servisa ime domena sni",
   wireguard: "vpn udaljeni pristup ključevi",
   openvpn: "vpn udaljeni pristup certifikati ovpn",
   devices: "uređaji inventar oprema",
@@ -1905,6 +2058,7 @@ const NAV_GROUPS = [
   ["Network", ["network", "multiwan", "ospf", "qos", "dhcp", "dns"]],
   ["Firewall", ["firewall", "publish", "hardening"]],
   ["Filtering", ["protection", "dnsfilter", "scan"]],
+  ["Proxy", ["rproxy"]],
   ["VPN", ["wireguard", "openvpn"]],
   ["System", ["settings", "logs", "backup", "devices", "update", "help"]],
 ];

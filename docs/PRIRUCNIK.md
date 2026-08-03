@@ -5,13 +5,14 @@ Ista pomoć dostupna je i u samom sučelju: **System → Help**.
 
 ## Raspored sučelja
 
-Moduli su složeni u šest skupina, po načelu **jedan modul = jedan posao**:
+Moduli su složeni u sedam skupina, po načelu **jedan modul = jedan posao**:
 
 | Skupina | Moduli |
 |---|---|
 | **Status** | Dashboard · Monitoring · Alerts · Audit log |
 | **Network** | Interfaces · Multi-WAN · OSPF · QoS · DHCP · DNS |
 | **Firewall** | Firewall rules · Port forwarding / NAT · System access |
+| **Proxy** | Reverse proxy |
 | **Filtering** | IP blocklists · DNS filter · Scan detection |
 | **VPN** | WireGuard · OpenVPN |
 | **System** | Settings · System log · Backup · Inventory · Updates · Help |
@@ -42,6 +43,7 @@ razmišljaš:
 | `lozink` | **Settings** |
 | `promjen` | **Audit log** — trag izmjena konfiguracije |
 | `kopij` | **Backup** |
+| `proxy` | **Reverse proxy** — više servisa iza jedne javne adrese |
 
 Strelicama gore/dolje biraš rezultat, **Enter** otvara modul, **Esc** zatvara
 popis. Uz svaki rezultat piše i skupina u kojoj modul živi, pa ga sljedeći put
@@ -214,6 +216,42 @@ susjedi prikazuju se u modulu.
   odredišnu zonu pa korisnici izvan LAN-a inače ostanu bez pristupa.
   Kad se pristupa imenom, uz hairpin postavi i **split DNS** (DNS modul);
   VLAN klijenti trebaju i forwarding pravilo prema mreži servera.
+
+## Reverse proxy — više servisa iza jedne javne adrese
+
+Port 443 je samo jedan i može ga uzeti samo jedan interni server, pa port
+forward ne pomaže kad treba objaviti `mail.tvrtka.hr`, `crm.tvrtka.hr` i
+`kamere.tvrtka.hr` s **jedne** javne adrese. Proxy sluša umjesto njih, gleda
+**koje je ime posjetitelj tražio** i proslijedi ga pravom serveru.
+
+| Vrsta | Kako se odlučuje | Certifikat |
+|---|---|---|
+| **HTTPS** | po imenu iz TLS pozdrava (SNI), veza se ne otvara | ostaje na internom serveru |
+| **HTTP** | po `Host` zaglavlju | nije potreban |
+
+Za HTTPS se koristi **prosljeđivanje bez otvaranja veze**: uređaj pročita samo
+ime, a šifriranu vezu proslijedi dalje. Zato mu **ne treba nijedan privatni
+ključ** i ne vidi sadržaj prometa. Interni server mora imati valjan certifikat
+za to ime. Ako postoji bar jedna HTTPS stranica, ostali promet na portu 80
+preusmjerava se na HTTPS.
+
+**Portovi:** proxy ne sjeda na 80 i 443 — njih na uređaju drži LuCI. Umjesto
+premještanja upravljanja, proxy sluša na **8080 i 8444**, a vatrozid promet s
+interneta s 80 i 443 preusmjeri na njih (`sag_rp_*` zapisi). LuCI i Saguaro
+sučelje ostaju netaknuti.
+
+Uz svako ime treba i **javni DNS zapis** prema javnoj adresi uređaja te
+**split DNS** (modul DNS), da i korisnici iznutra dolaze na isto ime.
+
+Konfiguracija HAProxyja je generirana (`/etc/haproxy.cfg`) — vidi se gumbom
+*Prikaži konfiguraciju*, provjerava se prije zamjene (`haproxy -c`), a stara
+se sprema u backup. Bez ijedne aktivne stranice servis se gasi i pravila u
+vatrozidu se uklanjaju.
+
+> Instalacija paketa HAProxy na OpenWrt-u sama pokreće servis s **primjerom
+> konfiguracije** koji otvara portove 81, 444 i 60000 na svim adresama.
+> Saguaro to pri instalaciji odmah zaustavi i zamijeni vlastitom praznom
+> konfiguracijom — servis kreće tek kad ima što posluživati.
 
 ## Filtering — IP blocklists, DNS filter, Scan detection
 

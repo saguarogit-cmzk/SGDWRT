@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.27.0"
+const version = "0.28.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -244,6 +244,13 @@ func main() {
 	mux.Handle("POST /api/v1/openvpn/apply", s.auth(s.handleOvpnApply))
 	mux.Handle("GET /api/v1/network/lan", s.auth(s.handleNetworkLanGet))
 	mux.Handle("POST /api/v1/network/lan", s.auth(s.handleNetworkLanSet))
+	mux.Handle("GET /api/v1/proxy", s.auth(s.handleProxyGet))
+	mux.Handle("GET /api/v1/proxy/config", s.auth(s.handleProxyConfig))
+	mux.Handle("POST /api/v1/proxy/install", s.auth(s.handleProxyInstall))
+	mux.Handle("POST /api/v1/proxy/apply", s.auth(s.handleProxyApply))
+	mux.Handle("POST /api/v1/proxy/sites", s.auth(s.handleProxySiteCreate))
+	mux.Handle("PUT /api/v1/proxy/sites/{uuid}", s.auth(s.handleProxySiteUpdate))
+	mux.Handle("DELETE /api/v1/proxy/sites/{uuid}", s.auth(s.handleProxySiteDelete))
 	mux.Handle("GET /api/v1/ipv6", s.auth(s.handleIPv6Get))
 	mux.Handle("POST /api/v1/ipv6", s.auth(s.handleIPv6Set))
 	mux.Handle("GET /api/v1/firewall/status", s.auth(s.handleFWStatus))

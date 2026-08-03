@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.28.0"
+const version = "0.29.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -156,6 +156,7 @@ func main() {
 		cancel()
 	}
 
+	s.startChallengeServer()
 	go collectMetrics()
 	go s.monitorLoop()
 	go s.watchdogLoop()
@@ -248,6 +249,10 @@ func main() {
 	mux.Handle("GET /api/v1/proxy/config", s.auth(s.handleProxyConfig))
 	mux.Handle("POST /api/v1/proxy/install", s.auth(s.handleProxyInstall))
 	mux.Handle("POST /api/v1/proxy/apply", s.auth(s.handleProxyApply))
+	mux.Handle("GET /api/v1/proxy/acme", s.auth(s.handleAcmeGet))
+	mux.Handle("POST /api/v1/proxy/acme", s.auth(s.handleAcmeSet))
+	mux.Handle("POST /api/v1/proxy/acme/install", s.auth(s.handleAcmeInstall))
+	mux.Handle("POST /api/v1/proxy/acme/issue", s.auth(s.handleAcmeIssue))
 	mux.Handle("POST /api/v1/proxy/sites", s.auth(s.handleProxySiteCreate))
 	mux.Handle("PUT /api/v1/proxy/sites/{uuid}", s.auth(s.handleProxySiteUpdate))
 	mux.Handle("DELETE /api/v1/proxy/sites/{uuid}", s.auth(s.handleProxySiteDelete))

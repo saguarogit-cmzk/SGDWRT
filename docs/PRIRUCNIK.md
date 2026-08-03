@@ -226,7 +226,8 @@ forward ne pomaže kad treba objaviti `mail.tvrtka.hr`, `crm.tvrtka.hr` i
 
 | Vrsta | Kako se odlučuje | Certifikat |
 |---|---|---|
-| **HTTPS** | po imenu iz TLS pozdrava (SNI), veza se ne otvara | ostaje na internom serveru |
+| **HTTPS — prosljeđivanje** | po imenu iz TLS pozdrava (SNI), veza se ne otvara | ostaje na **internom serveru** |
+| **HTTPS — certifikat na uređaju** | uređaj otvara vezu i usmjerava po `Host` zaglavlju | **Let's Encrypt**, uređaj ga sam vodi i obnavlja |
 | **HTTP** | po `Host` zaglavlju | nije potreban |
 
 Za HTTPS se koristi **prosljeđivanje bez otvaranja veze**: uređaj pročita samo
@@ -242,6 +243,34 @@ sučelje ostaju netaknuti.
 
 Uz svako ime treba i **javni DNS zapis** prema javnoj adresi uređaja te
 **split DNS** (modul DNS), da i korisnici iznutra dolaze na isto ime.
+
+### Certifikati (Let's Encrypt)
+
+Za stranice označene s **certifikat na uređaju** uređaj sam zatraži certifikat
+i sam ga obnavlja; interni server tada može ostati na običnom HTTP-u. Upiše se
+e-mail za Let's Encrypt račun i pritisne *Zatraži certifikate*.
+
+Da izdavanje uspije, mora vrijediti sve troje:
+
+- **javni DNS zapis** za to ime pokazuje na javnu adresu ovog uređaja,
+- **port 80 je dostupan s interneta** (iza operaterskog NAT-a ne radi),
+- stranica je **aktivna i primijenjena**.
+
+Provjera ide HTTP-01 postupkom: Let's Encrypt dolazi na port 80 i traži
+datoteku u `/.well-known/acme-challenge/`. Vatrozid taj promet već
+preusmjerava na proxy, proxy **isključivo tu putanju** šalje malom
+poslužitelju unutar Saguara (sluša samo na `127.0.0.1`), a odgovore ondje
+ostavlja paket `acme`. Sve ostale putanje do njega ne dolaze.
+
+Izdani certifikati stoje u `/etc/ssl/acme`, a u proxy se povezuju
+**poveznicama** — nakon obnove proxy pri ponovnom učitavanju odmah vidi novi
+sadržaj. Obnovu vodi paket `acme` noćnim poslom i sam okine ponovno učitavanje
+proxyja. Tablica pokazuje za svako ime je li certifikat izdan, do kad vrijedi
+i tko ga je izdao; kad ostane manje od 20 dana, stanje se označi narančasto.
+
+Za provjeru postavki postoji **probni poslužitelj** (staging) po stranici:
+izdaje certifikat koji preglednici ne priznaju, ali nema stroga ograničenja
+broja pokušaja — korisno dok se ne posloži DNS i dostupnost porta 80.
 
 Konfiguracija HAProxyja je generirana (`/etc/haproxy.cfg`) — vidi se gumbom
 *Prikaži konfiguraciju*, provjerava se prije zamjene (`haproxy -c`), a stara

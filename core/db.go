@@ -43,5 +43,7 @@ func openDB(path string) (*sql.DB, error) {
 	db.Exec(`ALTER TABLE fw_rules ADD COLUMN weekdays TEXT`)
 	db.Exec(`ALTER TABLE users ADD COLUMN must_change_pw INTEGER NOT NULL DEFAULT 0`)
 	db.Exec(`ALTER TABLE ovpn_clients ADD COLUMN pass_hash TEXT`)
+	db.Exec(`ALTER TABLE rp_sites ADD COLUMN tls_mode TEXT NOT NULL DEFAULT 'passthrough'`)
+	db.Exec(`ALTER TABLE rp_sites ADD COLUMN acme_staging INTEGER NOT NULL DEFAULT 0`)
 	return db, nil
 }

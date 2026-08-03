@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -32,6 +33,10 @@ const rpFwPrefix = "sag_rp_"
 const rpHTTPPort = 8080
 const rpHTTPSPort = 8444
 
+// lokalna petlja u kojoj HAProxy otvara TLS vezu za stranice s certifikatom
+// na uređaju (sluša samo na 127.0.0.1)
+const rpTLSLoopPort = 8445
+
 var reHostname = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$`)
 
 type RPSite struct {
@@ -40,20 +45,24 @@ type RPSite struct {
 	Proto    string `json:"proto"` // https (SNI) | http
 	DestIP   string `json:"dest_ip"`
 	DestPort int    `json:"dest_port"`
-	Enabled  bool   `json:"enabled"`
-	Notes    string `json:"notes"`
+	// passthrough = certifikat ostaje na internom serveru,
+	// acme = uređaj vodi certifikat (Let's Encrypt) i sam otvara TLS vezu
+	TLSMode     string `json:"tls_mode"`
+	AcmeStaging bool   `json:"acme_staging"`
+	Enabled     bool   `json:"enabled"`
+	Notes       string `json:"notes"`
 
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
 
-const rpCols = `uuid, hostname, proto, dest_ip, dest_port, enabled,
-	COALESCE(notes,''), created_at, updated_at`
+const rpCols = `uuid, hostname, proto, dest_ip, dest_port, tls_mode,
+	acme_staging, enabled, COALESCE(notes,''), created_at, updated_at`
 
 func scanRPSite(row interface{ Scan(...any) error }) (RPSite, error) {
 	var s RPSite
 	err := row.Scan(&s.UUID, &s.Hostname, &s.Proto, &s.DestIP, &s.DestPort,
-		&s.Enabled, &s.Notes, &s.CreatedAt, &s.UpdatedAt)
+		&s.TLSMode, &s.AcmeStaging, &s.Enabled, &s.Notes, &s.CreatedAt, &s.UpdatedAt)
 	return s, err
 }
 
@@ -135,7 +144,7 @@ func (s *server) handleProxyInstall(w http.ResponseWriter, r *http.Request) {
 			_, _ = s.backupConfig(haproxyCfg)
 		}
 		if err := os.WriteFile(haproxyCfg,
-			[]byte(buildHaproxyConfig(nil)), 0o600); err != nil {
+			[]byte(buildHaproxyConfig(nil, s.proxyCertDir(), nil)), 0o600); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -162,7 +171,21 @@ func validateRPSite(w http.ResponseWriter, st *RPSite) bool {
 			st.DestPort = 443
 		}
 	}
+	st.TLSMode = strings.TrimSpace(st.TLSMode)
+	if st.TLSMode == "" {
+		st.TLSMode = "passthrough"
+	}
+	if st.Proto == "http" {
+		// kod HTTP stranice nema TLS-a prema serveru; certifikat na uređaju
+		// ima smisla samo ako uređaj otvara vezu prema posjetitelju
+		if st.TLSMode != "acme" {
+			st.TLSMode = "passthrough"
+		}
+	}
 	switch {
+	case st.TLSMode != "passthrough" && st.TLSMode != "acme":
+		writeErr(w, http.StatusBadRequest,
+			"način certifikata mora biti passthrough ili acme")
 	case !reHostname.MatchString(st.Hostname):
 		writeErr(w, http.StatusBadRequest,
 			"ime mora biti puno ime domene, npr. mail.tvrtka.hr")
@@ -191,10 +214,11 @@ func (s *server) handleProxySiteCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	st.UUID = newUUID()
 	_, err := s.db.Exec(`INSERT INTO rp_sites
-		(uuid, hostname, proto, dest_ip, dest_port, enabled, notes)
-		VALUES (?,?,?,?,?,?,?)`,
-		st.UUID, st.Hostname, st.Proto, st.DestIP, st.DestPort,
-		enabledIntOf(in.Enabled), st.Notes)
+		(uuid, hostname, proto, dest_ip, dest_port, tls_mode, acme_staging,
+		 enabled, notes)
+		VALUES (?,?,?,?,?,?,?,?,?)`,
+		st.UUID, st.Hostname, st.Proto, st.DestIP, st.DestPort, st.TLSMode,
+		boolInt(st.AcmeStaging), enabledIntOf(in.Enabled), st.Notes)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			writeErr(w, http.StatusConflict, "to ime već postoji u popisu")
@@ -218,9 +242,10 @@ func (s *server) handleProxySiteUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := s.db.Exec(`UPDATE rp_sites SET hostname=?, proto=?, dest_ip=?,
-		dest_port=?, enabled=?, notes=?, updated_at=datetime('now') WHERE uuid=?`,
-		st.Hostname, st.Proto, st.DestIP, st.DestPort, enabledIntOf(in.Enabled),
-		st.Notes, uuid)
+		dest_port=?, tls_mode=?, acme_staging=?, enabled=?, notes=?,
+		updated_at=datetime('now') WHERE uuid=?`,
+		st.Hostname, st.Proto, st.DestIP, st.DestPort, st.TLSMode,
+		boolInt(st.AcmeStaging), enabledIntOf(in.Enabled), st.Notes, uuid)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -250,8 +275,18 @@ func (s *server) handleProxySiteDelete(w http.ResponseWriter, r *http.Request) {
 
 func rpID(uuid string) string { return strings.ReplaceAll(uuid, "-", "")[:8] }
 
+// boolInt pretvara zastavicu u 0/1 za zapis u bazu.
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // buildHaproxyConfig sastavlja konfiguraciju iz popisa stranica.
-func buildHaproxyConfig(sites []RPSite) string {
+// certReady su imena za koja certifikat na uređaju stvarno postoji — bez
+// njega se TLS dio ne ispisuje, jer HAProxy odbija prazan popis certifikata.
+func buildHaproxyConfig(sites []RPSite, certDir string, certReady map[string]bool) string {
 	var b strings.Builder
 	b.WriteString(haproxyMarker + " — ovu datoteku piše Saguaro.\n")
 	b.WriteString("# Ručne izmjene se gube pri sljedećoj primjeni iz sučelja.\n\n")
@@ -260,19 +295,26 @@ func buildHaproxyConfig(sites []RPSite) string {
 	b.WriteString("defaults\n\tlog global\n\ttimeout connect 5s\n")
 	b.WriteString("\ttimeout client 60s\n\ttimeout server 60s\n\n")
 
-	var https, plain []RPSite
+	// tri skupine: prosljeđivanje po imenu, TLS na uređaju, i obični HTTP
+	var https, term, plain []RPSite
 	for _, st := range sites {
 		if !st.Enabled {
 			continue
 		}
-		if st.Proto == "http" {
+		switch {
+		case st.TLSMode == "acme" && certReady[st.Hostname]:
+			term = append(term, st)
+		case st.TLSMode == "acme":
+			// certifikat još nije izdan — stranica se ne poslužuje, ali
+			// provjera na portu 80 mora proći da se certifikat može dobiti
+		case st.Proto == "http":
 			plain = append(plain, st)
-		} else {
+		default:
 			https = append(https, st)
 		}
 	}
 
-	if len(https) > 0 {
+	if len(https) > 0 || len(term) > 0 {
 		// SNI prosljeđivanje: veza se ne otvara, certifikat ostaje na serveru
 		fmt.Fprintf(&b, "frontend sag_fe_https\n\tbind :%d\n\tmode tcp\n", rpHTTPSPort)
 		b.WriteString("\toption tcplog\n\ttcp-request inspect-delay 5s\n")
@@ -281,21 +323,45 @@ func buildHaproxyConfig(sites []RPSite) string {
 			fmt.Fprintf(&b, "\tuse_backend sag_be_%s if { req.ssl_sni -i %s }\n",
 				rpID(st.UUID), st.Hostname)
 		}
+		// stranice s certifikatom na uređaju idu u lokalnu petlju, gdje se
+		// veza otvara i dalje usmjerava po imenu
+		for _, st := range term {
+			fmt.Fprintf(&b, "\tuse_backend sag_be_tls if { req.ssl_sni -i %s }\n",
+				st.Hostname)
+		}
 		b.WriteString("\n")
 	}
 
-	// Port 80 (preusmjeren s vatrozida): poznata http imena idu svom serveru,
-	// sve ostalo na https
+	// Port 80 (preusmjeren s vatrozida): provjera certifikata ima prednost,
+	// pa poznata http imena, a sve ostalo na https
 	fmt.Fprintf(&b, "frontend sag_fe_http\n\tbind :%d\n\tmode http\n\toption httplog\n",
 		rpHTTPPort)
+	fmt.Fprintf(&b, "\tacl sag_acme path_beg %s\n", acmeChallengePath)
+	b.WriteString("\tuse_backend sag_be_acme if sag_acme\n")
 	for _, st := range plain {
 		fmt.Fprintf(&b, "\tuse_backend sag_beh_%s if { hdr(host) -i %s }\n",
 			rpID(st.UUID), st.Hostname)
 	}
-	if len(https) > 0 {
+	if len(https) > 0 || len(term) > 0 {
 		b.WriteString("\thttp-request redirect scheme https code 301\n")
 	}
 	b.WriteString("\n")
+
+	// odgovore na provjeru poslužuje Saguaro, samo na petlji
+	fmt.Fprintf(&b, "backend sag_be_acme\n\tmode http\n\tserver acme 127.0.0.1:%d\n\n",
+		acmeChallengePort)
+
+	if len(term) > 0 {
+		fmt.Fprintf(&b, "backend sag_be_tls\n\tmode tcp\n"+
+			"\tserver loop 127.0.0.1:%d send-proxy-v2\n\n", rpTLSLoopPort)
+		fmt.Fprintf(&b, "frontend sag_fe_tls\n\tbind 127.0.0.1:%d ssl crt %s accept-proxy\n"+
+			"\tmode http\n\toption httplog\n", rpTLSLoopPort, certDir)
+		for _, st := range term {
+			fmt.Fprintf(&b, "\tuse_backend sag_bet_%s if { hdr(host) -i %s }\n",
+				rpID(st.UUID), st.Hostname)
+		}
+		b.WriteString("\n")
+	}
 
 	for _, st := range https {
 		fmt.Fprintf(&b, "backend sag_be_%s\n\tmode tcp\n\tserver srv %s:%d\n\n",
@@ -304,6 +370,15 @@ func buildHaproxyConfig(sites []RPSite) string {
 	for _, st := range plain {
 		fmt.Fprintf(&b, "backend sag_beh_%s\n\tmode http\n\tserver srv %s:%d\n\n",
 			rpID(st.UUID), st.DestIP, st.DestPort)
+	}
+	for _, st := range term {
+		// prema internom serveru: šifrirano ako on to traži, inače obično
+		extra := ""
+		if st.Proto == "https" {
+			extra = " ssl verify none"
+		}
+		fmt.Fprintf(&b, "backend sag_bet_%s\n\tmode http\n\tserver srv %s:%d%s\n\n",
+			rpID(st.UUID), st.DestIP, st.DestPort, extra)
 	}
 	return b.String()
 }
@@ -374,7 +449,29 @@ func (s *server) handleProxyApply(w http.ResponseWriter, r *http.Request) {
 			active++
 		}
 	}
-	cfg := buildHaproxyConfig(sites)
+	// certifikati koje uređaj vodi sam: poveznice u našu mapu i popis onih
+	// koji stvarno postoje (bez njih HAProxy ne bi mogao učitati TLS dio)
+	if _, err := s.linkCerts(sites); err != nil {
+		writeErr(w, http.StatusInternalServerError, "certifikati: "+err.Error())
+		return
+	}
+	certReady := map[string]bool{}
+	for _, st := range sites {
+		if st.TLSMode == "acme" {
+			if _, err := os.Stat(filepath.Join(s.proxyCertDir(), st.Hostname+".pem")); err == nil {
+				certReady[st.Hostname] = true
+			}
+		}
+	}
+	// zapisi za izdavanje/obnovu certifikata prate popis stranica
+	if acmeInstalled() {
+		if err := s.writeAcmeConfig(ctx, sites); err != nil {
+			writeErr(w, http.StatusInternalServerError, "konfiguracija acme: "+err.Error())
+			return
+		}
+	}
+
+	cfg := buildHaproxyConfig(sites, s.proxyCertDir(), certReady)
 	// provjera konfiguracije prije nego zamijeni onu koja radi
 	tmp := "/tmp/saguaro-haproxy-check.cfg"
 	if err := os.WriteFile(tmp, []byte(cfg), 0o600); err != nil {
@@ -440,9 +537,16 @@ func (s *server) handleProxyConfig(w http.ResponseWriter, r *http.Request) {
 	if b, err := os.ReadFile(haproxyCfg); err == nil {
 		live = string(b)
 	}
+	certReady := map[string]bool{}
+	for _, st := range sites {
+		if _, err := os.Stat(filepath.Join(s.proxyCertDir(), st.Hostname+".pem")); err == nil {
+			certReady[st.Hostname] = true
+		}
+	}
+	gen := buildHaproxyConfig(sites, s.proxyCertDir(), certReady)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"generated": buildHaproxyConfig(sites),
+		"generated": gen,
 		"live":      live,
-		"same":      strconv.FormatBool(live == buildHaproxyConfig(sites)),
+		"same":      strconv.FormatBool(live == gen),
 	})
 }

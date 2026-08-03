@@ -764,6 +764,7 @@ let editRpUUID = null;
 
 async function loadProxy() {
   const x = await api("/proxy");
+  loadAcme().catch(() => setPill($("ac-state"), "off", "nedostupno"));
   const tb = $("rp-rows");
   tb.replaceChildren();
   for (const st of x.sites) {
@@ -773,8 +774,10 @@ async function loadProxy() {
     b.textContent = st.hostname;
     tdH.append(b);
     tr.append(tdH);
-    for (const v of [st.proto === "http" ? "HTTP" : "HTTPS (SNI)",
-      `${st.dest_ip}:${st.dest_port}`]) {
+    for (const v of [st.tls_mode === "acme"
+      ? "HTTPS · certifikat na uređaju"
+      : (st.proto === "http" ? "HTTP" : "HTTPS · prosljeđivanje"),
+    `${st.dest_ip}:${st.dest_port}`]) {
       const td = document.createElement("td");
       td.textContent = v;
       tr.append(td);
@@ -848,10 +851,89 @@ function openRpDialog(st) {
   f.elements.proto.value = st ? st.proto : "https";
   f.elements.dest_ip.value = st ? st.dest_ip : "";
   f.elements.dest_port.value = st ? st.dest_port : "";
+  f.elements.tls_mode.value = st ? st.tls_mode : "passthrough";
+  f.elements.acme_staging.checked = st ? !!st.acme_staging : false;
   f.elements.notes.value = st ? st.notes || "" : "";
   f.elements.enabled.checked = st ? !!st.enabled : true;
   $("rp-dialog").showModal();
 }
+
+/* ---------- certifikati (Let's Encrypt) ---------- */
+
+async function loadAcme() {
+  const x = await api("/proxy/acme");
+  $("ac-email").value = x.email || "";
+  const tb = $("ac-rows");
+  tb.replaceChildren();
+  const hosts = Object.keys(x.certs || {});
+  let issued = 0, soon = 0;
+  for (const h of hosts.sort()) {
+    const c = x.certs[h];
+    if (c.issued) issued++;
+    if (c.issued && c.days_left < 20) soon++;
+    const tr = document.createElement("tr");
+    const t0 = document.createElement("td");
+    t0.textContent = h;
+    tr.append(t0);
+    const t1 = document.createElement("td");
+    t1.append(c.issued
+      ? (c.days_left < 20 ? stWarn("ističe uskoro") : stGood("izdan"))
+      : stOff("nije izdan"));
+    tr.append(t1);
+    for (const v of [c.issued ? `${c.not_after} (još ${c.days_left} dana)` : "—",
+      c.issuer || "—"]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    tb.append(tr);
+  }
+  const badge = $("ac-state");
+  if (!x.installed) setPill(badge, "off", "paket nije instaliran");
+  else if (!hosts.length) setPill(badge, "off", "nema stranica s certifikatom na uređaju");
+  else if (issued === hosts.length && !soon) setPill(badge, "good", "svi certifikati izdani");
+  else if (soon) setPill(badge, "warn", soon + " ističe uskoro");
+  else setPill(badge, "warn", `izdano ${issued} od ${hosts.length}`);
+  setNote("ac-note", x.email ? "račun: " + x.email : "e-mail računa još nije upisan");
+  $("ac-install").classList.toggle("hidden", x.installed);
+}
+
+$("ac-save").addEventListener("click", async () => {
+  try {
+    await api("/proxy/acme", "POST", { email: $("ac-email").value.trim() });
+    $("ac-result").textContent = "E-mail spremljen.";
+    await loadAcme();
+  } catch (e) { $("ac-result").textContent = "Greška: " + (e.message || e); }
+});
+
+$("ac-install").addEventListener("click", async () => {
+  $("ac-result").textContent = "Instaliram paket acme…";
+  try {
+    await api("/proxy/acme/install", "POST", {});
+    $("ac-result").textContent = "Paket acme je instaliran.";
+    await loadAcme();
+  } catch (e) { $("ac-result").textContent = "Greška: " + (e.message || e); }
+});
+
+$("ac-issue").addEventListener("click", async () => {
+  $("ac-result").textContent =
+    "Tražim certifikate… (Let's Encrypt sada mora doći na port 80 tih imena)";
+  $("ac-log").classList.add("hidden");
+  try {
+    const r = await api("/proxy/acme/issue", "POST", {});
+    const ok = Object.values(r.certs).filter((c) => c.issued).length;
+    $("ac-result").textContent =
+      `Traženo za ${r.requested.length} imena · izdano ${ok} · povezano u proxy: ${r.linked}.` +
+      (ok < r.requested.length ? " Pogledaj ispis ispod — najčešći uzrok je da " +
+        "ime ne pokazuje na ovaj uređaj ili port 80 nije dostupan s interneta." : "");
+    if (r.log) {
+      $("ac-log").textContent = r.log;
+      $("ac-log").classList.remove("hidden");
+    }
+    await loadAcme();
+    await loadProxy();
+  } catch (e) { $("ac-result").textContent = "Greška: " + (e.message || e); }
+});
 
 $("rp-add").addEventListener("click", () => openRpDialog(null));
 $("rp-cancel").addEventListener("click", () => $("rp-dialog").close());
@@ -863,6 +945,8 @@ $("rp-form").addEventListener("submit", async (ev) => {
     proto: f.elements.proto.value,
     dest_ip: f.elements.dest_ip.value.trim(),
     dest_port: parseInt(f.elements.dest_port.value, 10) || 0,
+    tls_mode: f.elements.tls_mode.value,
+    acme_staging: f.elements.acme_staging.checked,
     notes: f.elements.notes.value.trim(),
     enabled: f.elements.enabled.checked,
   };

@@ -432,6 +432,54 @@
 
     <section class="card">
       <div class="card-head">
+        <h2>Certifikati (Let's Encrypt)</h2>
+        <span class="st" id="ac-state">—</span>
+        <span class="head-note" id="ac-note">—</span>
+        <button id="ac-install" class="ghost hidden">Instaliraj acme</button>
+        <button id="ac-issue" class="primary">Zatraži certifikate</button>
+      </div>
+      <p class="hint">Za stranice označene s <b>certifikat na uređaju</b>
+        uređaj sam zatraži certifikat od Let's Encrypta i sam ga obnavlja.
+        Interni server tada može ostati na običnom HTTP-u.</p>
+      <div class="form-grid" style="max-width:640px">
+        <label class="wide">E-mail za Let's Encrypt račun
+          <input id="ac-email" placeholder="admin@tvrtka.hr" autocomplete="off"></label>
+      </div>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="ac-save" class="ghost">Spremi e-mail</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Ime</th><th>Certifikat</th><th>Vrijedi do</th><th>Izdavatelj</th>
+          </tr></thead>
+          <tbody id="ac-rows"></tbody>
+        </table>
+      </div>
+      <p class="hint" id="ac-result"></p>
+      <pre id="ac-log" class="hidden" style="font-size:11.5px;overflow-x:auto;background:#f6f8fa;border:1px solid var(--line);border-radius:3px;padding:10px;max-height:280px;overflow-y:auto"></pre>
+
+      <details class="help"><summary>Što mora biti ispunjeno da izdavanje uspije</summary><div>
+        Let's Encrypt provjerava da uređaj stvarno drži to ime tako da s
+        interneta dođe na <b>port 80</b> tog imena i traži datoteku u putanji
+        <code>/.well-known/acme-challenge/</code>. Zato mora vrijediti:
+        <ul>
+          <li><b>javni DNS zapis</b> za to ime pokazuje na javnu adresu ovog uređaja</li>
+          <li><b>port 80 je dostupan s interneta</b> — uređaj mora imati pravu
+            javnu adresu (iza operaterskog NAT-a to ne radi)</li>
+          <li>stranica je <b>aktivna</b> i primijenjena</li>
+        </ul>
+        Odgovore na provjeru poslužuje sam Saguaro na petlji, a proxy propušta
+        isključivo tu putanju. Obnovu vodi paket <code>acme</code> dnevnim
+        poslom; proxy se nakon obnove sam ponovno učita.
+        <br><br>Za probu postoji <b>probni poslužitelj</b> (staging): izdaje
+        certifikat koji preglednici ne priznaju, ali nema stroga ograničenja
+        broja pokušaja. Uključuje se po stranici u dijalogu.
+      </div></details>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
         <h2>Preduvjeti</h2>
         <span class="head-note" id="rp-prereq-note">—</span>
       </div>
@@ -1783,6 +1831,15 @@
         </label>
         <label>Interni server (IP)<input name="dest_ip" required placeholder="192.168.50.10"></label>
         <label>Port internog servera<input name="dest_port" type="number" min="1" max="65535" placeholder="443"></label>
+        <label class="wide">Certifikat
+          <select name="tls_mode">
+            <option value="passthrough">Na internom serveru — uređaj samo proslijedi vezu</option>
+            <option value="acme">Na uređaju — Let's Encrypt, sam se obnavlja</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" name="acme_staging">
+          Probni poslužitelj (staging) — certifikat koji preglednici ne priznaju,
+          za provjeru postavki bez ograničenja broja pokušaja</label>
         <label class="wide">Napomene<textarea name="notes" rows="2"></textarea></label>
         <label class="check"><input type="checkbox" name="enabled" checked>
           Aktivna — uključi u primjenu</label>

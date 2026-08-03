@@ -326,6 +326,10 @@ CREATE TABLE IF NOT EXISTS rp_sites (
     proto       TEXT NOT NULL DEFAULT 'https',  -- https (SNI) | http
     dest_ip     TEXT NOT NULL,
     dest_port   INTEGER NOT NULL DEFAULT 443,
+    -- passthrough = certifikat ostaje na internom serveru (zadano),
+    -- acme = uređaj sam vodi certifikat (Let's Encrypt) i otvara vezu
+    tls_mode    TEXT NOT NULL DEFAULT 'passthrough',
+    acme_staging INTEGER NOT NULL DEFAULT 0,
     enabled     INTEGER NOT NULL DEFAULT 1,
     notes       TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),

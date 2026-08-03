@@ -140,3 +140,25 @@ verificirana.*
 7. **Backup**: odredište izvan uređaja + lozinka za šifriranje (**zapiši je**).
 8. `sh /opt/saguaro/selftest.sh` — sve mora biti PROŠLO ili PRESKAČEM.
 9. Puni backup i **preuzmi ga na svoje računalo**.
+
+## Let's Encrypt za obrnuti proxy (v0.29.0)
+
+Provjereno na uređaju **03.08.2026.**:
+
+| Korak | Ishod |
+|---|---|
+| Putanja za provjeru kroz proxy | **radi** — `GET /.well-known/acme-challenge/<token>` na portu 8080 vraća sadržaj iz mape paketa (`/var/run/acme/challenge`) |
+| Druge putanje prema tom poslužitelju | **odbijene** — 503, proxy propušta isključivo putanju provjere |
+| Zapis u `/etc/config/acme` | **radi** — sekcija `sag_<id>` s domenom, `validation_method=webroot`, `key_type=ec256`, `staging` |
+| Pokretanje izdavanja | **radi** — `acme.sh` se pokreće s našim e-mailom prema **staging** poslužitelju Let's Encrypta |
+| Odgovor certifikacijskog tijela | **stigao** — `rejectedIdentifier` za `test-le.example.com` (LE odbija ogledne domene) |
+| Ispis postupka natrag u sučelje | **radi** — zadnji redci iz syslog-a vraćaju se u odgovoru |
+
+**Što se ovdje ne može dokazati:** stvarno izdavanje certifikata. Uređaj je iza
+operaterskog NAT-a (CGNAT) i nema javnu domenu koja pokazuje na njega, a
+Let's Encrypt mora doći na port 80 tog imena. Cijeli lanac do certifikacijskog
+tijela je prošao i dobio odgovor — nedostaje samo javno dostupno ime.
+
+Za provjeru na lokaciji s javnom adresom: dodaj stranicu s **probnim
+poslužiteljem (staging)**, zatraži certifikat i pogledaj ispis. Kad staging
+prođe, isključi ga i zatraži pravi.

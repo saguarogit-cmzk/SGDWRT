@@ -347,6 +347,24 @@ fi
 # ------------------------------------------------------- 6. logovi i backup
 head_ "Logovi, backup i upozorenja"
 
+# korijenska particija — nadogradnja x86 slike ju zna vratiti na ~104 MB, pa se
+# sustav tiho napuni; ovo se mora vidjeti prije nego stane
+ROOTFREE=$(df -m / 2>/dev/null | awk 'NR==2{print $4}')
+ROOTSIZE=$(df -m / 2>/dev/null | awk 'NR==2{print $2}')
+if [ -n "$ROOTFREE" ]; then
+    if [ "$ROOTFREE" -ge 64 ]; then
+        ok "Korijenska particija ima dovoljno mjesta (${ROOTFREE} MB od ${ROOTSIZE} MB)"
+    elif [ "$ROOTFREE" -ge 32 ]; then
+        bad "Na korijenskoj particiji je ostalo samo ${ROOTFREE} MB" \
+            "Updates → Disk i korijenska particija; sljedeću sliku naruči s većim rootom"
+    else
+        bad "Korijenska particija je gotovo puna (${ROOTFREE} MB od ${ROOTSIZE} MB)" \
+            "sustav može prestati raditi — Updates → Disk i korijenska particija"
+    fi
+else
+    skip "Veličina korijenske particije se ne može očitati"
+fi
+
 if [ "$(uci -q get system.@system[0].log_file)" = "$BASE/log/system.log" ]; then
     if [ -f "$BASE/log/system.log" ]; then
         ok "Logovi se trajno spremaju na disk ($(ls "$BASE/log" | wc -l) datoteka)"

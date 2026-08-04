@@ -466,16 +466,55 @@ ručnim učitavanjem paketa. Prije svake nadogradnje automatski se radi puni
 backup; nakon zamjene servis se sam ponovno pokreće. Objava izdanja:
 `git tag vX.Y.Z && git push --tags` — GitHub Actions sagradi i objavi paket.
 
+### Disk i korijenska particija
+
+Ovo je jedina veličina koju nadogradnja **tiho promijeni**, pa ima svoju ploču
+iznad nadogradnje.
+
+Nadogradnja na ovakvim (x86) uređajima ne upisuje samo sustav nego **cijelu
+sliku, zajedno s tablicom particija**. Korijenska particija se time vrati na
+veličinu koju slika nosi — zadano oko **104 MB**, bez obzira koliko je disk
+velik i kolika je particija bila prije. Sustav se onda kroz par tjedana napuni
+do vrha i počne se ponašati nepredvidivo.
+
+Rješenje nije naknadno širenje nego **zadavanje veličine unaprijed**: pri
+naručivanju slike upiše se željena veličina korijenske particije. Polje je
+već popunjeno preporukom (trostruko od trenutno zauzetog, najmanje 512 MB).
+Gornja granica servisa za izgradnju je **1024 MB** i to je za rad sustava
+sasvim dovoljno.
+
+Kočnice koje su ugrađene:
+
+- slika se **ne naručuje** ako je tražena particija manja od već zauzetog
+  prostora uvećanog za 64 MB rezerve;
+- slika se **ne upisuje** ako nosi premalu korijensku particiju; za sliku
+  učitanu s računala (veličina se ne zna) traži se izričita potvrda kvačicom;
+- veličina prije nadogradnje se zapisuje i nakon dizanja uspoređuje — ako se
+  particija smanjila, uređaj **javi e-mailom**;
+- `selftest.sh` provjerava koliko je slobodno na korijenskoj particiji.
+
+> **Širenje korijenske particije na uređaju koji radi se ne nudi i ne
+> preporučuje.** Službeni `expand-root` postupak radi `resize2fs` preko loop
+> uređaja nad particijom koja je u tom trenutku montirana kao korijen za
+> pisanje. Na `squashfs` slikama to je bezopasno, ali na **ext4 kombiniranoj
+> slici** (kakvu koristimo) to je isti datotečni sustav s dvije strane i
+> uništi ga — uređaj se poslije ne digne. Vidi odluku D-012.
+
+Slobodan prostor na disku iza zadnje particije prikazuje se informativno.
+Ako ga treba iskoristiti, ide kao **zasebna particija za podatke**, nikad
+širenjem korijenske.
+
 ### OpenWrt (sustav samog uređaja)
 
 Ploča **OpenWrt** nadograđuje sustav uređaja. Tijek ima tri koraka:
 
 1. **Naruči sliku** — uređaj traži od službenog servisa
    (`sysupgrade.openwrt.org`, isti koji koristi alat `owut`) sliku **s popisom
-   paketa ovog uređaja**. To je bitno: obična slika s downloads.openwrt.org
-   sadrži samo zadane pakete, pa bi nakon nadogradnje nestali mwan3, banIP,
-   OpenVPN, bird2 i ostalo. Prva gradnja traje par minuta, kasnije je
-   gotova odmah (servis pamti izgrađeno).
+   paketa ovog uređaja** i **traženom veličinom korijenske particije**. Popis
+   paketa je bitan: obična slika s downloads.openwrt.org sadrži samo zadane
+   pakete, pa bi nakon nadogradnje nestali mwan3, banIP, OpenVPN, bird2 i
+   ostalo. Prva gradnja traje par minuta, kasnije je gotova odmah (servis
+   pamti izgrađeno).
 2. **Preuzmi na uređaj** — slika se sprema u RAM (`/tmp`) i odmah se provjerava
    **SHA256 otisak**; ako ne odgovara, datoteka se briše i postupak staje.
 3. **Nadogradi** — upiše se ime uređaja kao potvrda, napravi se puni backup i

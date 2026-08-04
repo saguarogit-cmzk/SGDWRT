@@ -44,12 +44,13 @@ func (s *server) owLogFile() string      { return filepath.Join(s.etcDir, "sysup
 func (s *server) owMetaFile() string     { return filepath.Join(s.etcDir, "sysupgrade.json") }
 
 type owMeta struct {
-	Version string `json:"version"`
-	Image   string `json:"image"`
-	SHA256  string `json:"sha256"`
-	Source  string `json:"source"` // asu | upload
-	Size    int64  `json:"size"`
-	At      string `json:"at"`
+	Version  string `json:"version"`
+	Image    string `json:"image"`
+	SHA256   string `json:"sha256"`
+	Source   string `json:"source"` // asu | upload
+	Size     int64  `json:"size"`
+	At       string `json:"at"`
+	RootfsMB int    `json:"rootfs_mb"` // 0 = nepoznato (slika s računala)
 }
 
 // worldPackages čita popis izričito instaliranih paketa (apk "world").
@@ -193,6 +194,10 @@ func (s *server) handleOpenWrtStatus(w http.ResponseWriter, r *http.Request) {
 	} else {
 		out["latest_error"] = "nema pristupa servisu izdanja: " + err.Error()
 	}
+	// stanje diska — nadogradnja x86 slike prepisuje tablicu particija, pa je
+	// veličina root particije dio odluke, ne naknadna briga
+	ds := s.diskState()
+	out["disk"] = ds
 	// zadnji backup — bez njega se nadogradnja ne pušta
 	if t, name := s.lastBackupInfo(); name != "" {
 		out["last_backup"] = name
@@ -269,7 +274,8 @@ func pickImage(images []asuImage, rootfs, boot string) (asuImage, error) {
 
 func (s *server) handleOpenWrtBuild(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Version string `json:"version"`
+		Version  string `json:"version"`
+		RootfsMB int    `json:"rootfs_mb"`
 	}
 	if !decodeBody(w, r, &in) {
 		return
@@ -296,12 +302,38 @@ func (s *server) handleOpenWrtBuild(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "popis paketa uređaja nije čitljiv")
 		return
 	}
-	body, _ := json.Marshal(map[string]any{
+	// Veličina root particije se traži unaprijed. Bez toga slika nosi zadanih
+	// ~104 MB i nadogradnja svaki put vrati particiju na tu veličinu — a
+	// naknadno širenje na uređaju koji radi je opasno i zna ga oboriti.
+	ds := s.diskState()
+	rootfsMB := in.RootfsMB
+	if rootfsMB == 0 {
+		rootfsMB = ds.RecommendMB
+	}
+	if rootfsMB < 0 || rootfsMB > asuMaxRootfsMB {
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf(
+			"veličina root particije mora biti između 1 i %d MB (granica servisa za izgradnju)",
+			asuMaxRootfsMB))
+		return
+	}
+	if ds.FSUsed > 0 && int64(rootfsMB)<<20 < ds.FSUsed+(rootfsMinFreeMB<<20) {
+		writeErr(w, http.StatusConflict, fmt.Sprintf(
+			"tražena root particija (%d MB) je manja od onoga što je već zauzeto (%d MB) "+
+				"uvećanog za rezervu — uređaj se poslije nadogradnje ne bi digao",
+			rootfsMB, int(ds.FSUsed>>20)))
+		return
+	}
+	breq := map[string]any{
 		"target":   rel.Target,
 		"profile":  "generic",
 		"version":  in.Version,
 		"packages": pkgs,
-	})
+	}
+	// parametar ima smisla samo tamo gdje slika nosi tablicu particija
+	if rootfsMB > 0 && rel.RootFS != "" && ds.PartBytes > 0 {
+		breq["rootfs_size_mb"] = rootfsMB
+	}
+	body, _ := json.Marshal(breq)
 	req, _ := http.NewRequestWithContext(r.Context(), http.MethodPost,
 		asuBase+"/api/v1/build", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -325,11 +357,12 @@ func (s *server) handleOpenWrtBuild(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"state":   "ready",
-			"version": in.Version,
-			"image":   im.Name,
-			"sha256":  im.SHA256,
-			"url":     asuBase + "/store/" + ar.BinDir + "/" + im.Name,
+			"state":     "ready",
+			"version":   in.Version,
+			"image":     im.Name,
+			"sha256":    im.SHA256,
+			"rootfs_mb": rootfsMB,
+			"url":       asuBase + "/store/" + ar.BinDir + "/" + im.Name,
 		})
 	case http.StatusAccepted, http.StatusCreated:
 		st := ar.Detail
@@ -340,10 +373,11 @@ func (s *server) handleOpenWrtBuild(w http.ResponseWriter, r *http.Request) {
 			st = fmt.Sprintf("u redu, %d ispred", ar.QueuePos)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"state":   "building",
-			"version": in.Version,
-			"status":  st,
-			"hash":    ar.RequestHash,
+			"state":     "building",
+			"version":   in.Version,
+			"status":    st,
+			"rootfs_mb": rootfsMB,
+			"hash":      ar.RequestHash,
 		})
 	default:
 		msg := ar.Detail
@@ -357,10 +391,11 @@ func (s *server) handleOpenWrtBuild(w http.ResponseWriter, r *http.Request) {
 // handleOpenWrtFetch preuzima izgrađenu sliku na uređaj i provjerava otisak.
 func (s *server) handleOpenWrtFetch(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		URL     string `json:"url"`
-		SHA256  string `json:"sha256"`
-		Version string `json:"version"`
-		Image   string `json:"image"`
+		URL      string `json:"url"`
+		SHA256   string `json:"sha256"`
+		Version  string `json:"version"`
+		Image    string `json:"image"`
+		RootfsMB int    `json:"rootfs_mb"`
 	}
 	if !decodeBody(w, r, &in) {
 		return
@@ -403,7 +438,7 @@ func (s *server) handleOpenWrtFetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m := owMeta{Version: in.Version, Image: in.Image, SHA256: got, Source: "asu",
-		Size: n, At: time.Now().Format(time.RFC3339)}
+		Size: n, At: time.Now().Format(time.RFC3339), RootfsMB: in.RootfsMB}
 	b, _ := json.Marshal(m)
 	_ = os.WriteFile(s.owMetaFile(), b, 0o600)
 	writeJSON(w, http.StatusOK, map[string]any{"staged": true, "size_bytes": n, "sha256": got})
@@ -448,6 +483,9 @@ func (s *server) handleOpenWrtUpload(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleOpenWrtFlash(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Confirm string `json:"confirm"`
+		// AcceptRootfs je svjestan pristanak na sliku za koju se ne zna
+		// veličina root particije ili je manja od sadašnje
+		AcceptRootfs bool `json:"accept_rootfs"`
 	}
 	if !decodeBody(w, r, &in) {
 		return
@@ -490,6 +528,32 @@ func (s *server) handleOpenWrtFlash(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "otisak slike se promijenio — nadogradnja se prekida")
 		return
 	}
+	// Provjera root particije — jedina stvar koju nadogradnja x86 slike tiho
+	// pokvari. Slika nosi svoju tablicu particija; ako je root u njoj manji
+	// nego što treba, uređaj se poslije dizanja napuni do vrha.
+	ds := s.diskState()
+	switch {
+	case m.RootfsMB == 0 && ds.PartBytes > 0 && !in.AcceptRootfs:
+		writeErr(w, http.StatusConflict,
+			"za ovu sliku se ne zna koliku root particiju nosi (slika je učitana s računala). "+
+				"Nadogradnja može vratiti root particiju na zadanih ~104 MB. "+
+				"Potvrdi kvačicom da nastavljaš svjesno.")
+		return
+	case m.RootfsMB > 0 && int64(m.RootfsMB)<<20 < ds.FSUsed+(rootfsMinFreeMB<<20) && !in.AcceptRootfs:
+		writeErr(w, http.StatusConflict, fmt.Sprintf(
+			"slika nosi root particiju od %d MB, a već je zauzeto %d MB — "+
+				"pripremi sliku s većom root particijom (preporuka %d MB)",
+			m.RootfsMB, int(ds.FSUsed>>20), ds.RecommendMB))
+		return
+	}
+	// stanje prije nadogradnje se pamti da se poslije dizanja može reći je li
+	// se particija smanjila (etc direktorij preživi nadogradnju)
+	if ds.PartBytes > 0 {
+		db, _ := json.Marshal(diskBefore{PartBytes: ds.PartBytes, FSUsed: ds.FSUsed,
+			Version: rel.Version, At: time.Now().Format(time.RFC3339)})
+		_ = os.WriteFile(s.diskBeforeFile(), db, 0o600)
+	}
+
 	// svjež puni backup je uvjet, ne preporuka
 	name, _, err := s.createFullBackup(ctx)
 	if err != nil {

@@ -27,6 +27,7 @@ async function api(path, method = "GET", body = null) {
 
 const GB = 1024 * 1024 * 1024;
 function fmtBytes(b) {
+  if (!b || b < 0) return "0 MB";
   if (b >= GB) return (b / GB).toFixed(1) + " GB";
   return (b / (1024 * 1024)).toFixed(0) + " MB";
 }
@@ -3453,9 +3454,14 @@ async function loadOpenWrt() {
   setNote("ow-note", x.latest_error || (x.latest
     ? "grane: " + x.latest.join(", ") : ""));
 
+  renderDisk(x.disk || {});
+
   $("ow-confirm").placeholder = x.hostname || "ime uređaja";
   $("ow-fetch").disabled = !owBuilt;
   $("ow-flash").disabled = !x.staged;
+  // za sliku učitanu s računala se ne zna koliku root particiju nosi
+  $("ow-accept-wrap").classList.toggle("hidden",
+    !(x.staged && !x.staged.rootfs_mb));
 
   // provjera paketa nakon nadogradnje
   try {
@@ -3473,21 +3479,72 @@ async function loadOpenWrt() {
   } catch { /* popis nije obavezan */ }
 }
 
-let owBuilt = null; // {url, sha256, image, version}
+// renderDisk prikazuje stanje diska i korijenske particije. Ovo je jedina
+// veličina koju nadogradnja tiho promijeni, pa stoji uz nju.
+function renderDisk(d) {
+  const kv = $("dk-kv");
+  kv.replaceChildren();
+  const badge = $("dk-state");
+  if (!d || !d.state || d.state === "nepoznato") {
+    setPill(badge, "off", "nepoznato");
+    setNote("dk-note", (d && d.note) || "");
+    $("dk-tail").classList.add("hidden");
+    return;
+  }
+  const rows = [
+    ["Disk", `${d.disk || "—"} · ${fmtBytes(d.disk_bytes)} · ${d.parts || 0} particija`],
+    ["Korijenska particija", `${d.part || "—"} · ${fmtBytes(d.part_bytes)}`],
+    ["Zauzeto", `${fmtBytes(d.fs_used)} od ${fmtBytes(d.fs_bytes)} · slobodno ${fmtBytes(d.fs_free)}`],
+    ["Preporuka za novu sliku", `${d.recommend_mb} MB`],
+  ];
+  if (d.shrunk) {
+    rows.push(["Prije nadogradnje", fmtBytes(d.shrunk_before) + " — nadogradnja ju je smanjila"]);
+  }
+  for (const [k, v] of rows) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    kv.append(dt, dd);
+  }
+  const kind = d.state === "ok" ? "good" : d.state === "tijesno" ? "warn" : "crit";
+  setPill(badge, d.shrunk && d.state === "ok" ? "warn" : kind, d.state);
+  setNote("dk-note", d.note || "");
+
+  // neiskorišteni prostor iza zadnje particije — vrijedi ga spomenuti, ali
+  // širenje korijenske particije na živom uređaju se ne nudi jer nije sigurno
+  const tail = $("dk-tail");
+  if (d.free_tail > 2 * 1024 * 1024 * 1024) {
+    tail.textContent =
+      `Na disku je ${fmtBytes(d.free_tail)} neiskorišteno iza zadnje particije. ` +
+      "Korijenska particija se time ne širi — najveća koju servis za izgradnju " +
+      "daje je 1024 MB, a to je za rad sustava dovoljno. Ostatak diska ima " +
+      "smisla samo kao zasebna particija za podatke.";
+    tail.classList.remove("hidden");
+  } else {
+    tail.classList.add("hidden");
+  }
+
+  const inp = $("ow-rootfs");
+  if (!inp.value) inp.value = d.recommend_mb || 512;
+}
+
+let owBuilt = null; // {url, sha256, image, version, rootfs_mb}
 
 $("ow-refresh").addEventListener("click", () => loadOpenWrt().catch(alertErr));
 
 $("ow-build").addEventListener("click", async () => {
   $("ow-build-result").textContent =
     "Naručujem sliku s popisom paketa ovog uređaja… (prvi put zna trajati par minuta)";
+  const body = {};
+  const mb = parseInt($("ow-rootfs").value, 10);
+  if (mb > 0) body.rootfs_mb = mb;
   try {
-    let r = await api("/openwrt/build", "POST", {});
+    let r = await api("/openwrt/build", "POST", body);
     // servis gradi u pozadini — pitaj ponovno dok ne bude gotovo
     for (let i = 0; r.state === "building" && i < 30; i++) {
       $("ow-build-result").textContent =
         `Servis gradi sliku (${r.status || "u tijeku"})… pokušaj ${i + 1}/30`;
       await new Promise((res) => setTimeout(res, 10000));
-      r = await api("/openwrt/build", "POST", {});
+      r = await api("/openwrt/build", "POST", body);
     }
     if (r.state !== "ready") {
       $("ow-build-result").textContent =
@@ -3497,7 +3554,8 @@ $("ow-build").addEventListener("click", async () => {
     owBuilt = r;
     $("ow-fetch").disabled = false;
     $("ow-build-result").textContent =
-      `Slika je spremna: ${r.image} (otisak ${r.sha256.slice(0, 16)}…). ` +
+      `Slika je spremna: ${r.image} (otisak ${r.sha256.slice(0, 16)}…, ` +
+      `korijenska particija ${r.rootfs_mb} MB). ` +
       "Sljedeći korak: preuzmi je na uređaj.";
   } catch (e) {
     $("ow-build-result").textContent = "Greška: " + (e.message || e);
@@ -3549,7 +3607,8 @@ $("ow-flash").addEventListener("click", async () => {
     "Nastaviti?")) return;
   $("ow-flash-result").textContent = "Radim backup i pokrećem nadogradnju…";
   try {
-    const r = await api("/openwrt/flash", "POST", { confirm: name });
+    const r = await api("/openwrt/flash", "POST",
+      { confirm: name, accept_rootfs: $("ow-accept").checked });
     $("ow-flash-result").textContent =
       `Nadogradnja pokrenuta (backup ${r.backup}). ${r.note}`;
     stopTimers();

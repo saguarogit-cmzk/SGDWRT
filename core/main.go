@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.29.3"
+const version = "0.30.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -157,6 +157,7 @@ func main() {
 	}
 
 	s.startChallengeServer()
+	go s.checkRootAfterUpgrade()
 	go collectMetrics()
 	go s.monitorLoop()
 	go s.watchdogLoop()
@@ -323,6 +324,7 @@ func main() {
 	mux.Handle("GET /api/v1/update/status", s.auth(s.handleUpdateStatus))
 	mux.Handle("POST /api/v1/update/upload", s.auth(s.handleUpdateUpload))
 	mux.Handle("POST /api/v1/update/apply", s.auth(s.handleUpdateApply))
+	mux.Handle("GET /api/v1/openwrt/disk", s.auth(s.handleDiskStatus))
 	mux.Handle("GET /api/v1/openwrt/status", s.auth(s.handleOpenWrtStatus))
 	mux.Handle("POST /api/v1/openwrt/build", s.auth(s.handleOpenWrtBuild))
 	mux.Handle("POST /api/v1/openwrt/fetch", s.auth(s.handleOpenWrtFetch))

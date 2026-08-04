@@ -1114,6 +1114,20 @@
 
     <section class="card">
       <div class="card-head">
+        <h2>Disk i korijenska particija</h2>
+        <span class="st" id="dk-state">—</span>
+        <span class="head-note" id="dk-note">—</span>
+      </div>
+      <dl class="kv" id="dk-kv"></dl>
+      <p class="hint">Nadogradnja OpenWrt-a na ovakvim uređajima upisuje cijelu
+        sliku, <b>zajedno s tablicom particija</b> — korijenska particija se
+        vrati na veličinu koju slika nosi. Zato se veličina zadaje unaprijed,
+        pri naručivanju slike, a ne širi se naknadno na uređaju koji radi.</p>
+      <p class="hint hidden" id="dk-tail"></p>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
         <h2>OpenWrt — nadogradnja sustava uređaja</h2>
         <span class="st" id="ow-state">—</span>
         <span class="head-note" id="ow-note">—</span>
@@ -1130,6 +1144,12 @@
         ostaju mwan3, banIP, OpenVPN, bird2 i ostalo. Obična slika s
         downloads.openwrt.org sadrži samo zadane pakete.</p>
 
+      <div class="hd-item" style="border:0">
+        <label class="stack-label" style="max-width:420px">Veličina korijenske particije u novoj slici (MB)
+          <input id="ow-rootfs" type="number" min="64" max="1024" step="64" autocomplete="off">
+          <span class="hint" id="ow-rootfs-note">Zadano je preporuka prema
+            sadašnjem zauzeću. Servis za izgradnju dopušta najviše 1024 MB.</span></label>
+      </div>
       <div class="form-actions" style="justify-content:flex-start">
         <button id="ow-build" class="ghost">1. Naruči sliku</button>
         <button id="ow-fetch" class="ghost" disabled>2. Preuzmi na uređaj</button>
@@ -1150,6 +1170,8 @@
       <div class="hd-item" style="border:0;margin-top:6px">
         <label class="stack-label" style="max-width:420px">Za potvrdu upiši ime uređaja
           <input id="ow-confirm" placeholder="ime uređaja" autocomplete="off"></label>
+        <label class="hidden" id="ow-accept-wrap"><input type="checkbox" id="ow-accept">
+          Nastavljam iako se za ovu sliku ne zna koliku korijensku particiju nosi</label>
         <div class="form-actions" style="justify-content:flex-start">
           <button id="ow-flash" class="primary" disabled>Nadogradi i ponovno pokreni</button>
         </div>

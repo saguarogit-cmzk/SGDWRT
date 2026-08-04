@@ -187,3 +187,36 @@ Provedena stvarna nadogradnja kroz sučelje, na uređaju u pogonu.
    samoprovjere nestale**. Sad se čuva cijeli `/opt/saguaro`.
 
 Nakon popravka keep liste i nove arhive: samoprovjera **41 prošlo / 0 palo**.
+
+## Korijenska particija nakon nadogradnje (04.08.2026.) — **kvar i pouka**
+
+Nadogradnja 25.12.4 → 25.12.5 vratila je korijensku particiju s 220 GB na
+**104 MB** (disk je 234 GB), jer x86 slika nosi i tablicu particija. Disk je
+odmah bio zauzet 98 %.
+
+**Što je pokušano i zašto nije prošlo:**
+
+| Pokušaj | Ishod |
+|---|---|
+| `resize2fs` na živoj montiranoj particiji | **ne radi** — jezgra javlja `reserve_backup_gdb` i staje na 128 MB |
+| Postupno širenje (512 MB, pa 4 GB) | **ne radi** — ista greška |
+| Službeni `expand-root` (`/etc/uci-defaults/70-rootpt-resize` + `80-rootfs-resize`) | **uništio datotečni sustav** — uređaj se nakon restarta nije digao, konzola javlja grešku ext4 grupa |
+
+Uzrok: `80-rootfs-resize` radi `resize2fs -f` preko **loop uređaja** nad
+particijom koja je istovremeno montirana kao korijen za pisanje. Na `squashfs`
+slikama to mijenja odvojeni overlay i bezopasno je; na **ext4 kombiniranoj
+slici to je isti datotečni sustav s dvije strane**. Postupak je za našu vrstu
+slike neispravan iako ga wiki navodi kao općenit.
+
+**Ispravno rješenje (v0.30.0):** veličina se zadaje pri izgradnji slike.
+Provjereno na stvarnoj slici:
+
+| Provjera | Ishod |
+|---|---|
+| Servis prima `rootfs_size_mb` | **radi** — `openapi.json` navodi raspon 1–1024 MB |
+| Naručena slika 25.12.5 sa 178 paketa i `rootfs_size_mb: 1024` | **radi** — izgrađena, 31,5 MB, otisak odgovara |
+| Tablica particija u samoj slici (očitan MBR) | **1024,0 MB** za `sda2` (prije 104 MB) — parametar stvarno djeluje |
+| Odbijanje premale slike pri naručivanju i prije upisa | ugrađeno; **nije još provjereno na uređaju** (uređaj nedostupan) |
+| Usporedba veličine nakon dizanja i e-mail upozorenje | ugrađeno; **nije još provjereno na uređaju** |
+
+Vidi odluku D-012.

@@ -3498,7 +3498,8 @@ function renderDisk(d) {
     ["Preporuka za novu sliku", `${d.recommend_mb} MB`],
   ];
   if (d.shrunk) {
-    rows.push(["Prije nadogradnje", fmtBytes(d.shrunk_before) + " — nadogradnja ju je smanjila"]);
+    rows.push(["Očekivano nakon nadogradnje",
+      fmtBytes(d.shrunk_before) + " — ispalo je manje"]);
   }
   for (const [k, v] of rows) {
     const dt = document.createElement("dt"); dt.textContent = k;

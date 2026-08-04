@@ -198,6 +198,7 @@ func (s *server) diskBeforeFile() string { return filepath.Join(s.etcDir, "disk-
 type diskBefore struct {
 	PartBytes int64  `json:"part_bytes"`
 	FSUsed    int64  `json:"fs_used"`
+	PlannedMB int    `json:"planned_mb"` // veličina tražena u slici (0 = nepoznata)
 	Version   string `json:"version"`
 	At        string `json:"at"`
 }
@@ -226,9 +227,17 @@ func (s *server) diskState() diskState {
 	}
 	if db, ok := s.readDiskBefore(); ok {
 		st.ShrunkBefore = db.PartBytes
-		// 10 % tolerancije — slike nikad nisu na bajt jednake
-		if d.PartBytes*10 < db.PartBytes*9 {
+		// Smanjenje samo po sebi nije kvar: ako je slika naručena s manjom
+		// root particijom, to je bila svjesna odluka. Kvar je kad ispadne
+		// manje nego što je traženo. 10 % tolerancije — slike nikad nisu na
+		// bajt jednake.
+		want := db.PartBytes
+		if db.PlannedMB > 0 {
+			want = int64(db.PlannedMB) << 20
+		}
+		if d.PartBytes*10 < want*9 {
 			st.Shrunk = true
+			st.ShrunkBefore = want
 		}
 	}
 	freeMB := int(d.FSFree >> 20)
@@ -245,8 +254,8 @@ func (s *server) diskState() diskState {
 		st.Note = fmt.Sprintf("slobodno %d MB od %d MB", freeMB, int(d.FSBytes>>20))
 	}
 	if st.Shrunk {
-		st.Note += fmt.Sprintf("; nadogradnja je particiju smanjila s %d MB na %d MB",
-			int(st.ShrunkBefore>>20), int(d.PartBytes>>20))
+		st.Note += fmt.Sprintf("; nakon nadogradnje je %d MB umjesto očekivanih %d MB",
+			int(d.PartBytes>>20), int(st.ShrunkBefore>>20))
 	}
 	return st
 }
@@ -262,9 +271,9 @@ func (s *server) checkRootAfterUpgrade() {
 	switch {
 	case st.Shrunk:
 		s.alert("resources", "warn", fmt.Sprintf(
-			"Nakon nadogradnje je korijenska particija manja nego prije: %d MB umjesto %d MB "+
-				"(slobodno %d MB). Kod sljedeće nadogradnje u modulu Updates zatraži "+
-				"veličinu root particije od %d MB.",
+			"Nakon nadogradnje korijenska particija nije onolika koliko je traženo: "+
+				"%d MB umjesto %d MB (slobodno %d MB). Kod sljedeće nadogradnje u modulu "+
+				"Updates provjeri veličinu root particije (preporuka %d MB).",
 			int(st.PartBytes>>20), int(st.ShrunkBefore>>20), int(st.FSFree>>20), st.RecommendMB))
 	case st.State == "premalo":
 		s.alert("resources", "warn", "Korijenska particija je gotovo puna: "+st.Note)

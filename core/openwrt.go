@@ -550,7 +550,8 @@ func (s *server) handleOpenWrtFlash(w http.ResponseWriter, r *http.Request) {
 	// se particija smanjila (etc direktorij preživi nadogradnju)
 	if ds.PartBytes > 0 {
 		db, _ := json.Marshal(diskBefore{PartBytes: ds.PartBytes, FSUsed: ds.FSUsed,
-			Version: rel.Version, At: time.Now().Format(time.RFC3339)})
+			PlannedMB: m.RootfsMB, Version: rel.Version,
+			At: time.Now().Format(time.RFC3339)})
 		_ = os.WriteFile(s.diskBeforeFile(), db, 0o600)
 	}
 

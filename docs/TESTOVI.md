@@ -216,7 +216,31 @@ Provjereno na stvarnoj slici:
 | Servis prima `rootfs_size_mb` | **radi** — `openapi.json` navodi raspon 1–1024 MB |
 | Naručena slika 25.12.5 sa 178 paketa i `rootfs_size_mb: 1024` | **radi** — izgrađena, 31,5 MB, otisak odgovara |
 | Tablica particija u samoj slici (očitan MBR) | **1024,0 MB** za `sda2` (prije 104 MB) — parametar stvarno djeluje |
-| Odbijanje premale slike pri naručivanju i prije upisa | ugrađeno; **nije još provjereno na uređaju** (uređaj nedostupan) |
-| Usporedba veličine nakon dizanja i e-mail upozorenje | ugrađeno; **nije još provjereno na uređaju** |
+| Odbijanje premale slike pri naručivanju (10 MB uz 75 MB zauzeto) | **radi** — HTTP 409 s objašnjenjem |
+| Odbijanje veličine preko granice servisa (4096 MB) | **radi** — HTTP 400 |
+| Uređaj naručuje sliku s `rootfs_size_mb` | **radi** — servis izgradio sliku, odgovor nosi `rootfs_mb: 1024` |
+| Tablica particija u slici koju je naručio **uređaj** (očitan MBR) | **1024,0 MB** — potvrđeno na kraju lanca, ne samo na radnoj stanici |
+| Upozorenje se veže na **traženu**, ne na prijašnju veličinu | ugrađeno — namjerno smanjenje (220 GB → 1 GB) ne diže lažnu uzbunu |
+| `GET /api/v1/openwrt/disk` na uređaju | **radi** — `sda2`, 226 GB, slobodno 225 GB, stanje `ok` |
+| Samoprovjera nakon dopune | **42 prošlo / 0 palo** |
+| Odbijanje premale slike **prije upisa** i potvrda za sliku s računala | ugrađeno; **nije provjereno na uređaju** — provjera bi tražila stvarni upis slike, što se na uređaju u pogonu ne radi |
+| Usporedba veličine nakon dizanja i e-mail upozorenje | ugrađeno; **provjerit će se pri sljedećoj stvarnoj nadogradnji** |
+
+### Kako je uređaj oporavljen
+
+Uređaj se ipak digao sam — proširenje je dovršeno, ali je trajalo oko **12 sati**
+(`resize2fs` gradi metapodatke za 234 GB na Atomu E3845). Sve je preživjelo:
+konfiguracija, Saguaro baza, certifikati, `/opt/saguaro` u cijelosti; jezgra
+javlja nula `EXT4-fs error`. Root je sada 220,7 GB.
+
+To ne mijenja odluku D-012: postupak je i dalje neprihvatljiv jer uređaj u
+pogonu ne smije biti pola dana nedostupan, a ishod je bio neizvjestan.
+Skripte `70-rootpt-resize` i `80-rootfs-resize` maknute su iz
+`/etc/uci-defaults/` u `/root/expand-root-onemoguceno/` da se ne mogu ponovno
+pokrenuti.
+
+> Napomena za sljedeću nadogradnju: nova slika nosi root od 1024 MB, pa će se
+> particija smanjiti s 220,7 GB na 1 GB. To je namjerno — sustav troši 75 MB, a
+> ostatak diska ima smisla samo kao zasebna particija za podatke.
 
 Vidi odluku D-012.

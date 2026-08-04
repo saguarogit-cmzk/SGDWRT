@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.33.0"
+const version = "0.34.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -335,6 +335,8 @@ func main() {
 	mux.Handle("POST /api/v1/update/upload", s.auth(s.handleUpdateUpload))
 	mux.Handle("POST /api/v1/update/apply", s.auth(s.handleUpdateApply))
 	mux.Handle("GET /api/v1/openwrt/disk", s.auth(s.handleDiskStatus))
+	mux.Handle("GET /api/v1/openwrt/datapart", s.auth(s.handleDataPartStatus))
+	mux.Handle("POST /api/v1/openwrt/datapart", s.auth(s.handleDataPartCreate))
 	mux.Handle("GET /api/v1/openwrt/status", s.auth(s.handleOpenWrtStatus))
 	mux.Handle("POST /api/v1/openwrt/build", s.auth(s.handleOpenWrtBuild))
 	mux.Handle("POST /api/v1/openwrt/fetch", s.auth(s.handleOpenWrtFetch))

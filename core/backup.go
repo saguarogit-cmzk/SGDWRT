@@ -614,15 +614,27 @@ func ensureKeepList(etcDir, dataDir string) error {
 	// se ionako radi svježa kopija koju treba spremiti izvan uređaja.
 	root := filepath.Dir(etcDir)
 	body := "# Saguaro — datoteke koje moraju preživjeti nadogradnju firmwarea\n" +
-		sysctlFile + "\n" +
-		etcDir + "\n" +
-		dataDir + "\n" +
-		root + "/bin\n" +
-		root + "/web\n" +
-		root + "/selftest.sh\n" +
-		"/etc/init.d/saguaro-core\n" +
+		sysctlFile + "\n"
+	// Kad Saguaro živi na zasebnoj data particiji, nadogradnja ga uopće ne
+	// dira — pa ga se ne smije ni prepisivati u keep listu: sysupgrade bi
+	// kopirao cijeli sadržaj montirane particije i vraćao ga na novi root,
+	// ispod točke montiranja gdje bi samo zauzimao mjesto.
+	if !mountedOn(dataPartMount) {
+		body += etcDir + "\n" +
+			dataDir + "\n" +
+			root + "/bin\n" +
+			root + "/web\n" +
+			root + "/selftest.sh\n"
+	}
+	body += "/etc/init.d/saguaro-core\n" +
 		// bez ove poveznice servis se nakon nadogradnje ne bi sam pokrenuo
 		"/etc/rc.d/S95saguaro-core\n"
+	// zapis o data particiji i skripta koja je vraća u tablicu nakon nadogradnje
+	if _, err := os.Stat(dataPartRecord); err == nil {
+		body += dataPartRecord + "\n" +
+			"/etc/init.d/saguaro-datapart\n" +
+			"/etc/rc.d/S15saguaro-datapart\n"
+	}
 	if old, err := os.ReadFile(keepListFile); err == nil && string(old) == body {
 		return nil
 	}

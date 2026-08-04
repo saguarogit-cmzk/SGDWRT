@@ -299,3 +299,23 @@ Provjereno na uređaju **04.08.2026.**:
 | **Stvarni pokušaj zaobilaženja s klijenta** | **nije provjereno** — radna stanica na 192.168.50.75 ima gateway 192.168.50.1, dakle njen promet ne prolazi kroz ovaj uređaj, pa se preusmjeravanje ne može okinuti. Treba klijent kojem je ovaj uređaj gateway: `nslookup example.com 8.8.8.8` mora dobiti odgovor od uređaja, a brojač na redirect pravilu porasti. |
 
 Prisilni DNS je nakon provjere **isključen** — uređaj je vraćen u stanje prije testa.
+
+## Data particija (v0.34.0)
+
+Provjereno na uređaju **04.08.2026.**:
+
+| Provjera | Ishod |
+|---|---|
+| Alati na uređaju | **ima ih** — `parted`, `mkfs.ext4`, `partx`, `losetup`, `resize2fs`, `e2fsck`, `block-mount`. Nema `blkid` ni `dumpe2fs`, pa se UUID **zadaje** pri `mkfs.ext4 -U` umjesto da se poslije čita |
+| Čitanje tablice particija | **radi** — `sda1` 16 MB od sektora 512, `sda2` 223,5 GB od sektora 33792 |
+| Prepoznavanje da zahvat još nije moguć | **radi** — „root particija zauzima gotovo cijeli disk (228920 MB)… Prvo nadogradi OpenWrt" + tri koraka redom |
+| Sigurnosna brana init skripte (ext4 potpis) | **radi** — `53ef` na početku `sda1` i `sda2`, `0000` na praznom mjestu u sredini diska, `c012` unutar MBR područja. Tablica se dira **samo** uz točan potpis |
+| Init skripta postavljena i uključena | **radi** — `/etc/rc.d/S15saguaro-datapart` (prije `fstab`, koji je START=20) |
+| **Sam zahvat (stvaranje particije i selidba)** | **nije izveden** — traži prethodnu nadogradnju OpenWrt-a koja oslobađa prostor. Čeka odluku korisnika. |
+
+### Zašto zahvat traži nadogradnju
+
+`sda2` zauzima cijeli disk, pa za `sda3` nema mjesta. Oslobađanje bi tražilo
+**offline smanjivanje ext4**, a upravo je to 04.08.2026. oborilo uređaj na 12
+sati (vidi D-012). Umjesto toga posao radi sama nadogradnja: nova slika nosi
+tablicu s rootom od 1024 MB i time oslobađa ~222 GB — bez ijednog `resize2fs`.

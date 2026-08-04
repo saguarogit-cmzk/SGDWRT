@@ -598,9 +598,40 @@ Kočnice koje su ugrađene:
 > slici** (kakvu koristimo) to je isti datotečni sustav s dvije strane i
 > uništi ga — uređaj se poslije ne digne. Vidi odluku D-012.
 
-Slobodan prostor na disku iza zadnje particije prikazuje se informativno.
-Ako ga treba iskoristiti, ide kao **zasebna particija za podatke**, nikad
-širenjem root particije.
+### Data particija
+
+Slobodan prostor na disku ne ide u root particiju nego u **zasebnu data
+particiju** — to je podjela koju koriste i uređaji s ozbiljnim firmwareom:
+
+| Particija | Što nosi | Pri nadogradnji OpenWrt-a |
+|---|---|---|
+| **root, 1 GB** | OpenWrt i sam Saguaro program | **prepisuje se** — tako i treba |
+| **data, ostatak diska** | `/opt/saguaro`: baza, backupi, logovi, VPN ključevi, certifikati | **ne dira se** — disk image je velik 1 GB i ne dopire do nje |
+
+Poslije nadogradnje treba vratiti samo **zapis** o toj particiji u tablicu
+(nekoliko bajtova), a ne dirati podatke. To radi skripta pri dizanju uređaja,
+prije montiranja, i to **tek nakon što provjeri da na zapisanom mjestu stvarno
+postoji ext4 superblok**. Ako potpisa nema, tablica se ne dira — radije nema
+data particije nego pogrešan zapis preko tuđih podataka.
+
+Dok je data particija u pogonu, keep lista više ne nabraja `/opt/saguaro`;
+podaci više ne ovise o tome je li netko zapamtio dodati putanju u popis.
+
+**Zahvat traži jednu nadogradnju OpenWrt-a.** Root particija na postojećem
+uređaju obično zauzima cijeli disk, pa za data particiju nema mjesta.
+Oslobađanje bi tražilo smanjivanje ext4 na živom uređaju — a to je postupak
+koji je jednom već oborio uređaj (D-012). Umjesto toga posao radi sama
+nadogradnja: nova slika nosi tablicu s rootom od 1024 MB i time oslobodi
+ostatak diska. Redoslijed je:
+
+1. **Backup** → puna kopija, pošalji je i na e-mail.
+2. **Updates → 2. OpenWrt** → naruči sliku, preuzmi, nadogradi (uređaj se diže
+   s rootom od 1024 MB).
+3. **Updates → Data particija** → gumb *Stvori data particiju i preseli
+   podatke* (traži ime uređaja kao potvrdu; prije zahvata se radi još jedan
+   puni backup).
+
+Od tada svaka sljedeća nadogradnja OpenWrt-a ostavlja podatke netaknutima.
 
 ### 2. OpenWrt (sustav samog uređaja)
 

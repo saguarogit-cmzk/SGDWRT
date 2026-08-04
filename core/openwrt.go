@@ -276,6 +276,10 @@ func (s *server) handleOpenWrtBuild(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Version  string `json:"version"`
 		RootfsMB int    `json:"rootfs_mb"`
+		// Same dopušta ponovnu izgradnju iste verzije. Treba kod preslagivanja
+		// diska: novu tablicu particija donosi upravo nova slika, pa se čeka
+		// izdanje koje možda neće doći mjesecima.
+		Same bool `json:"same_version"`
 	}
 	if !decodeBody(w, r, &in) {
 		return
@@ -292,8 +296,11 @@ func (s *server) handleOpenWrtBuild(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		in.Version = upgradeCandidate(rel.Version, lat)
+		if in.Version == "" && in.Same {
+			in.Version = rel.Version
+		}
 	}
-	if in.Version == "" || in.Version == rel.Version {
+	if in.Version == "" || (in.Version == rel.Version && !in.Same) {
 		writeErr(w, http.StatusConflict, "nema novijeg izdanja u ovoj grani")
 		return
 	}

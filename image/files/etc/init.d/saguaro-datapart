@@ -1,0 +1,57 @@
+#!/bin/sh /etc/rc.common
+# Saguaro — vraćanje zapisa o data particiji nakon nadogradnje OpenWrt-a.
+#
+# Nadogradnja x86 slike upisuje cijeli disk image zajedno s tablicom particija,
+# pa zapis o data particiji nestane. Sami PODACI ostaju netaknuti — slika je
+# velika oko 1 GB i ne dopire do njih.
+#
+# Ova skripta vraća samo zapis u tablicu, i to tek nakon što provjeri da na
+# zapisanom mjestu stvarno postoji ext4 superblok. Ako ga nema, ne dira ništa —
+# radije nema data particije nego pogrešan zapis preko tuđih podataka.
+#
+# Mora se izvesti PRIJE montiranja (fstab je START=20).
+
+START=15
+
+REC=/etc/saguaro-datapart.json
+
+json_num() { sed -n "s/.*\"$1\":\([0-9]*\).*/\1/p" "$REC"; }
+json_str() { sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p" "$REC"; }
+
+boot() {
+	[ -f "$REC" ] || return 0
+
+	DISK=$(json_str disk)
+	NUM=$(json_num part)
+	START_S=$(json_num start)
+	SIZE_S=$(json_num sectors)
+
+	[ -n "$DISK" ] && [ -n "$NUM" ] && [ -n "$START_S" ] && [ -n "$SIZE_S" ] || {
+		logger -t saguaro "data particija: zapis $REC nije čitljiv"
+		return 0
+	}
+	[ -b "/dev/$DISK" ] || {
+		logger -t saguaro "data particija: diska /dev/$DISK nema"
+		return 0
+	}
+	# particija već postoji — nema što raditi
+	[ -b "/dev/${DISK}${NUM}" ] && return 0
+
+	# Sigurnosna brana: ext4 superblok je 1024 B od početka particije, a njegov
+	# potpis (0xEF53, little endian) na pomaku 56. Bez tog potpisa se tablica
+	# NE dira.
+	MAGIC=$(dd if="/dev/$DISK" bs=512 skip=$((START_S + 2)) count=1 2>/dev/null |
+		dd bs=1 skip=56 count=2 2>/dev/null | hexdump -v -e '/1 "%02x"')
+	if [ "$MAGIC" != "53ef" ]; then
+		logger -t saguaro "data particija: na sektoru $START_S nema ext4 potpisa ($MAGIC) — tablica se ne dira"
+		return 0
+	fi
+
+	END_S=$((START_S + SIZE_S - 1))
+	if parted -s "/dev/$DISK" mkpart primary ext4 "${START_S}s" "${END_S}s" 2>&1 | logger -t saguaro; then
+		partx -a "/dev/$DISK" 2>/dev/null
+		logger -t saguaro "data particija vraćena u tablicu: /dev/${DISK}${NUM} (sektori $START_S–$END_S)"
+	else
+		logger -t saguaro "data particija: parted nije uspio"
+	fi
+}

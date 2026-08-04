@@ -97,6 +97,7 @@ konfiguracije.
 | Vraćanje iz arhive | radi | |
 | Nadogradnja Saguara s GitHuba uz automatski backup | radi | |
 | Preživljavanje `sysupgrade`-a (keep lista) | radi | |
+| **Data particija — podaci preživljavaju nadogradnju bez keep liste** | radi (v0.34.0) | root 1 GB se prepisuje, data particija se ne dira; zapis u tablici se vraća uz provjeru ext4 potpisa |
 | Safe mode — rizična promjena se sama poništi ako izgubiš pristup | radi | |
 | Samoprovjera uređaja (43 provjere) | radi | `/opt/saguaro/selftest.sh` |
 | Inventar opreme | radi | |

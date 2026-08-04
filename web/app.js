@@ -3592,6 +3592,7 @@ async function loadOpenWrt() {
     ? "grane: " + x.latest.join(", ") : ""));
 
   renderDisk(x.disk || {});
+  loadDataPart().catch(() => setPill($("dp-state"), "off", "nedostupno"));
 
   $("ow-confirm").placeholder = x.hostname || "ime uređaja";
   $("ow-fetch").disabled = !owBuilt;
@@ -3663,6 +3664,84 @@ function renderDisk(d) {
   }
 
 }
+
+// renderDataPart prikazuje podjelu diska i vodi kroz zahvat.
+async function loadDataPart() {
+  const x = await api("/openwrt/datapart");
+  const kv = $("dp-kv");
+  kv.replaceChildren();
+  const rows = [];
+  for (const p of x.parts || []) {
+    rows.push([`Particija ${p.num} (${p.name})`,
+      `${fmtBytes(p.bytes)} · od sektora ${p.start}`]);
+  }
+  if (x.exists) {
+    rows.push(["Data particija", `${x.device} · ${fmtBytes(x.size_bytes)}` +
+      (x.mounted ? ` · montirana na /opt/saguaro (zauzeto ${fmtBytes(x.used_bytes)})`
+        : " · NIJE montirana")]);
+  } else {
+    rows.push(["Slobodno na disku", fmtBytes(x.free_bytes)]);
+  }
+  for (const [k, v] of rows) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    kv.append(dt, dd);
+  }
+
+  const badge = $("dp-state");
+  if (x.exists && x.mounted) {
+    setPill(badge, "good", "u pogonu");
+    setNote("dp-note", "Saguaro podaci preživljavaju nadogradnju OpenWrt-a");
+  } else if (x.exists) {
+    setPill(badge, "crit", "nije montirana");
+    setNote("dp-note", x.blocker || "");
+  } else if (x.ready) {
+    setPill(badge, "warn", "može se stvoriti");
+    setNote("dp-note", fmtBytes(x.free_bytes) + " slobodno");
+  } else {
+    setPill(badge, "off", "nema je");
+    setNote("dp-note", "Saguaro podaci su na root particiji");
+  }
+
+  // koraci se pokazuju samo kad zahvat još nije moguć
+  const steps = $("dp-steps");
+  steps.replaceChildren();
+  if (!x.exists && !x.ready && (x.steps || []).length) {
+    for (const s of x.steps) {
+      const li = document.createElement("li");
+      li.textContent = s;
+      steps.append(li);
+    }
+    steps.classList.remove("hidden");
+  } else {
+    steps.classList.add("hidden");
+  }
+  if (!x.exists && !x.ready && x.blocker) {
+    $("dp-result").textContent = x.blocker;
+  } else if (!x.exists) {
+    $("dp-result").textContent = "";
+  }
+  $("dp-create-wrap").classList.toggle("hidden", !(x.ready && !x.exists));
+  $("dp-confirm").placeholder = owStatus.hostname || "ime uređaja";
+}
+
+$("dp-create").addEventListener("click", async () => {
+  if (!confirm(
+    "Stvaranje data particije\n\n" +
+    "Mijenja se tablica particija diska i Saguaro podaci se sele na novu " +
+    "particiju. Prije zahvata se automatski radi puni backup.\n" +
+    "Servis se nakratko gasi.\n\nNastaviti?")) return;
+  $("dp-result").textContent = "Radim backup i stvaram particiju…";
+  try {
+    const r = await api("/openwrt/datapart", "POST",
+      { confirm: $("dp-confirm").value.trim() });
+    $("dp-result").textContent =
+      `Napravljeno: ${r.device} (${fmtBytes(r.size_bytes)}), backup ${r.backup}. ${r.note}`;
+    setTimeout(() => loadUpdate().catch(() => {}), 20000);
+  } catch (e) {
+    $("dp-result").textContent = "Greška: " + (e.message || e);
+  }
+});
 
 let owBuilt = null; // {url, sha256, image, version, rootfs_mb}
 

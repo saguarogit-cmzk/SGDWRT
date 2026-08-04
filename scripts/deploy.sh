@@ -15,12 +15,18 @@ ssh "$TARGET" "mkdir -p $DEST/bin $DEST/web $DEST/etc $DEST/data $DEST/log"
 [ -f dist/saguaro-core ] && scp -O dist/saguaro-core "$TARGET:$DEST/bin/saguaro-core.new"
 [ -d dist/web ] && scp -O -r dist/web/* "$TARGET:$DEST/web/"
 [ -f image/files/etc/init.d/saguaro-core ] && scp -O image/files/etc/init.d/saguaro-core "$TARGET:/etc/init.d/saguaro-core"
+# skripta koja nakon nadogradnje vraća zapis o data particiji u tablicu
+[ -f image/files/etc/init.d/saguaro-datapart ] && scp -O image/files/etc/init.d/saguaro-datapart "$TARGET:/etc/init.d/saguaro-datapart"
 # samoprovjera ide uz build — inače na uređaju ostane stara verzija i tiho
 # provjerava manje nego što misliš
 [ -f scripts/selftest.sh ] && scp -O scripts/selftest.sh "$TARGET:$DEST/selftest.sh"
 
 ssh "$TARGET" "
   chmod +x /etc/init.d/saguaro-core 2>/dev/null || true
+  if [ -f /etc/init.d/saguaro-datapart ]; then
+    chmod +x /etc/init.d/saguaro-datapart
+    /etc/init.d/saguaro-datapart enable 2>/dev/null || true
+  fi
   if [ -f $DEST/bin/saguaro-core.new ]; then
     chmod +x $DEST/bin/saguaro-core.new
     mv $DEST/bin/saguaro-core.new $DEST/bin/saguaro-core

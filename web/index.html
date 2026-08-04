@@ -1302,6 +1302,34 @@
 
     <section class="card">
       <div class="card-head">
+        <h2>Data particija</h2>
+        <span class="st" id="dp-state">—</span>
+        <span class="head-note" id="dp-note">—</span>
+      </div>
+      <p class="hint">Podjela koju koriste i uređaji s ozbiljnim firmwareom:
+        <b>root particija (1 GB)</b> nosi OpenWrt i prepisuje se pri svakoj
+        nadogradnji, a <b>data particija (ostatak diska)</b> nosi sve Saguaro
+        podatke — bazu, backupe, logove, VPN ključeve i certifikate — i
+        nadogradnja je <b>ne dira</b>, jer je disk image velik 1 GB i ne dopire
+        do nje.</p>
+      <p class="hint">Nakon nadogradnje treba samo vratiti <b>zapis</b> o toj
+        particiji u tablicu, a ne dirati podatke. To radi skripta pri dizanju
+        uređaja, i to tek nakon što provjeri da na zapisanom mjestu stvarno
+        postoji ext4 — ako ga nema, tablica se ne dira.</p>
+      <dl class="kv" id="dp-kv"></dl>
+      <ol class="hint hidden" id="dp-steps"></ol>
+      <div class="hd-item hidden" id="dp-create-wrap" style="border:0">
+        <label class="stack-label" style="max-width:420px">Za potvrdu upiši ime uređaja
+          <input id="dp-confirm" placeholder="ime uređaja" autocomplete="off"></label>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button id="dp-create" class="primary">Stvori data particiju i preseli podatke</button>
+        </div>
+      </div>
+      <p class="hint" id="dp-result"></p>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
         <h2>2. OpenWrt — sustav samog uređaja</h2>
         <span class="st" id="ow-state">—</span>
         <span class="head-note" id="ow-note">—</span>

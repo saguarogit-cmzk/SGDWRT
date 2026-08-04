@@ -34,20 +34,25 @@ gunzip -c "$IMG" > "$RAW"
 
 # ---------------------------------------------------- 1. tablica particija
 echo ">> tablica particija"
+ROOT_MB=0
 i=0
 while [ $i -lt 4 ]; do
     OFF=$((446 + i * 16))
     TYPE=$(dd if="$RAW" bs=1 skip=$((OFF + 4)) count=1 2>/dev/null | od -An -tu1 | tr -d ' ')
     if [ "$TYPE" != "0" ]; then
         SIZE=$(dd if="$RAW" bs=1 skip=$((OFF + 12)) count=4 2>/dev/null |
-               od -An -tu4 --endian=little | tr -d ' ')
+               od -An -tu4 | tr -d ' ')
         MB=$((SIZE / 2048))
-        echo "   particija $((i + 1)): ${MB} MB"
-        [ $i -eq 1 ] && ROOT_MB=$MB
+        echo "   particija $((i + 1)): tip 0x$(printf '%02x' "$TYPE"), ${MB} MB"
+        # NE koristiti "[ uvjet ] && var=..." — uz set -e neuspio uvjet ruši
+        # skriptu na prvoj particiji koja nije root
+        if [ $i -eq 1 ]; then
+            ROOT_MB=$MB
+        fi
     fi
     i=$((i + 1))
 done
-[ "${ROOT_MB:-0}" -gt 0 ] || fail "u slici nema druge particije (root)"
+[ "$ROOT_MB" -gt 0 ] || fail "u slici nema druge particije (root)"
 # ImageBuilder zaokružuje, pa se dopušta mala razlika
 DIFF=$((ROOT_MB - WANT_ROOT_MB))
 [ $DIFF -lt 0 ] && DIFF=$((-DIFF))
@@ -57,8 +62,13 @@ ok "root particija ${ROOT_MB} MB"
 # ------------------------------------------------------- 2. sadržaj roota
 echo ">> sadržaj root particije"
 LOOP=$(losetup -f --show -P "$RAW")
-sleep 1
-[ -b "${LOOP}p2" ] || fail "jezgra ne vidi drugu particiju slike"
+echo "   loop uređaj: $LOOP"
+n=0
+while [ ! -b "${LOOP}p2" ] && [ $n -lt 20 ]; do
+    sleep 1
+    n=$((n + 1))
+done
+[ -b "${LOOP}p2" ] || fail "jezgra ne vidi drugu particiju slike (${LOOP}p2)"
 mount -o ro "${LOOP}p2" "$MNT" || fail "root particija se ne montira"
 
 for f in \

@@ -137,7 +137,9 @@ verificirana.*
 4. **Firewall**: objava servera, uz split DNS ako se pristupa imenom.
 5. **VPN**: korisnici, pa **stvarno spajanje klijenta** (bez toga nije dokazano).
 6. **Nadzor**: SMTP + probna poruka, pa uključi upozorenja.
-7. **Backup**: odredište izvan uređaja + lozinka za šifriranje (**zapiši je**).
+7. **Backup**: lozinka za šifriranje (**zapiši je**), pa barem jedan put izvan
+   uređaja — poslužitelj/NAS ili slanje na e-mail (može i oboje). Bez toga
+   samoprovjera javlja PALO, i s pravom.
 8. `sh /opt/saguaro/selftest.sh` — sve mora biti PROŠLO ili PRESKAČEM.
 9. Puni backup i **preuzmi ga na svoje računalo**.
 

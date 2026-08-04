@@ -331,4 +331,19 @@ tablicu s rootom od 1024 MB i time oslobađa ~222 GB — bez ijednog `resize2fs`
 | Čarobnjak prvog postavljanja u sučelju | složen: lozinka → ime uređaja, vremenska zona, LAN adresa; smoke test prolazi |
 | Pokretanje gradnje bez objave izdanja | **radi** — grana `ci/**` gradi sve i ostavlja artefakte, korak *Release* se preskače (vezan na tag) |
 | Prva gradnja | **pala** u koraku *Package*: naziv paketa uzima ime refa, a grana ga ima s kosom crtom (`ci/image-test`) pa `tar` puca na nepostojećem direktoriju. Popravljeno zamjenom `/` u `-`. |
+| **Gradnja slike u GitHub Actions** | **radi** — svih devet koraka prošlo, artefakt `saguaro-build` 39,9 MB, korak *Release* preskočen jer nije tag |
+| **Sadržaj slike (`image/verify.sh`)** | **radi** — provjera se izvodi u samoj gradnji: MBR (root 1024 MB), montiranje root particije i postojanje `saguaro-core` (izvršan), `index.html`, `app.js`, `style.css`, `selftest.sh`, obje init skripte, skripta prvog dizanja te alati `parted`, `mkfs.ext4`, `wg`, `openvpn` |
 | **Dizanje uređaja iz te slike** | **nije provjereno** — traži USB i fizički pristup |
+
+### Tri pada prije nego je prošlo (svi u alatima, nijedan u slici)
+
+1. *Package* — naziv datoteke uzima ime refa, a grana ga ima s kosom crtom
+   (`ci/image-test`) pa `tar` puca. Popravljeno zamjenom `/` u `-`.
+2. *Provjeri sliku* — `[ uvjet ] && var=…` uz `set -e` obori skriptu čim uvjet
+   nije istinit, a nije već na prvoj particiji. Zamijenjeno s `if`.
+3. *Provjeri sliku* — `find -type f` nije nalazio `mkfs.ext4` jer je simbolička
+   poveznica na `mke2fs`. Uvjet `-type f` maknut.
+
+Sama slika je bila ispravna u sva tri pokušaja. Da bi se ubuduće izbjeglo
+zaključivanje posredno, razlog pada se sada ispisuje kao GitHub *annotation* —
+logovi javnog repozitorija se bez prijave ne mogu čitati, a annotationi mogu.

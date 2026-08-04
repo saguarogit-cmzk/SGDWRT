@@ -36,11 +36,20 @@ func (s *server) createFullBackup(ctx context.Context) (string, int64, error) {
 	}
 	defer os.RemoveAll(tmp)
 
-	// kanonski OpenWrt backup /etc datoteka
+	// kanonski OpenWrt backup /etc datoteka.
+	// `sysupgrade -b` uzima i sve s popisa za nadogradnju, a ondje je i sam
+	// program (13 MB) — bez ovoga bi ga svaka arhiva nosila sa sobom. Program
+	// i sučelje trebaju samo nadogradnji firmwarea, pa se za vrijeme izrade
+	// arhive s popisa privremeno maknu.
+	restore, err := slimKeepList()
+	if err != nil {
+		return "", 0, err
+	}
 	etcTar := filepath.Join(tmp, "etc.tar.gz")
-	if out, err := exec.CommandContext(ctx, "sysupgrade", "-b", etcTar).
-		CombinedOutput(); err != nil {
-		return "", 0, fmt.Errorf("sysupgrade -b: %v: %s", err, out)
+	out, bErr := exec.CommandContext(ctx, "sysupgrade", "-b", etcTar).CombinedOutput()
+	restore()
+	if bErr != nil {
+		return "", 0, fmt.Errorf("sysupgrade -b: %v: %s", bErr, out)
 	}
 
 	// konzistentan snapshot žive SQLite baze
@@ -568,21 +577,46 @@ const keepListFile = "/lib/upgrade/keep.d/saguaro"
 const defaultEtcDir = "/opt/saguaro/etc"
 const defaultDataDir = "/opt/saguaro/data"
 
+// slimKeepList privremeno makne program i sučelje s popisa i vrati funkciju
+// koja vraća puni popis. Koristi se samo oko `sysupgrade -b`.
+func slimKeepList() (func(), error) {
+	full, err := os.ReadFile(keepListFile)
+	if err != nil {
+		return func() {}, nil // popis ne postoji (npr. testna instanca)
+	}
+	var slim strings.Builder
+	for _, ln := range strings.Split(string(full), "\n") {
+		if strings.HasSuffix(ln, "/bin") || strings.HasSuffix(ln, "/web") {
+			continue
+		}
+		if ln != "" {
+			slim.WriteString(ln + "\n")
+		}
+	}
+	if err := os.WriteFile(keepListFile, []byte(slim.String()), 0o644); err != nil {
+		return func() {}, err
+	}
+	return func() { _ = os.WriteFile(keepListFile, full, 0o644) }, nil
+}
+
 // ensureKeepList popisuje sve što mora preživjeti nadogradnju firmwarea.
 // Uz konfiguraciju i bazu tu su i sam program, sučelje i init skripta —
 // bez njih bi se uređaj nakon nadogradnje digao bez Saguara, a upravljanje
 // bi ostalo samo na SSH-u.
 func ensureKeepList(etcDir, dataDir string) error {
-	// cijeli direktorij, a ne pojedine mape: uz program, sučelje, bazu i
-	// certifikate tu su i arhive backupa i samoprovjera — sve to mora ostati
-	// upravo kad se dira firmware
+	// Popis se nabraja stavku po stavku, a NE cijeli /opt/saguaro: isti popis
+	// koristi i `sysupgrade -b` za obične backupe, pa bi direktorij s arhivama
+	// završio unutar svake nove arhive i ona bi rasla iz backupa u backup.
+	// Arhive zato ne preživljavaju nadogradnju firmwarea — prije nadogradnje
+	// se ionako radi svježa kopija koju treba spremiti izvan uređaja.
 	root := filepath.Dir(etcDir)
-	if filepath.Dir(dataDir) != root {
-		root = etcDir + "\n" + dataDir
-	}
 	body := "# Saguaro — datoteke koje moraju preživjeti nadogradnju firmwarea\n" +
 		sysctlFile + "\n" +
-		root + "\n" +
+		etcDir + "\n" +
+		dataDir + "\n" +
+		root + "/bin\n" +
+		root + "/web\n" +
+		root + "/selftest.sh\n" +
 		"/etc/init.d/saguaro-core\n" +
 		// bez ove poveznice servis se nakon nadogradnje ne bi sam pokrenuo
 		"/etc/rc.d/S95saguaro-core\n"

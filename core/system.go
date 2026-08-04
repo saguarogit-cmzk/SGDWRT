@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +22,56 @@ import (
 const systemConfig = "/etc/config/system"
 
 /* ---------- syslog forwarding ---------- */
+
+/* ---------- ime uređaja (prvo postavljanje) ---------- */
+
+// reBoxName propušta samo ono što OpenWrt i DNS prihvaćaju kao ime uređaja.
+var reBoxName = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,30}[a-zA-Z0-9])?$`)
+
+// handleHostnameSet mijenja ime uređaja. Ime se pojavljuje u DHCP-u, DNS-u,
+// naslovima e-mail obavijesti i kao potvrda pri nadogradnji firmwarea, pa se
+// postavlja odmah pri prvom postavljanju uređaja.
+func (s *server) handleHostnameSet(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Hostname string `json:"hostname"`
+		Label    string `json:"label"` // opisno ime za obavijesti (npr. "Ured Split")
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	in.Hostname = strings.TrimSpace(in.Hostname)
+	if !reBoxName.MatchString(in.Hostname) {
+		writeErr(w, http.StatusBadRequest,
+			"ime smije imati slova, brojke i crticu (najviše 32 znaka), "+
+				"a ne smije početi ni završiti crticom")
+		return
+	}
+	ctx := r.Context()
+	cfg, err := uciGetConfig(ctx, "system")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	sect := findSystemSection(cfg)
+	if sect == "" {
+		writeErr(w, http.StatusConflict, "sistemska sekcija nije pronađena")
+		return
+	}
+	script := fmt.Sprintf("set system.%s.hostname=%s\ncommit system\n",
+		sect, uciQuote(in.Hostname))
+	if err := uciBatch(ctx, script); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := serviceReload(ctx, "system", "reload"); err != nil {
+		log.Printf("reload system: %v", err)
+	}
+	if lbl := strings.TrimSpace(in.Label); lbl != "" {
+		s.setSetting("device_label", lbl)
+	}
+	addEvent(s, "info", "Ime uređaja postavljeno na "+in.Hostname)
+	writeJSON(w, http.StatusOK, map[string]any{"hostname": in.Hostname})
+}
 
 func findSystemSection(cfg map[string]uciSection) string {
 	for name, sec := range cfg {

@@ -2479,6 +2479,82 @@ $("firstpw-form").addEventListener("submit", async (ev) => {
   $("firstpw-new").value = "";
   $("firstpw-rep").value = "";
   $("firstpw-form").classList.add("hidden");
+  // odmah nakon lozinke ide ime uređaja i LAN adresa — bez toga uređaj iz
+  // gotove slike ostaje na zadanoj adresi, a ime mu je "OpenWrt"
+  await showSetupForm();
+});
+
+/* ---------- prvo postavljanje (ime uređaja, zona, LAN adresa) ---------- */
+
+async function showSetupForm() {
+  const f = $("setup-form");
+  $("setup-error").classList.add("hidden");
+  try {
+    const [sys, lan] = await Promise.all([
+      api("/settings/system"), api("/network/lan"),
+    ]);
+    const sel = $("setup-zone");
+    sel.replaceChildren();
+    for (const z of (sys.time && sys.time.zones) || ["UTC"]) {
+      const o = document.createElement("option");
+      o.value = z; o.textContent = z;
+      sel.append(o);
+    }
+    sel.value = (sys.time && sys.time.zonename) || "Europe/Zagreb";
+    $("setup-ip").value = lan.ipaddr || "";
+    $("setup-mask").value = lan.netmask || "255.255.255.0";
+    setupLanBefore = lan.ipaddr || "";
+  } catch {
+    // bez podataka se ne odustaje — polja ostaju prazna, korisnik ih upiše
+  }
+  try {
+    const id = await api("/identity");
+    $("setup-hostname").value = id.hostname || "";
+  } catch { /* nije presudno */ }
+  f.classList.remove("hidden");
+  $("setup-hostname").focus();
+}
+
+let setupLanBefore = "";
+
+$("setup-skip").addEventListener("click", async () => {
+  $("setup-form").classList.add("hidden");
+  $("login-form").classList.remove("hidden");
+  await start();
+});
+
+$("setup-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const err = $("setup-error");
+  err.classList.add("hidden");
+  const host = $("setup-hostname").value.trim();
+  const ip = $("setup-ip").value.trim();
+  const mask = $("setup-mask").value.trim();
+  try {
+    await api("/settings/hostname", "POST", { hostname: host });
+    await api("/settings/time", "POST", { zonename: $("setup-zone").value });
+  } catch (e) {
+    err.textContent = (e && e.message) || "Spremanje nije uspjelo.";
+    err.classList.remove("hidden");
+    return;
+  }
+  // adresa ide zadnja jer prekida vezu s trenutnom
+  if (ip && ip !== setupLanBefore) {
+    try {
+      const r = await api("/network/lan", "POST", { ipaddr: ip, netmask: mask });
+      $("setup-warn").textContent =
+        "Uređaj mijenja adresu na " + ip + " — otvaram novu adresu za nekoliko sekundi.";
+      setTimeout(() => { location.href = r.new_url || ("https://" + ip + ":8443/"); },
+        (r.reload_in || 3) * 1000 + 4000);
+      return;
+    } catch (e) {
+      err.textContent = "Ime i zona su spremljeni, ali adresa nije: " +
+        ((e && e.message) || "");
+      err.classList.remove("hidden");
+      return;
+    }
+  }
+  $("setup-form").classList.add("hidden");
   $("login-form").classList.remove("hidden");
   await start();
 });

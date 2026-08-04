@@ -1,0 +1,107 @@
+#!/bin/sh
+# Saguaro — postavljanje pri PRVOM dizanju iz gotove slike.
+#
+# Radi dvije stvari:
+#   1. od slobodnog prostora iza root particije napravi data particiju i
+#      preseli /opt/saguaro na nju
+#   2. uključi Saguaro servise
+#
+# Namjerno NE dira nijednu postojeću particiju i ne poziva resize2fs — radi
+# isključivo u praznom prostoru iza zadnje particije. Ako išta ne štima,
+# odustaje i uređaj radi s podacima na root particiji (sve i dalje radi,
+# samo ne preživi nadogradnju OpenWrt-a bez keep liste).
+
+REC=/etc/saguaro-datapart.json
+MOUNT=/opt/saguaro
+TMP=/mnt/sag-data
+MIN_MB=4096
+
+log() { logger -t saguaro-firstboot "$1"; echo "saguaro: $1"; }
+
+setup_datapart() {
+	[ -f "$REC" ] && { log "data particija je već postavljena"; return 0; }
+	command -v parted >/dev/null || { log "nema parted — preskačem"; return 1; }
+	command -v mkfs.ext4 >/dev/null || { log "nema mkfs.ext4 — preskačem"; return 1; }
+
+	# disk s kojeg se uređaj digao
+	ROOT_BLK=$(awk '$9=="/dev/root"{print $3}' /proc/self/mountinfo | head -1)
+	[ -n "$ROOT_BLK" ] || ROOT_BLK=$(awk '$5=="/"{print $3}' /proc/self/mountinfo | head -1)
+	ROOT_PATH=$(readlink -f "/sys/dev/block/$ROOT_BLK" 2>/dev/null)
+	[ -n "$ROOT_PATH" ] || { log "ne mogu odrediti root uređaj"; return 1; }
+	DISK=$(basename "$(dirname "$ROOT_PATH")")
+	[ -b "/dev/$DISK" ] || { log "disk /dev/$DISK ne postoji"; return 1; }
+
+	# zadnji zauzeti sektor i prvi slobodan broj particije
+	END=0; NUM=1
+	for p in /sys/block/"$DISK"/"$DISK"*; do
+		[ -f "$p/partition" ] || continue
+		n=$(cat "$p/partition")
+		s=$(cat "$p/start"); z=$(cat "$p/size")
+		[ $((s + z)) -gt "$END" ] && END=$((s + z))
+		[ "$n" -ge "$NUM" ] && NUM=$((n + 1))
+	done
+	[ "$NUM" -le 4 ] || { log "nema mjesta za još jednu primarnu particiju"; return 1; }
+
+	TOTAL=$(cat /sys/block/"$DISK"/size)
+	# poravnanje na 1 MiB
+	START=$(( (END + 2047) / 2048 * 2048 ))
+	FREE_MB=$(( (TOTAL - START) / 2048 ))
+	if [ "$FREE_MB" -lt "$MIN_MB" ]; then
+		log "slobodno samo ${FREE_MB} MB (treba ${MIN_MB}) — podaci ostaju na root particiji"
+		return 1
+	fi
+	ENDS=$((TOTAL - 1))
+	DEV="/dev/${DISK}${NUM}"
+
+	log "stvaram data particiju $DEV (${FREE_MB} MB, sektori ${START}-${ENDS})"
+	parted -s "/dev/$DISK" mkpart primary ext4 "${START}s" "${ENDS}s" || {
+		log "parted nije uspio"; return 1; }
+	partx -a "/dev/$DISK" 2>/dev/null
+
+	i=0
+	while [ ! -b "$DEV" ] && [ $i -lt 30 ]; do sleep 1; i=$((i + 1)); done
+	[ -b "$DEV" ] || { log "jezgra ne vidi $DEV"; return 1; }
+
+	UUID=$(cat /proc/sys/kernel/random/uuid)
+	mkfs.ext4 -q -F -L saguaro-data -U "$UUID" -m 0 "$DEV" || {
+		log "mkfs nije uspio"; return 1; }
+
+	mkdir -p "$TMP"
+	mount "$DEV" "$TMP" || { log "mount nije uspio"; return 1; }
+	cp -a "$MOUNT/." "$TMP/" 2>/dev/null
+	sync
+	umount "$TMP"
+
+	uci -q batch <<EOF
+set fstab.sag_data=mount
+set fstab.sag_data.uuid=$UUID
+set fstab.sag_data.target=$MOUNT
+set fstab.sag_data.options=rw,noatime
+set fstab.sag_data.enabled=1
+commit fstab
+EOF
+	mount "$DEV" "$MOUNT" || { log "završni mount nije uspio"; return 1; }
+
+	SEC_START=$(cat /sys/block/"$DISK"/"${DISK}${NUM}"/start)
+	SEC_SIZE=$(cat /sys/block/"$DISK"/"${DISK}${NUM}"/size)
+	cat > "$REC" <<EOF
+{"disk":"$DISK","part":$NUM,"start":$SEC_START,"sectors":$SEC_SIZE,"uuid":"$UUID"}
+EOF
+	log "data particija u pogonu: $DEV na $MOUNT"
+	return 0
+}
+
+setup_datapart
+
+mkdir -p "$MOUNT/bin" "$MOUNT/web" "$MOUNT/etc" "$MOUNT/data" "$MOUNT/backup" "$MOUNT/log"
+
+/etc/init.d/saguaro-datapart enable 2>/dev/null
+/etc/init.d/saguaro-core enable 2>/dev/null
+/etc/init.d/saguaro-core start 2>/dev/null
+
+# nlbwmon mjeri promet po uređaju — dio zadanog stanja
+/etc/init.d/nlbwmon enable 2>/dev/null
+/etc/init.d/nlbwmon start 2>/dev/null
+
+log "prvo postavljanje gotovo — sučelje je na https://<adresa uređaja>:8443/"
+exit 0

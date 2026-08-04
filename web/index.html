@@ -43,6 +43,33 @@
     <p id="firstpw-error" class="login-error hidden"></p>
     <button type="submit" class="primary">Spremi i nastavi</button>
   </form>
+
+  <form id="setup-form" class="login-card hidden">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-txt"><strong>Saguaro</strong><span>Infrastructure</span></span>
+    </div>
+    <h1>Prvo postavljanje</h1>
+    <p class="login-sub">Još dvije stvari pa je uređaj spreman. Sve se kasnije
+      može promijeniti u postavkama.</p>
+
+    <label for="setup-hostname">Ime uređaja</label>
+    <input id="setup-hostname" placeholder="npr. saguaro-ured" required
+           pattern="[a-zA-Z0-9]([a-zA-Z0-9-]{0,30}[a-zA-Z0-9])?">
+    <label for="setup-zone">Vremenska zona</label>
+    <select id="setup-zone"></select>
+
+    <label for="setup-ip">Adresa uređaja u lokalnoj mreži (LAN)</label>
+    <input id="setup-ip" placeholder="192.168.1.1" required>
+    <label for="setup-mask">Mrežna maska</label>
+    <input id="setup-mask" value="255.255.255.0" required>
+
+    <p class="login-sub" id="setup-warn">Nakon spremanja uređaj mijenja adresu i
+      preglednik se sam preusmjerava na novu. Prijava ostaje ista.</p>
+    <p id="setup-error" class="login-error hidden"></p>
+    <button type="submit" class="primary">Spremi i završi</button>
+    <button type="button" id="setup-skip" class="ghost">Preskoči — podesit ću kasnije</button>
+  </form>
 </div>
 
 <div id="app" class="shell hidden">

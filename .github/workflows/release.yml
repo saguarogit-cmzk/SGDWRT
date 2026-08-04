@@ -1,9 +1,13 @@
-# Automatska objava izdanja: push taga vX.Y.Z gradi paket i stvara
-# GitHub Release s tar.gz artefaktom koji koriste install.sh i Update modul.
+# Automatska objava izdanja: push taga vX.Y.Z gradi
+#   1. tar.gz paket (koristi ga install.sh i Updates modul)
+#   2. gotovu OpenWrt sliku sa svime unutra (za nove uređaje)
 name: release
 on:
   push:
     tags: ["v*"]
+  # ručno pokretanje: gradi sve i objavi kao artefakt, BEZ stvaranja izdanja —
+  # da se gradnja slike može provjeriti prije nego se objavi verzija
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
@@ -14,11 +18,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+
       - name: Build
         run: |
           cd core
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
             go build -trimpath -ldflags "-s -w" -o ../dist/saguaro-core .
+
       - name: Package
         run: |
           STAGE=$(mktemp -d)
@@ -26,9 +32,36 @@ jobs:
           mkdir -p "$STAGE/web"
           cp web/* "$STAGE/web/"
           cp image/files/etc/init.d/saguaro-core "$STAGE/init.d-saguaro-core"
+          cp scripts/selftest.sh "$STAGE/selftest.sh"
           tar -czf "saguaro-${GITHUB_REF_NAME}-linux-amd64.tar.gz" -C "$STAGE" .
+
+      # Gotova slika: OpenWrt + svi paketi + Saguaro + data particija na prvom
+      # dizanju. Kod korisnika je onda dovoljno napisati je na USB.
+      - name: Alati za ImageBuilder
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd build-essential libncurses-dev \
+            gawk git gettext libssl-dev xsltproc rsync wget unzip python3
+
+      - name: Slika za nove uređaje
+        run: sh image/build.sh
+
+      - name: Artefakti (ručno pokretanje)
+        uses: actions/upload-artifact@v4
+        with:
+          name: saguaro-build
+          retention-days: 7
+          path: |
+            saguaro-*-linux-amd64.tar.gz
+            dist/saguaro-*-openwrt-*-x86-64.img.gz
+            dist/saguaro-*-openwrt-*-x86-64.img.gz.sha256
+
       - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: saguaro-*-linux-amd64.tar.gz
+          files: |
+            saguaro-*-linux-amd64.tar.gz
+            dist/saguaro-*-openwrt-*-x86-64.img.gz
+            dist/saguaro-*-openwrt-*-x86-64.img.gz.sha256
           generate_release_notes: true

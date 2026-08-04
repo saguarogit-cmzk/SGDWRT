@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.34.0"
+const version = "0.35.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -309,6 +309,7 @@ func main() {
 	mux.Handle("GET /api/v1/backup/schedule", s.auth(s.handleBackupScheduleGet))
 	mux.Handle("POST /api/v1/backup/schedule", s.auth(s.handleBackupScheduleSet))
 	mux.Handle("GET /api/v1/settings/system", s.auth(s.handleSystemSettingsGet))
+	mux.Handle("POST /api/v1/settings/hostname", s.auth(s.handleHostnameSet))
 	mux.Handle("POST /api/v1/settings/syslog", s.auth(s.handleSyslogSet))
 	mux.Handle("GET /api/v1/metrics/history", s.auth(s.handleMetricsHistory))
 	mux.Handle("GET /api/v1/rollback", s.auth(s.handleRollbackStatus))

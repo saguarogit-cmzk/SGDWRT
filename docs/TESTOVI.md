@@ -319,3 +319,15 @@ Provjereno na uređaju **04.08.2026.**:
 **offline smanjivanje ext4**, a upravo je to 04.08.2026. oborilo uređaj na 12
 sati (vidi D-012). Umjesto toga posao radi sama nadogradnja: nova slika nosi
 tablicu s rootom od 1024 MB i time oslobađa ~222 GB — bez ijednog `resize2fs`.
+
+## Gotova slika i prvo postavljanje (v0.35.0)
+
+| Provjera | Ishod |
+|---|---|
+| ImageBuilder za 25.12.5 postoji i ima objavljen otisak | **radi** — `openwrt-imagebuilder-25.12.5-x86-64.Linux-x86_64.tar.zst`, sha `313221253d9bac53…` |
+| Popis paketa snimljen s uređaja u pogonu | **180 paketa**; verzijska ograničenja maknuta, `dnsmasq` izrijekom maknut jer ga zamjenjuje `dnsmasq-full` |
+| Sintaksa `image/build.sh` i skripte prvog dizanja | **prošla** (`sh -n`) |
+| Endpoint za ime uređaja | **radi** — krivo ime odbijeno s HTTP 400, ispravno prihvaćeno |
+| Čarobnjak prvog postavljanja u sučelju | složen: lozinka → ime uređaja, vremenska zona, LAN adresa; smoke test prolazi |
+| **Sama gradnja slike** | **nije provjerena** — traži Linux; workflow se može pokrenuti ručno (*Run workflow*) i dati sliku kao artefakt bez objave izdanja |
+| **Dizanje uređaja iz te slike** | **nije provjereno** — traži USB i fizički pristup |

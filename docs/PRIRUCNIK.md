@@ -70,21 +70,50 @@ nađeš i bez tražilice.
 
 ## Instalacija na novi uređaj
 
-Na svježem OpenWrt 25.x uređaju (kao root):
+### Preporučeno: gotova slika s USB-a
+
+Uz svako izdanje se objavljuje **gotova slika** —
+`saguaro-vX.Y.Z-openwrt-25.12.5-x86-64.img.gz`. U njoj je sve: OpenWrt, svi
+paketi, Saguaro program i sučelje, init skripte i postavljanje data particije.
+**Uređaj ne treba internet.**
+
+1. Skini sliku sa stranice izdanja na GitHubu (uz nju je i `.sha256`).
+2. Napiši je na USB stick — Rufus, način **DD image** (ne ISO).
+3. Digni uređaj s USB-a (boot menu, obično F11 ili Del) ili sliku upiši na
+   disk uređaja.
+4. Otvori `https://192.168.1.1:8443/` i prijavi se: `admin` / `Sgs#2026`.
+
+Pri prvom dizanju uređaj sam napravi **data particiju** od ostatka diska i
+preseli `/opt/saguaro` na nju, pa Saguaro podaci od prve minute preživljavaju
+buduće nadogradnje OpenWrt-a.
+
+Sučelje te pri prvoj prijavi vodi kroz **prvo postavljanje**: nova lozinka →
+ime uređaja, vremenska zona i LAN adresa. Nakon spremanja adrese preglednik se
+sam preusmjeri na novu. Sve se kasnije može promijeniti u postavkama.
+
+> Zadana lozinka `Sgs#2026` ista je na svakoj slici i javno je poznata, pa
+> sučelje **ne dopušta ništa drugo** dok se ne promijeni. Nakon prijave
+> regeneriraj i API token.
+
+### Slika se gradi sama
+
+`image/build.sh` preuzme službeni ImageBuilder (uz provjeru otiska), ubaci
+`image/packages.txt` i sve Saguaro datoteke i izgradi sliku s root particijom
+od 1024 MB. GitHub Actions to radi pri svakom tagu `vX.Y.Z` i objavljuje
+sliku uz izdanje; workflow se može pokrenuti i ručno (*Run workflow*), pa se
+slika dobije kao artefakt bez objave izdanja.
+
+### Postojeći uređaj: instalacija skriptom
+
+Za uređaj na kojem OpenWrt već radi (kao root):
 
 ```sh
 wget -O - https://raw.githubusercontent.com/saguarogit-cmzk/SGSWRT/main/scripts/install.sh | sh
 ```
 
 Skripta instalira potrebne pakete, preuzme zadnje izdanje s GitHuba i pokrene
-servis. Bez objavljenih izdanja: `sh install.sh saguaro-vX.Y.Z-linux-amd64.tar.gz`
-(paket se gradi sa `scripts/release.sh`).
-
-Prva prijava na `https://<adresa>:8443/`: korisnik `admin`, lozinka
-`Sgs#2026`. **Odmah je promijeni** (System → Settings) i regeneriraj API
-token — zadane vrijednosti su iste na svakoj novoj instalaciji, pa uređaj s
-njima ne smije ostati u produkciji. (Ako je Saguaro postavljen ručno bez
-instalacijske skripte, lozinka je sadržaj `/opt/saguaro/etc/token`.)
+servis — **traži internet na samom uređaju**. Bez objavljenih izdanja:
+`sh install.sh saguaro-vX.Y.Z-linux-amd64.tar.gz`.
 
 ---
 

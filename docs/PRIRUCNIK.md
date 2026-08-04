@@ -10,7 +10,7 @@ Moduli su složeni u sedam skupina, po načelu **jedan modul = jedan posao**:
 | Skupina | Moduli |
 |---|---|
 | **Status** | Dashboard · Monitoring · Alerts · Audit log |
-| **Network** | Interfaces · Multi-WAN · OSPF · QoS · DHCP · DNS |
+| **Network** | Interfaces · Multi-WAN · Static routes · OSPF · QoS · DHCP · DNS |
 | **Firewall** | Firewall rules · Port forwarding / NAT · System access |
 | **Proxy** | Reverse proxy |
 | **Filtering** | IP blocklists · DNS filter · Scan detection |
@@ -146,6 +146,39 @@ Za uređaje s više internet veza:
 - **Raspodjela** — promet se dijeli po vezama prema udjelima.
 - **Pravila usmjeravanja** — određeni promet (po izvoru, odredištu, portu)
   uvijek ide preko određene veze (npr. računovodstvo preko glavne).
+
+## Static routes — statičke rute
+
+Uređaj sam zna put do mreža koje su na njemu i do interneta. Za sve ostalo
+treba upisati put: *„za 192.168.100.0/24 idi na 192.168.50.1"*. Tipični
+slučajevi: mreža iza drugog rutera, segment na drugoj lokaciji preko VPN-a,
+stari dio mreže koji je ostao na zasebnom uređaju.
+
+Za jednu rutu treba: **odredišna mreža** (CIDR, npr. `192.168.100.0/24` — može
+i pojedina adresa, sama se pretvori u `/32`), **gateway** (adresa uređaja koji
+zna dalje) i **sučelje** kroz koje se do tog gatewaya dolazi. Metrika odlučuje
+kad dvije rute vode do istog odredišta — manji broj ima prednost.
+
+Radi i za IPv6 (`route6`); odabir vrste adresa je u istom obrascu.
+
+Provjere koje sprječavaju tihe greške:
+
+- **Zadana ruta (`0.0.0.0/0`) se odbija.** Nju vodi internet veza, a kod više
+  veza modul Multi-WAN — statička bi ih tiho zaobišla.
+- **Gateway mora biti u mreži odabranog sučelja.** Jezgra takvu rutu inače
+  odbije, a u sučelju bi izgledala kao da je primijenjena.
+- Odredište se svodi na mrežnu adresu, pa `10.0.0.5/8` ne prođe kao mreža.
+- Gateway smije ostati prazan — tada je odredište izravno na tom sučelju
+  (on-link); rijetko, ali legitimno.
+
+Izmjene vrijede tek nakon **Primijeni**; do tada ploča stoji na „nije
+primijenjeno". Primjena ide kroz **safe mode**: ako kriva ruta presiječe
+pristup uređaju i nitko ne potvrdi promjenu, stara se konfiguracija sama vrati
+za dvije minute.
+
+Ispod tablice je **tablica usmjeravanja iz jezgre** — stvarno stanje, ne
+postavke. Ruta koja je primijenjena mora se ondje pojaviti; ako je nema, nije
+prihvaćena. To provjerava i `selftest.sh`.
 
 ## OSPF
 

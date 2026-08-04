@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.31.1"
+const version = "0.32.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -274,6 +274,11 @@ func main() {
 	mux.Handle("POST /api/v1/firewall/apply", s.auth(s.handleFWApply))
 	mux.Handle("GET /api/v1/firewall/dmz", s.auth(s.handleDMZGet))
 	mux.Handle("POST /api/v1/firewall/dmz", s.auth(s.handleDMZSet))
+	mux.Handle("GET /api/v1/routes", s.auth(s.handleRouteList))
+	mux.Handle("POST /api/v1/routes", s.auth(s.handleRouteCreate))
+	mux.Handle("PUT /api/v1/routes/{uuid}", s.auth(s.handleRouteUpdate))
+	mux.Handle("DELETE /api/v1/routes/{uuid}", s.auth(s.handleRouteDelete))
+	mux.Handle("POST /api/v1/routes/apply", s.auth(s.handleRouteApply))
 	mux.Handle("GET /api/v1/firewall/nat11", s.auth(s.handleNAT11List))
 	mux.Handle("POST /api/v1/firewall/nat11", s.auth(s.handleNAT11Create))
 	mux.Handle("PUT /api/v1/firewall/nat11/{uuid}", s.auth(s.handleNAT11Update))

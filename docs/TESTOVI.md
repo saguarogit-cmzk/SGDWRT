@@ -258,7 +258,25 @@ Vidi odluku D-012.
 | Uključivanje bez SMTP-a ili bez lozinke arhive | odbija se s HTTP 409 |
 | `GET /api/v1/backup/mail` na uređaju | **radi** — `pass_set: true`, `smtp_ready: false`, granica 15 MB |
 | Samoprovjera javlja da kopija ne izlazi s uređaja | **radi** — 42 prošlo / **1 palo** (namjerno: ni poslužitelj ni e-mail nisu uključeni) |
-| **Stvarna isporuka poruke** | **radi** — nakon što je korisnik unio SMTP (lin10.croadria.com:587, STARTTLS), poslužitelj je prihvatio poruku s privitkom `full-20260804-034810.tar.gz.enc` (HTTP 200 tek nakon `QUIT`, dakle poruka je predana). **Otvaranje privitka kod primatelja još nije potvrđeno** — provjeriti s `-decrypt-backup`. |
+| **Stvarna isporuka poruke** | **radi** — nakon što je korisnik unio SMTP (lin10.croadria.com:587, STARTTLS), poslužitelj je prihvatio poruku s privitkom `full-20260804-034810.tar.gz.enc` ; **primatelj potvrdio da je poruka stigla** (04.08.2026.). Otvaranje privitka naredbom `-decrypt-backup` nije zasebno potvrđeno. |
 | Automatsko slanje uz noćni backup | **radi** — uz `always` novi backup vrati `"mail":"poslano"` |
 | Učestalost slanja (uz svaki / dnevno / tjedno / mjesečno) | **radi** — uz `weekly` i već poslanu poruku isti dan, novi backup vrati `"mail":"preskočeno (jednom tjedno)"`; nepoznata vrijednost odbijena s HTTP 400 |
 | Samoprovjera nakon uključenja | **44 prošlo / 0 palo** |
+
+## Statičke rute (v0.32.0)
+
+Provjereno na uređaju **04.08.2026.**:
+
+| Provjera | Ishod |
+|---|---|
+| Čitanje tablice usmjeravanja iz jezgre | **radi** — `/proc/net/route` i `/proc/net/ipv6_route`; obje zadane rute multi-WAN-a (metrika 10 i 20), WireGuard i OpenVPN mreže, IPv6 zapisi |
+| Zadana ruta `0.0.0.0/0` | **odbijena**, HTTP 400 — nju vodi internet veza odnosno Multi-WAN |
+| Gateway izvan mreže sučelja | **odbijen**, HTTP 400 uz popis mreža tog sučelja (jezgra bi takvu rutu odbila tiho) |
+| Nepostojeće sučelje | **odbijeno**, HTTP 400 |
+| Dodavanje i primjena | **radi** — `network.sag_rt_01e28fea` sa `interface`, `target`, `gateway`, `metric`; u jezgri `192.168.100.0/24 via 192.168.50.1 dev br-lan proto static metric 5` |
+| Safe mode pri primjeni | **radi** — primjena vrati `safe_mode: true`, potvrda kroz `/rollback/confirm` |
+| Isključivanje rute pa primjena | **radi** — ruta nestala iz jezgre |
+| Brisanje pa primjena | **radi** — nula zaostalih `sag_rt_` zapisa u `/etc/config/network` |
+| Samoprovjera | **44 prošlo / 0 palo** (nova provjera uspoređuje upisane rute s tablicom jezgre) |
+
+Testna ruta je nakon provjere obrisana — uređaj je ostao bez ijedne statičke rute.

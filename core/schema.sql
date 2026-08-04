@@ -335,3 +335,19 @@ CREATE TABLE IF NOT EXISTS rp_sites (
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Statičke rute: put do mreža koje nisu izravno na uređaju ni iza internet
+-- veze (mreža iza drugog rutera, segment na drugoj lokaciji preko VPN-a).
+CREATE TABLE IF NOT EXISTS nw_routes (
+    uuid        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    family      TEXT NOT NULL DEFAULT 'ipv4',   -- ipv4 | ipv6
+    iface       TEXT NOT NULL,                  -- logičko sučelje (lan, wan, sag_vlan20…)
+    target      TEXT NOT NULL,                  -- odredišna mreža u CIDR obliku
+    gateway     TEXT,                           -- prazno = odredište je izravno na sučelju
+    metric      INTEGER NOT NULL DEFAULT 0,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);

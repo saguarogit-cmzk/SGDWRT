@@ -142,7 +142,7 @@ paketa. Trud je procijenjen u danima rada.
 | # | Mogućnost | Što korisnik dobiva | Kako | Trud | Preporuka |
 |---|---|---|---|---|---|
 | ~~A1~~ | **NAPRAVLJENO (v0.25.0)** — izlazna javna adresa po mreži | „Računovodstvo izlazi kao .11, ostali kao .10" — bitno kad pružatelj usluge gleda izvorišnu adresu | nftables `snat to` pravilo po zoni/izvoru; nema novih paketa | 2 dana | **visoka** |
-| **A2** | **Statičke rute** | ruta prema mreži iza drugog routera bez OSPF-a | `config route` u `/etc/config/network` | 1 dan | **visoka** (osnovna stvar koja nedostaje) |
+| ~~A2~~ | **NAPRAVLJENO (v0.32.0)** — statičke rute | ruta prema mreži iza drugog routera bez OSPF-a; IPv4 i IPv6, safe mode pri primjeni, usporedba s tablicom jezgre | `config route`/`route6` u `/etc/config/network` | 1 dan | **visoka** (osnovna stvar koja nedostaje) |
 | ~~A3~~ | **NAPRAVLJENO (v0.27.0)** — IPv6 | adresiranje, firewall i objava servera preko IPv6 — sve više pružatelja ga daje | `dhcpv6`/`odhcpd` već na uređaju; treba GUI, zone i pravila | 5–8 dana | **srednja** (veliki, ali sve traženiji zahvat) |
 | **A4** | **4G/5G pričuvna veza** | uređaj sam prelazi na mobilnu vezu kad optika padne | `modemmanager` ili `uqmi` + USB modem; mwan3 već postoji | 2–3 dana | srednja (traži modem) |
 | **A5** | **VRRP / dva uređaja u paru (HA)** | drugi uređaj preuzme cijeli promet ako prvi otkaže | `keepalived` | 4–6 dana | srednja (za kritične lokacije) |
@@ -220,7 +220,7 @@ paketa. Trud je procijenjen u danima rada.
 
 **Prvi krug — brzo, vidljivo, malo rizika (oko 8–10 dana rada)**
 
-1. A2 statičke rute · A1 izlazna javna adresa po mreži
+1. ~~A2 statičke rute~~ · ~~A1 izlazna javna adresa po mreži~~ — oboje napravljeno
 2. B1 prisilni DNS · B2 vremenska pravila
 3. D1 pregled aktivnih veza · D2 snimanje prometa
 4. E3 pravi certifikat za sučelje

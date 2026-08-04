@@ -2101,6 +2101,7 @@ const MODULES = {
   audit:     ["Audit log", "Tko je i što promijenio u postavkama uređaja", () => loadAudit()],
   network:   ["Interfaces", "LAN adresa, WAN veze i VLAN mreže", () => loadNetwork()],
   multiwan:  ["Multi-WAN", "Više internet veza — failover, raspodjela i nadzor", () => loadMultiwan()],
+  routes:    ["Static routes", "Ručno upisani putevi do mreža koje nisu izravno na uređaju", () => loadRoutes()],
   ospf:      ["OSPF", "Dinamičko usmjeravanje — automatska razmjena ruta s routerima", () => loadOspf()],
   qos:       ["QoS", "Ograničenje brzine — glatki pozivi i pravedna raspodjela veze", () => loadQos()],
   dhcp:      ["DHCP", "Dodjela IP adresa i rezervacije za uređaje u mreži", () => loadDhcp()],
@@ -2129,7 +2130,8 @@ const MODULE_KEYS = {
   audit: "promjene tko je mijenjao dnevnik izmjena",
   network: "mreža sučelja lan wan vlan adresa",
   multiwan: "više veza failover pričuvna veza rezervna",
-  ospf: "usmjeravanje rute routing",
+  routes: "statičke rute ruta usmjeravanje put mreža iza rutera gateway",
+  ospf: "usmjeravanje rute routing dinamičko",
   qos: "brzina ograničenje prioritet promet",
   dhcp: "dodjela adresa rezervacije zakup lease",
   dns: "imena domene razlučivanje",
@@ -2153,7 +2155,7 @@ const MODULE_KEYS = {
 // više nije u istoj skupini kao pravila vatrozida.
 const NAV_GROUPS = [
   ["Status", ["dashboard", "monitorx", "alerts", "audit"]],
-  ["Network", ["network", "multiwan", "ospf", "qos", "dhcp", "dns"]],
+  ["Network", ["network", "multiwan", "routes", "ospf", "qos", "dhcp", "dns"]],
   ["Firewall", ["firewall", "publish", "hardening"]],
   ["Filtering", ["protection", "dnsfilter", "scan"]],
   ["Proxy", ["rproxy"]],
@@ -4047,6 +4049,148 @@ $("os-test").addEventListener("click", async () => {
     await loadOffsite();
   } catch (e) {
     $("os-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+/* ---------- statičke rute ---------- */
+
+let routeData = {};
+let editRtUUID = null;
+
+async function loadRoutes() {
+  const x = await api("/routes");
+  routeData = x;
+  const list = x.routes || [];
+
+  const tb = $("rt-rows");
+  tb.replaceChildren();
+  for (const n of list) {
+    const tr = document.createElement("tr");
+    const tdE = document.createElement("td");
+    tdE.append(tick(!!n.enabled, async () => {
+      await api("/routes/" + n.uuid, "PUT", { ...n, enabled: !n.enabled })
+        .catch(alertErr);
+      loadRoutes().catch(alertErr);
+    }, n.name));
+    tr.append(tdE);
+    for (const v of [n.name, n.target,
+      n.gateway || "izravno na sučelju", n.iface,
+      n.metric ? String(n.metric) : "—", n.notes || ""]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    tdAct.append(
+      btnSm("Uredi", false, () => openRtDialog(n)),
+      btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati rutu "${n.name}"?`)) return;
+        await api("/routes/" + n.uuid, "DELETE").catch(alertErr);
+        loadRoutes().catch(alertErr);
+      }));
+    tr.append(tdAct);
+    tb.append(tr);
+  }
+  if (!list.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 8;
+    td.className = "muted";
+    td.textContent = "Nema upisanih ruta.";
+    tr.append(td); tb.append(tr);
+  }
+
+  const badge = $("rt-state");
+  const on = list.filter((n) => n.enabled).length;
+  if (!list.length) {
+    setPill(badge, "off", "nema ruta");
+    setNote("rt-note", "uređaj koristi samo mreže koje su na njemu i internet vezu");
+  } else if (!x.applied) {
+    setPill(badge, "warn", "nije primijenjeno");
+    setNote("rt-note", "izmjene su spremljene, ali još ne vrijede — stisni Primijeni");
+  } else {
+    setPill(badge, "good", on + " u primjeni");
+    setNote("rt-note", list.length - on
+      ? (list.length - on) + " isključenih" : "sve rute su uključene");
+  }
+
+  // stvarna tablica jezgre
+  const kb = $("rt-kernel");
+  kb.replaceChildren();
+  for (const k of x.kernel || []) {
+    const tr = document.createElement("tr");
+    for (const v of [k.family === "ipv6" ? "IPv6" : "IPv4", k.target,
+      k.gateway || "izravno", k.device, String(k.metric)]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    kb.append(tr);
+  }
+  setNote("rt-kernel-note", (x.kernel || []).length + " zapisa");
+}
+
+function openRtDialog(n) {
+  const f = $("rt-form");
+  editRtUUID = n ? n.uuid : null;
+  $("rt-dialog-title").textContent = editRtUUID ? "Uredi rutu" : "Nova ruta";
+  f.elements.name.value = n ? n.name : "";
+  f.elements.family.value = n ? n.family : "ipv4";
+  f.elements.target.value = n ? n.target : "";
+  f.elements.gateway.value = n ? n.gateway || "" : "";
+  f.elements.metric.value = n ? n.metric : 0;
+  f.elements.notes.value = n ? n.notes || "" : "";
+  f.elements.enabled.checked = n ? !!n.enabled : true;
+
+  // sučelja s njihovim mrežama — da se odmah vidi kamo ruta izlazi
+  const sel = $("rt-iface");
+  sel.replaceChildren();
+  for (const [name, subs] of Object.entries(routeData.ifaces || {})) {
+    const o = document.createElement("option");
+    o.value = name;
+    o.textContent = subs && subs.length ? `${name} (${subs.join(", ")})` : name;
+    sel.append(o);
+  }
+  if (n) sel.value = n.iface;
+  $("rt-dialog").showModal();
+}
+
+$("rt-new").addEventListener("click", () => openRtDialog(null));
+$("rt-cancel").addEventListener("click", () => $("rt-dialog").close());
+$("rt-refresh").addEventListener("click", () => loadRoutes().catch(alertErr));
+
+$("rt-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {
+    name: f.elements.name.value.trim(),
+    family: f.elements.family.value,
+    target: f.elements.target.value.trim(),
+    gateway: f.elements.gateway.value.trim(),
+    iface: f.elements.iface.value,
+    metric: parseInt(f.elements.metric.value, 10) || 0,
+    notes: f.elements.notes.value.trim(),
+    enabled: f.elements.enabled.checked,
+  };
+  try {
+    if (editRtUUID) await api("/routes/" + editRtUUID, "PUT", body);
+    else await api("/routes", "POST", body);
+    $("rt-dialog").close();
+    await loadRoutes();
+  } catch (e) { alertErr(e); }
+});
+
+$("rt-apply").addEventListener("click", async () => {
+  $("rt-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/routes/apply", "POST", {});
+    $("rt-result").textContent =
+      `Primijenjeno ruta: ${r.applied} (backup ${r.backup}). ` +
+      "Provjeri ih u tablici jezgre ispod.";
+    await loadRoutes();
+  } catch (e) {
+    $("rt-result").textContent = "Greška: " + (e.message || e);
   }
 });
 

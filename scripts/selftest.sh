@@ -134,6 +134,19 @@ else
     skip "Vremenska zona nije postavljena"
 fi
 
+# statičke rute: upisana i uključena ruta mora stvarno biti u jezgri, inače
+# u sučelju izgleda kao da radi a promet ide nekamo drugamo
+RT_ON=$(api routes | tr '}' '\n' | grep -c '"enabled":true')
+RT_KERNEL=$(ip route show proto static 2>/dev/null | grep -c .)
+if [ "$RT_ON" = "0" ]; then
+    skip "Nema upisanih statičkih ruta"
+elif [ "$RT_ON" -le "$RT_KERNEL" ]; then
+    ok "Statičke rute su u jezgri ($RT_ON upisano, $RT_KERNEL u tablici)"
+else
+    bad "Upisano je $RT_ON statičkih ruta, a u jezgri ih je $RT_KERNEL" \
+        "Mreža → Static routes → Primijeni; pogledaj tablicu usmjeravanja ispod"
+fi
+
 # ------------------------------------------------------------- 3. firewall
 head_ "Firewall"
 

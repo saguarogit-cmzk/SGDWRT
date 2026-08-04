@@ -708,6 +708,80 @@
     </section>
   </div>
 
+  <div class="view hidden" id="view-routes">
+    <section class="card">
+      <div class="card-head">
+        <h2>Statičke rute</h2>
+        <span class="st" id="rt-state">—</span>
+        <span class="head-note" id="rt-note">—</span>
+        <button id="rt-new" class="ghost">Nova ruta</button>
+        <button id="rt-apply" class="primary">Primijeni</button>
+      </div>
+      <p class="hint">Uređaj sam zna put do mreža koje su na njemu i do
+        interneta. Za sve ostalo — mreža iza drugog rutera, segment na drugoj
+        lokaciji preko VPN-a, stari dio mreže na zasebnom uređaju — treba
+        upisati put: <i>„za 192.168.100.0/24 idi na 192.168.50.1"</i>.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th></th><th>Naziv</th><th>Odredišna mreža</th><th>Preko</th>
+            <th>Sučelje</th><th>Metrika</th><th>Napomena</th><th></th>
+          </tr></thead>
+          <tbody id="rt-rows"></tbody>
+        </table>
+      </div>
+      <p class="legend">✔ uključeno (klik isključuje) · ☐ isključeno (klik uključuje) · ✎ uredi · 🗑 obriši</p>
+      <p class="hint" id="rt-result"></p>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Tablica usmjeravanja u jezgri</h2>
+        <span class="head-note" id="rt-kernel-note">—</span>
+        <button id="rt-refresh" class="ghost">Osvježi</button>
+      </div>
+      <p class="hint">Ovo je stvarno stanje — što uređaj u ovom trenutku
+        koristi. Ruta upisana gore mora se pojaviti ovdje nakon
+        <b>Primijeni</b>; ako je nema, nije prihvaćena.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Vrsta</th><th>Odredište</th><th>Preko</th><th>Uređaj</th><th>Metrika</th>
+          </tr></thead>
+          <tbody id="rt-kernel"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <dialog id="rt-dialog">
+      <form id="rt-form">
+        <h3 id="rt-dialog-title">Nova ruta</h3>
+        <div class="form-grid">
+          <label>Naziv<input name="name" placeholder="Ured Split" required></label>
+          <label>Vrsta adresa
+            <select name="family">
+              <option value="ipv4">IPv4</option>
+              <option value="ipv6">IPv6</option>
+            </select></label>
+          <label>Odredišna mreža<input name="target" placeholder="192.168.100.0/24" required>
+            <span class="hint">mreža ili pojedina adresa</span></label>
+          <label>Gateway (preko koje adrese)<input name="gateway" placeholder="192.168.50.1">
+            <span class="hint">prazno = odredište je izravno na tom sučelju</span></label>
+          <label>Sučelje<select name="iface" id="rt-iface"></select></label>
+          <label>Metrika<input name="metric" type="number" min="0" max="65535" value="0">
+            <span class="hint">manji broj = veća prednost</span></label>
+          <label class="wide">Napomena<input name="notes" placeholder="neobavezno"></label>
+          <label class="check" style="grid-column:1/-1"><input type="checkbox" name="enabled" checked>
+            Uključena</label>
+        </div>
+        <div class="form-actions">
+          <button type="button" id="rt-cancel" class="ghost">Odustani</button>
+          <button type="submit" class="primary">Spremi</button>
+        </div>
+      </form>
+    </dialog>
+  </div>
+
   <div class="view hidden" id="view-ospf">
     <section class="card">
       <div class="card-head">

@@ -329,5 +329,6 @@ tablicu s rootom od 1024 MB i time oslobađa ~222 GB — bez ijednog `resize2fs`
 | Sintaksa `image/build.sh` i skripte prvog dizanja | **prošla** (`sh -n`) |
 | Endpoint za ime uređaja | **radi** — krivo ime odbijeno s HTTP 400, ispravno prihvaćeno |
 | Čarobnjak prvog postavljanja u sučelju | složen: lozinka → ime uređaja, vremenska zona, LAN adresa; smoke test prolazi |
-| **Sama gradnja slike** | **nije provjerena** — traži Linux; workflow se može pokrenuti ručno (*Run workflow*) i dati sliku kao artefakt bez objave izdanja |
+| Pokretanje gradnje bez objave izdanja | **radi** — grana `ci/**` gradi sve i ostavlja artefakte, korak *Release* se preskače (vezan na tag) |
+| Prva gradnja | **pala** u koraku *Package*: naziv paketa uzima ime refa, a grana ga ima s kosom crtom (`ci/image-test`) pa `tar` puca na nepostojećem direktoriju. Popravljeno zamjenom `/` u `-`. |
 | **Dizanje uređaja iz te slike** | **nije provjereno** — traži USB i fizički pristup |

@@ -52,6 +52,10 @@ jobs:
       - name: Slika za nove uređaje
         run: sh image/build.sh
 
+      # slika se ne isporučuje na vjeru — otvara se i gleda što je unutra
+      - name: Provjeri sliku
+        run: sudo sh image/verify.sh $(ls dist/saguaro-*-openwrt-*-x86-64.img.gz)
+
       - name: Artefakti (ručno pokretanje)
         uses: actions/upload-artifact@v4
         with:

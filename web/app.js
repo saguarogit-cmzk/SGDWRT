@@ -712,6 +712,12 @@ async function loadFirewall() {
     const tdT = document.createElement("td");
     tdT.append(targetMark(f.target));
     tr.append(tdT);
+    // vremensko ograničenje se mora vidjeti u tablici — pravilo koje vrijedi
+    // samo noću inače izgleda isto kao ono koje vrijedi uvijek
+    const tdW = document.createElement("td");
+    tdW.textContent = scheduleText(f);
+    if (f.start_time || f.weekdays) tdW.className = "sched";
+    tr.append(tdW);
     const tdE = document.createElement("td");
     tdE.append(tick(!!f.enabled, null));
     tr.append(tdE);
@@ -727,6 +733,48 @@ async function loadFirewall() {
     tr.append(tdAct);
     rb.append(tr);
   }
+}
+
+/* ---------- vremensko ograničenje pravila ---------- */
+
+// Dani se prema fw4 šalju engleskim kraticama; u sučelju stoje hrvatske.
+const DAYS = [["mon", "pon"], ["tue", "uto"], ["wed", "sri"], ["thu", "čet"],
+  ["fri", "pet"], ["sat", "sub"], ["sun", "ned"]];
+
+function scheduleText(f) {
+  const parts = [];
+  if (f.start_time && f.stop_time) parts.push(f.start_time + "–" + f.stop_time);
+  const days = (f.weekdays || "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (days.length && days.length < 7) {
+    parts.push(days.map((d) => (DAYS.find((x) => x[0] === d) || [d, d])[1]).join(" "));
+  }
+  return parts.length ? parts.join(" · ") : "uvijek";
+}
+
+// buildDayPicker crta kvačice za dane; upisivanje "mon tue" rukom je bilo
+// prelagan način da se pravilo tiho ne primijeni
+function buildDayPicker(selected) {
+  const box = $("rl-days");
+  box.replaceChildren();
+  const have = new Set((selected || "").toLowerCase().split(/\s+/).filter(Boolean));
+  for (const [id, hr] of DAYS) {
+    const lab = document.createElement("label");
+    lab.className = "check";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = id;
+    cb.checked = have.has(id);
+    lab.append(cb, document.createTextNode(" " + hr));
+    box.append(lab);
+  }
+}
+
+function pickedDays() {
+  const out = [];
+  for (const cb of $("rl-days").querySelectorAll("input[type=checkbox]")) {
+    if (cb.checked) out.push(cb.value);
+  }
+  return out.length === 7 ? "" : out.join(" ");
 }
 
 function openPfDialog(f) {
@@ -756,6 +804,7 @@ function openRlDialog(f) {
     d.elements.target.value = "ACCEPT";
     d.elements.family.value = "any";
   }
+  buildDayPicker(f ? f.weekdays : "");
   $("rl-dialog").showModal();
 }
 
@@ -1376,6 +1425,7 @@ async function loadOspf() {
 async function loadProtection() {
   const x = await api("/protection");
   fillScan(x.scan);
+  loadForcedDNS().catch(() => setPill($("fd-state"), "off", "nedostupno"));
 
   const bi = x.banip || {};
   $("bi-enabled").checked = !!bi.enabled;
@@ -1699,6 +1749,11 @@ async function loadUpdate() {
     const dd = document.createElement("dd"); dd.textContent = v;
     kv.append(dt, dd);
   }
+  const ub = $("up-state");
+  if (x.github_error) setPill(ub, "off", "nema pristupa GitHubu");
+  else if (x.latest && x.latest.tag && x.latest.tag !== "v" + x.current)
+    setPill(ub, "warn", "dostupno " + x.latest.tag);
+  else setPill(ub, "good", "v" + x.current);
   $("up-github").classList.toggle("hidden", !upHasLatest);
   $("up-apply").classList.toggle("hidden", !upHasStaged);
   $("up-github-note").textContent = upHasLatest
@@ -2808,8 +2863,9 @@ $("rl-form").addEventListener("submit", async (ev) => {
   const f = ev.target;
   const body = {};
   for (const n of ["name", "family", "proto", "src_zone", "src_ip", "dest_zone",
-    "dest_ip", "dest_port", "target", "start_time", "stop_time", "weekdays",
+    "dest_ip", "dest_port", "target", "start_time", "stop_time",
     "notes"]) body[n] = f.elements[n].value.trim();
+  body.weekdays = pickedDays();
   body.enabled = f.elements.enabled.checked;
   try {
     if (editRlUUID) await api("/firewall/rules/" + editRlUUID, "PUT", body);
@@ -3277,6 +3333,72 @@ $("ad-save").addEventListener("click", async () => {
   }
 });
 
+/* ---------- prisilni DNS ---------- */
+
+async function loadForcedDNS() {
+  const x = await api("/dnsforce");
+  const f = x.forced || {};
+  $("fd-enabled").checked = !!f.enabled;
+  $("fd-dot").checked = f.block_dot !== false;
+  $("fd-doh").checked = f.block_doh !== false;
+  $("fd-except").value = (f.except || []).join(" ");
+
+  const box = $("fd-zones");
+  box.replaceChildren();
+  const have = new Set(f.zones || []);
+  for (const z of x.zones || []) {
+    const lab = document.createElement("label");
+    lab.className = "check";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = z;
+    cb.checked = have.has(z);
+    lab.append(cb, document.createTextNode(" " + z));
+    box.append(lab);
+  }
+  if (!(x.zones || []).length) {
+    box.textContent = "Nema lokalnih mreža.";
+  }
+
+  const badge = $("fd-state");
+  if (!f.enabled) {
+    setPill(badge, "off", "isključeno");
+    setNote("fd-note", "tko želi, zaobiđe filtar vlastitim DNS-om");
+  } else if (!x.applied) {
+    setPill(badge, "warn", "nije primijenjeno");
+    setNote("fd-note", "spremljeno, ali još ne vrijedi — stisni Spremi i primijeni");
+  } else {
+    setPill(badge, "good", (f.zones || []).length + " mreža");
+    const slojevi = ["port 53"];
+    if (f.block_dot) slojevi.push("DoT");
+    if (f.block_doh) slojevi.push("DoH (" + x.doh_count + " adresa)");
+    setNote("fd-note", slojevi.join(" · ") +
+      ((f.except || []).length ? " · iznimki: " + f.except.length : ""));
+  }
+}
+
+$("fd-save").addEventListener("click", async () => {
+  const zones = [...$("fd-zones").querySelectorAll("input:checked")].map((c) => c.value);
+  $("fd-result").textContent = "Spremam…";
+  try {
+    await api("/dnsforce", "POST", {
+      enabled: $("fd-enabled").checked,
+      zones,
+      block_dot: $("fd-dot").checked,
+      block_doh: $("fd-doh").checked,
+      except: $("fd-except").value.split(/[\s,]+/).filter(Boolean),
+    });
+    // pravila žive u firewallu, pa primjenu radi ista ruta kao i za ostalo
+    $("fd-result").textContent = "Primjenjujem u firewall…";
+    const r = await api("/firewall/apply", "POST", {});
+    $("fd-result").textContent = "Primijenjeno." +
+      (r && r.backup ? " Backup: " + r.backup : "");
+    await loadForcedDNS();
+  } catch (e) {
+    $("fd-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
 $("mw-save").addEventListener("click", async () => {
   const wans = [];
   for (const tr of $("mw-wan-rows").children) {
@@ -3494,7 +3616,7 @@ async function loadOpenWrt() {
   } catch { /* popis nije obavezan */ }
 }
 
-// renderDisk prikazuje stanje diska i korijenske particije. Ovo je jedina
+// renderDisk prikazuje stanje diska i root particije. Ovo je jedina
 // veličina koju nadogradnja tiho promijeni, pa stoji uz nju.
 function renderDisk(d) {
   const kv = $("dk-kv");
@@ -3508,9 +3630,10 @@ function renderDisk(d) {
   }
   const rows = [
     ["Disk", `${d.disk || "—"} · ${fmtBytes(d.disk_bytes)} · ${d.parts || 0} particija`],
-    ["Korijenska particija", `${d.part || "—"} · ${fmtBytes(d.part_bytes)}`],
+    ["Root particija", `${d.part || "—"} · ${fmtBytes(d.part_bytes)}`],
     ["Zauzeto", `${fmtBytes(d.fs_used)} od ${fmtBytes(d.fs_bytes)} · slobodno ${fmtBytes(d.fs_free)}`],
-    ["Preporuka za novu sliku", `${d.recommend_mb} MB`],
+    ["Root particija nakon sljedeće nadogradnje OpenWrt-a",
+      `${d.recommend_mb} MB (Saguaro to traži sam)`],
   ];
   if (d.shrunk) {
     rows.push(["Očekivano nakon nadogradnje",
@@ -3526,12 +3649,12 @@ function renderDisk(d) {
   setNote("dk-note", d.note || "");
 
   // neiskorišteni prostor iza zadnje particije — vrijedi ga spomenuti, ali
-  // širenje korijenske particije na živom uređaju se ne nudi jer nije sigurno
+  // širenje root particije na živom uređaju se ne nudi jer nije sigurno
   const tail = $("dk-tail");
   if (d.free_tail > 2 * 1024 * 1024 * 1024) {
     tail.textContent =
       `Na disku je ${fmtBytes(d.free_tail)} neiskorišteno iza zadnje particije. ` +
-      "Korijenska particija se time ne širi — najveća koju servis za izgradnju " +
+      "Root particija se time ne širi — najveća koju servis za izgradnju " +
       "daje je 1024 MB, a to je za rad sustava dovoljno. Ostatak diska ima " +
       "smisla samo kao zasebna particija za podatke.";
     tail.classList.remove("hidden");
@@ -3539,8 +3662,6 @@ function renderDisk(d) {
     tail.classList.add("hidden");
   }
 
-  const inp = $("ow-rootfs");
-  if (!inp.value) inp.value = d.recommend_mb || 512;
 }
 
 let owBuilt = null; // {url, sha256, image, version, rootfs_mb}
@@ -3550,9 +3671,8 @@ $("ow-refresh").addEventListener("click", () => loadOpenWrt().catch(alertErr));
 $("ow-build").addEventListener("click", async () => {
   $("ow-build-result").textContent =
     "Naručujem sliku s popisom paketa ovog uređaja… (prvi put zna trajati par minuta)";
+  // veličinu root particije bira Core sam (najveće što build servis daje)
   const body = {};
-  const mb = parseInt($("ow-rootfs").value, 10);
-  if (mb > 0) body.rootfs_mb = mb;
   try {
     let r = await api("/openwrt/build", "POST", body);
     // servis gradi u pozadini — pitaj ponovno dok ne bude gotovo
@@ -3571,7 +3691,7 @@ $("ow-build").addEventListener("click", async () => {
     $("ow-fetch").disabled = false;
     $("ow-build-result").textContent =
       `Slika je spremna: ${r.image} (otisak ${r.sha256.slice(0, 16)}…, ` +
-      `korijenska particija ${r.rootfs_mb} MB). ` +
+      `root particija ${r.rootfs_mb} MB). ` +
       "Sljedeći korak: preuzmi je na uređaj.";
   } catch (e) {
     $("ow-build-result").textContent = "Greška: " + (e.message || e);

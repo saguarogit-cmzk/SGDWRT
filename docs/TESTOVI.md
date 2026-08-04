@@ -190,9 +190,9 @@ Provedena stvarna nadogradnja kroz sučelje, na uređaju u pogonu.
 
 Nakon popravka keep liste i nove arhive: samoprovjera **41 prošlo / 0 palo**.
 
-## Korijenska particija nakon nadogradnje (04.08.2026.) — **kvar i pouka**
+## Root particija nakon nadogradnje (04.08.2026.) — **kvar i pouka**
 
-Nadogradnja 25.12.4 → 25.12.5 vratila je korijensku particiju s 220 GB na
+Nadogradnja 25.12.4 → 25.12.5 vratila je root particiju s 220 GB na
 **104 MB** (disk je 234 GB), jer x86 slika nosi i tablicu particija. Disk je
 odmah bio zauzet 98 %.
 
@@ -205,7 +205,7 @@ odmah bio zauzet 98 %.
 | Službeni `expand-root` (`/etc/uci-defaults/70-rootpt-resize` + `80-rootfs-resize`) | **uništio datotečni sustav** — uređaj se nakon restarta nije digao, konzola javlja grešku ext4 grupa |
 
 Uzrok: `80-rootfs-resize` radi `resize2fs -f` preko **loop uređaja** nad
-particijom koja je istovremeno montirana kao korijen za pisanje. Na `squashfs`
+particijom koja je istovremeno montirana kao root za pisanje. Na `squashfs`
 slikama to mijenja odvojeni overlay i bezopasno je; na **ext4 kombiniranoj
 slici to je isti datotečni sustav s dvije strane**. Postupak je za našu vrstu
 slike neispravan iako ga wiki navodi kao općenit.
@@ -280,3 +280,22 @@ Provjereno na uređaju **04.08.2026.**:
 | Samoprovjera | **44 prošlo / 0 palo** (nova provjera uspoređuje upisane rute s tablicom jezgre) |
 
 Testna ruta je nakon provjere obrisana — uređaj je ostao bez ijedne statičke rute.
+
+## Prisilni DNS i vremenska pravila (v0.33.0)
+
+Provjereno na uređaju **04.08.2026.**:
+
+| Provjera | Ishod |
+|---|---|
+| fw4 prihvaća vremenska ograničenja | **radi** — `meta hour "08:00:00"-"18:00:00" meta day { "Monday", … }` |
+| fw4 i lista negiranih adresa u `redirect` | **ne radi** — `option 'src_ip' must not be a list` (ista granica kao kod SNAT-a) |
+| Iznimke preko imenovanog skupa (`config ipset`) | **radi** — nastane `ip saddr != @sag_fdns_skip`, bez ograničenja broja iznimki |
+| Prisilni DNS uključen na `lan` | **radi** — u jezgri sva tri sloja: `tcp/udp dport 53 … redirect to :53`, `tcp dport 853 … reject`, `ip daddr { … } tcp dport 443 … reject` |
+| Skup iznimki | **radi** — `elements = { 192.168.50.10 }` |
+| Zona koja nije lokalna (`wan`) | **odbijena**, HTTP 400 |
+| Uključeno bez odabrane mreže | **odbijeno**, HTTP 400 |
+| Neispravna iznimka | **odbijena**, HTTP 400 |
+| Isključivanje i primjena | **radi** — nula zaostalih `sag_fdns_` zapisa, nula pravila u jezgri |
+| **Stvarni pokušaj zaobilaženja s klijenta** | **nije provjereno** — radna stanica na 192.168.50.75 ima gateway 192.168.50.1, dakle njen promet ne prolazi kroz ovaj uređaj, pa se preusmjeravanje ne može okinuti. Treba klijent kojem je ovaj uređaj gateway: `nslookup example.com 8.8.8.8` mora dobiti odgovor od uređaja, a brojač na redirect pravilu porasti. |
+
+Prisilni DNS je nakon provjere **isključen** — uređaj je vraćen u stanje prije testa.

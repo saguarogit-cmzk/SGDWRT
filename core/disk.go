@@ -50,7 +50,7 @@ type diskInfo struct {
 	Err        string `json:"error,omitempty"`
 }
 
-// rootMajMin čita glavni/sporedni broj uređaja na kojem je korijen sustava.
+// rootMajMin čita glavni/sporedni broj uređaja na kojem je root filesystem.
 // Čita se iz mountinfo jer BusyBox nema ništa bolje, a /dev/root je simbolička
 // veza koja ne govori o kojem se disku radi.
 func rootMajMin() (string, error) {
@@ -67,7 +67,7 @@ func rootMajMin() (string, error) {
 			return f[2], nil
 		}
 	}
-	return "", fmt.Errorf("korijenski datotečni sustav nije pronađen u mountinfo")
+	return "", fmt.Errorf("root filesystem nije pronađen u mountinfo")
 }
 
 func sysfsInt(path string) int64 {
@@ -97,13 +97,13 @@ func readDiskInfo() diskInfo {
 	parent := filepath.Base(filepath.Dir(target))
 
 	if _, err := os.Stat(filepath.Join(target, "partition")); err == nil {
-		// korijen je na particiji
+		// root je na particiji
 		d.Part = name
 		d.PartNum = int(sysfsInt(filepath.Join(target, "partition")))
 		d.PartBytes = sysfsInt(filepath.Join(target, "size")) * 512
 		d.Disk = parent
 	} else {
-		// korijen je na cijelom disku (nema tablice particija)
+		// root je na cijelom disku (nema tablice particija)
 		d.Disk = name
 		d.Part = name
 		d.Sectorless = true
@@ -222,7 +222,7 @@ func (s *server) diskState() diskState {
 	st := diskState{diskInfo: d, RecommendMB: recommendRootfsMB(d)}
 	if d.Err != "" || d.FSBytes == 0 {
 		st.State = "nepoznato"
-		st.Note = "veličina korijenske particije se ne može očitati"
+		st.Note = "veličina root particije se ne može očitati"
 		return st
 	}
 	if db, ok := s.readDiskBefore(); ok {
@@ -244,11 +244,11 @@ func (s *server) diskState() diskState {
 	switch {
 	case freeMB < rootfsMinFreeMB/2:
 		st.State = "premalo"
-		st.Note = fmt.Sprintf("na korijenskoj particiji je slobodno samo %d MB — "+
+		st.Note = fmt.Sprintf("na root particiji je slobodno samo %d MB — "+
 			"sustav može prestati raditi ispravno", freeMB)
 	case freeMB < rootfsMinFreeMB:
 		st.State = "tijesno"
-		st.Note = fmt.Sprintf("na korijenskoj particiji je slobodno %d MB", freeMB)
+		st.Note = fmt.Sprintf("na root particiji je slobodno %d MB", freeMB)
 	default:
 		st.State = "ok"
 		st.Note = fmt.Sprintf("slobodno %d MB od %d MB", freeMB, int(d.FSBytes>>20))
@@ -271,12 +271,12 @@ func (s *server) checkRootAfterUpgrade() {
 	switch {
 	case st.Shrunk:
 		s.alert("resources", "warn", fmt.Sprintf(
-			"Nakon nadogradnje korijenska particija nije onolika koliko je traženo: "+
+			"Nakon nadogradnje root particija nije onolika koliko je traženo: "+
 				"%d MB umjesto %d MB (slobodno %d MB). Kod sljedeće nadogradnje u modulu "+
 				"Updates provjeri veličinu root particije (preporuka %d MB).",
 			int(st.PartBytes>>20), int(st.ShrunkBefore>>20), int(st.FSFree>>20), st.RecommendMB))
 	case st.State == "premalo":
-		s.alert("resources", "warn", "Korijenska particija je gotovo puna: "+st.Note)
+		s.alert("resources", "warn", "Root particija je gotovo puna: "+st.Note)
 	}
 	// zapis se troši jednom — poruka se ne ponavlja svaki restart
 	if st.Shrunk {

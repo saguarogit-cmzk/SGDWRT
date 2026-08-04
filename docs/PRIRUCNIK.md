@@ -221,6 +221,14 @@ susjedi prikazuju se u modulu.
 - **Pravila prometa**: dopusti (ACCEPT), odbij (REJECT) ili tiho odbaci (DROP)
   promet po zonama, adresama/CIDR-ima i portovima. Prazno odredište znači
   "prema samom uređaju" (npr. dopusti SSH s WAN-a).
+- **Vremenska pravila**: svako pravilo može vrijediti samo u zadanom razdoblju
+  dana i na odabrane dane — *„gosti na internet 08–18"*, *„djeci bez interneta
+  poslije 22"*. Dani se biraju kvačicama, a stupac **Kada** u tablici pokazuje
+  raspored, da se vremenski ograničeno pravilo ne pomiješa s onim koje vrijedi
+  uvijek. Vrijeme *do* manje od vremena *od* znači da pravilo prelazi ponoć
+  (22:00–06:00). Koristi se **lokalno vrijeme uređaja**, pa vremenska zona mora
+  biti postavljena. Ograničenje vrijedi za **nove veze** — već otvoren prijenos
+  se ne prekida u trenutku isteka.
 - **DMZ**: sav dolazni promet s interneta koji nije uhvaćen forwardima ide na
   jedan interni host. Taj host je potpuno izložen — koristiti s oprezom.
 - **1:1 NAT**: javna adresa ↔ interni server u oba smjera (javna adresa mora
@@ -326,6 +334,28 @@ vatrozidu se uklanjaju.
   na DNS razini za sve u mreži; liste se biraju kvačicama (s veličinama).
   **Iznimke**: domene koje se nikad ne blokiraju (npr. vlastita domena) —
   imaju prednost pred svim listama.
+- **Prisilni DNS**: blokada domena vrijedi **samo dok uređaji koriste DNS ovog
+  uređaja**. Dovoljno je da netko na svom računalu upiše `8.8.8.8` i filtra
+  više nema. Ovime se sav DNS promet iz odabranih mreža vraća na uređaj, bez
+  obzira što je postavljeno na računalu. Tri sloja, jer se DNS zaobilazi na
+  tri načina:
+
+  | Sloj | Što radi |
+  |---|---|
+  | obični DNS (port 53) | preusmjerava se natrag na uređaj |
+  | DoT — DNS preko TLS-a (port 853) | odbija se |
+  | DoH — DNS preko HTTPS-a (port 443) | odbija se prema poznatim javnim poslužiteljima |
+
+  - **Iznimke**: adrese koje smiju do vlastitog DNS-a (server koji mora
+    koristiti DNS svoje domene). Izvedeno imenovanim skupom adresa, pa broj
+    iznimki nije ograničen.
+  - Primjenjuje se samo na **lokalne mreže**; zone prema internetu se odbijaju,
+    jer bi uređaj tada odgovarao na tuđe upite s interneta.
+  - **Što ovo ne može**: DoH radi na istom portu kao i običan web, pa se
+    blokira samo po adresama poznatih javnih poslužitelja (Google, Cloudflare,
+    Quad9, AdGuard, OpenDNS, NextDNS, Mullvad, ControlD). Preglednik koji
+    koristi vlastiti DoH preko velike CDN mreže ovime se ne zaustavlja — za to
+    bi trebalo pregledavati sadržaj prometa.
 
 - **Detekcija skeniranja portova**: prije napada gotovo uvijek ide izviđanje —
   netko s interneta u nekoliko sekundi kuca na stotine portova. Uređaj takav
@@ -514,58 +544,71 @@ na vanjski syslog poslužitelj (kartica ispod).
 
 ## Updates — ažuriranje
 
-### Saguaro
+Ovdje se nadograđuju **dvije potpuno različite stvari**. Miješaju se lako, pa
+ih modul drži odvojeno i tako su opisane i ovdje:
+
+| | Što se nadograđuje | Odakle | Što dira | Restart |
+|---|---|---|---|---|
+| **1** | **Saguaro** — ovo sučelje i API | GitHub `SGSWRT` ili učitani paket | samo `/opt/saguaro` | samo servis, ~2 s |
+| **2** | **OpenWrt** — sustav samog uređaja | službeni build servis ili učitana slika | cijeli sustav uređaja **i tablicu particija diska** | cijeli uređaj, 1–3 min |
+
+Saguaro se nadograđuje često i bezopasno. OpenWrt rijetko, i **to je jedina
+radnja koja se ne može poništiti na daljinu**.
+
+### 1. Saguaro (s GitHuba)
 
 Modul provjerava zadnje izdanje na GitHubu; nadogradnja se pokreće gumbom ili
-ručnim učitavanjem paketa. Prije svake nadogradnje automatski se radi puni
-backup; nakon zamjene servis se sam ponovno pokreće. Objava izdanja:
-`git tag vX.Y.Z && git push --tags` — GitHub Actions sagradi i objavi paket.
+ručnim učitavanjem paketa (za uređaj bez pristupa internetu). Prije svake
+nadogradnje automatski se radi puni backup; nakon zamjene servis se sam
+ponovno pokreće. Konfiguracija, baza i certifikati se ne diraju.
 
-### Disk i korijenska particija
+Objava izdanja: `git tag vX.Y.Z && git push --tags` — GitHub Actions sagradi i
+objavi paket.
+
+### Disk i root particija (tiče se samo nadogradnje OpenWrt-a)
 
 Ovo je jedina veličina koju nadogradnja **tiho promijeni**, pa ima svoju ploču
-iznad nadogradnje.
+iznad nje.
 
 Nadogradnja na ovakvim (x86) uređajima ne upisuje samo sustav nego **cijelu
-sliku, zajedno s tablicom particija**. Korijenska particija se time vrati na
+sliku, zajedno s tablicom particija**. Root particija se time vrati na
 veličinu koju slika nosi — zadano oko **104 MB**, bez obzira koliko je disk
 velik i kolika je particija bila prije. Sustav se onda kroz par tjedana napuni
 do vrha i počne se ponašati nepredvidivo.
 
-Rješenje nije naknadno širenje nego **zadavanje veličine unaprijed**: pri
-naručivanju slike upiše se željena veličina korijenske particije. Polje je
-već popunjeno preporukom (trostruko od trenutno zauzetog, najmanje 512 MB).
-Gornja granica servisa za izgradnju je **1024 MB** i to je za rad sustava
-sasvim dovoljno.
+Rješenje nije naknadno širenje nego **zadavanje veličine unaprijed**: slika se
+od build servisa naručuje s traženom veličinom root particije. **Ništa se ne
+upisuje ni računa** — Saguaro traži najveće što servis daje (**1024 MB**), a to
+je za rad sustava i više nego dovoljno (sustav troši oko 75 MB).
 
 Kočnice koje su ugrađene:
 
 - slika se **ne naručuje** ako je tražena particija manja od već zauzetog
   prostora uvećanog za 64 MB rezerve;
-- slika se **ne upisuje** ako nosi premalu korijensku particiju; za sliku
+- slika se **ne upisuje** ako nosi premalu root particiju; za sliku
   učitanu s računala (veličina se ne zna) traži se izričita potvrda kvačicom;
 - veličina prije nadogradnje se zapisuje i nakon dizanja uspoređuje — ako se
   particija smanjila, uređaj **javi e-mailom**;
-- `selftest.sh` provjerava koliko je slobodno na korijenskoj particiji.
+- `selftest.sh` provjerava koliko je slobodno na root particiji.
 
-> **Širenje korijenske particije na uređaju koji radi se ne nudi i ne
+> **Širenje root particije na uređaju koji radi se ne nudi i ne
 > preporučuje.** Službeni `expand-root` postupak radi `resize2fs` preko loop
-> uređaja nad particijom koja je u tom trenutku montirana kao korijen za
+> uređaja nad particijom koja je u tom trenutku montirana kao root za
 > pisanje. Na `squashfs` slikama to je bezopasno, ali na **ext4 kombiniranoj
 > slici** (kakvu koristimo) to je isti datotečni sustav s dvije strane i
 > uništi ga — uređaj se poslije ne digne. Vidi odluku D-012.
 
 Slobodan prostor na disku iza zadnje particije prikazuje se informativno.
 Ako ga treba iskoristiti, ide kao **zasebna particija za podatke**, nikad
-širenjem korijenske.
+širenjem root particije.
 
-### OpenWrt (sustav samog uređaja)
+### 2. OpenWrt (sustav samog uređaja)
 
 Ploča **OpenWrt** nadograđuje sustav uređaja. Tijek ima tri koraka:
 
 1. **Naruči sliku** — uređaj traži od službenog servisa
    (`sysupgrade.openwrt.org`, isti koji koristi alat `owut`) sliku **s popisom
-   paketa ovog uređaja** i **traženom veličinom korijenske particije**. Popis
+   paketa ovog uređaja** i **traženom veličinom root particije**. Popis
    paketa je bitan: obična slika s downloads.openwrt.org sadrži samo zadane
    pakete, pa bi nakon nadogradnje nestali mwan3, banIP, OpenVPN, bird2 i
    ostalo. Prva gradnja traje par minuta, kasnije je gotova odmah (servis

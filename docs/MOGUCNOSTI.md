@@ -155,8 +155,8 @@ paketa. Trud je procijenjen u danima rada.
 
 | # | Mogućnost | Što korisnik dobiva | Kako | Trud | Preporuka |
 |---|---|---|---|---|---|
-| **B1** | **Prisilni DNS (blokada vanjskog DNS-a)** | nitko ne može zaobići filtar postavljanjem 8.8.8.8 na svom računalu | preusmjeri port 53 na uređaj + blokiraj 853 i poznate DoH poslužitelje | 1 dan | **visoka** |
-| **B2** | **Vremenska pravila** | „gosti na internet samo 08–18", „djeca bez interneta poslije 22" | fw4 podržava vremenska ograničenja izravno | 1–2 dana | **visoka** (vrlo tražena stvar) |
+| ~~B1~~ | **NAPRAVLJENO (v0.33.0)** — prisilni DNS | nitko ne može zaobići filtar postavljanjem 8.8.8.8 na svom računalu | redirect porta 53 na uređaj + REJECT 853 i poznatih DoH poslužitelja; iznimke preko imenovanog skupa adresa | 1 dan | **visoka** |
+| ~~B2~~ | **NAPRAVLJENO (v0.33.0)** — vremenska pravila | „gosti na internet samo 08–18", „djeca bez interneta poslije 22" | fw4 meta hour / meta day; dani kvačicama, raspored vidljiv u tablici | 1–2 dana | **visoka** (vrlo tražena stvar) |
 | **B3** | **Ograničenje broja veza po IP-u** | jedno zaraženo računalo ne može zaguši­ti conntrack tablicu | nftables `ct count` | 1 dan | srednja |
 | **B4** | **DNS preko TLS-a (DoT)** | upiti prema pružatelju DNS-a šifrirani, ISP ne vidi koje domene tražiš | `stubby` ili `https-dns-proxy` | 1 dan | srednja |
 | **B5** | **Blokada po uređaju** | „ovom tabletu samo web, ništa drugo" | pravila po MAC/IP-u iz inventara — dijelom već postoji kroz pravila prometa | 1–2 dana | srednja |
@@ -221,7 +221,7 @@ paketa. Trud je procijenjen u danima rada.
 **Prvi krug — brzo, vidljivo, malo rizika (oko 8–10 dana rada)**
 
 1. ~~A2 statičke rute~~ · ~~A1 izlazna javna adresa po mreži~~ — oboje napravljeno
-2. B1 prisilni DNS · B2 vremenska pravila
+2. ~~B1 prisilni DNS~~ · ~~B2 vremenska pravila~~ — oboje napravljeno
 3. D1 pregled aktivnih veza · D2 snimanje prometa
 4. E3 pravi certifikat za sučelje
 

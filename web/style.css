@@ -312,3 +312,9 @@ footer .push{margin-left:auto}
   thead th{padding:4px 7px}
   tbody td{padding:4px 7px}
 }
+
+/* izbor dana u tjednu (vremenska pravila) */
+.daypick{display:flex;flex-wrap:wrap;gap:4px 12px;padding:4px 0}
+.daypick .check{display:inline-flex;align-items:center;gap:3px;font-weight:400;margin:0}
+/* vremenski ograničeno pravilo se mora razlikovati od onog koje vrijedi uvijek */
+td.sched{color:var(--warn);font-weight:600;white-space:nowrap}

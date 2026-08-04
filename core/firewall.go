@@ -970,11 +970,15 @@ func (s *server) handleFWApply(w http.ResponseWriter, r *http.Request) {
 			(strings.HasPrefix(name, rlPrefix) && t == "rule") ||
 			(strings.HasPrefix(name, n1dPrefix) && t == "redirect") ||
 			(strings.HasPrefix(name, n1sPrefix) && t == "nat") ||
-			(strings.HasPrefix(name, snatPrefix) && t == "nat") {
+			(strings.HasPrefix(name, snatPrefix) && t == "nat") ||
+			(strings.HasPrefix(name, fdnsPrefix) &&
+				(t == "redirect" || t == "rule" || t == "ipset")) {
 			fmt.Fprintf(&b, "delete firewall.%s\n", name)
 			removed++
 		}
 	}
+	// prisilni DNS se piše iz iste primjene — dijeli backup i transakciju
+	s.writeForcedDNSSections(&b)
 	for _, f := range forwards {
 		sn := pfPrefix + strings.ReplaceAll(f.UUID, "-", "")[:8]
 		fmt.Fprintf(&b, "set firewall.%s=redirect\n", sn)

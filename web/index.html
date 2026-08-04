@@ -275,7 +275,7 @@
         <table>
           <thead><tr>
             <th>Naziv</th><th>Proto</th><th>Izvor</th><th>Odredište</th>
-            <th>Akcija</th><th>Aktivan</th><th></th>
+            <th>Akcija</th><th>Kada</th><th>Aktivan</th><th></th>
           </tr></thead>
           <tbody id="rl-rows"></tbody>
         </table>
@@ -609,6 +609,37 @@
         </div>
         <p class="hint" id="ad-status"></p>
         <p class="hint" id="ad-result"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Prisilni DNS</h2>
+          <span class="st" id="fd-state">—</span>
+          <span class="head-note" id="fd-note">—</span>
+        </div>
+        <p class="hint">Blokada domena gore vrijedi <b>samo dok uređaji koriste
+          DNS ovog uređaja</b>. Dovoljno je da netko na svom računalu upiše
+          8.8.8.8 i filtra više nema. Ovime se sav DNS promet iz odabranih mreža
+          vraća na uređaj, bez obzira što je postavljeno na računalu.</p>
+        <label class="check-row"><input type="checkbox" id="fd-enabled"> Uključeno</label>
+        <p class="hint">Mreže na koje se primjenjuje:</p>
+        <div id="fd-zones" class="checklist"></div>
+        <label class="check-row"><input type="checkbox" id="fd-dot">
+          Blokiraj i DNS preko TLS-a (DoT, port 853)</label>
+        <label class="check-row"><input type="checkbox" id="fd-doh">
+          Blokiraj i DNS preko HTTPS-a (DoH) prema poznatim javnim poslužiteljima</label>
+        <label class="stack-label">Iznimke — adrese koje smiju koristiti svoj DNS
+          <input id="fd-except" placeholder="npr. 192.168.50.10 192.168.50.0/28">
+          <span class="hint">za servere koji moraju do vlastitog DNS-a; IPv4 adrese ili mreže</span></label>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button id="fd-save" class="primary">Spremi i primijeni</button>
+        </div>
+        <p class="hint" id="fd-result"></p>
+        <p class="hint"><b>Što ovo ne može:</b> DoH radi na istom portu kao i
+          običan web (443), pa se blokira samo po adresama poznatih javnih
+          poslužitelja. Preglednik koji koristi vlastiti DoH preko velike
+          mreže za isporuku sadržaja ovime se ne zaustavlja — za to bi trebalo
+          pregledavati sadržaj prometa.</p>
       </div>
     </section>
   </div>
@@ -1201,9 +1232,39 @@
   </dialog>
 
   <div class="view hidden" id="view-update">
+    <section class="card" style="max-width:900px">
+      <h2>Dvije odvojene nadogradnje</h2>
+      <p class="hint">Na uređaju se nadograđuju <b>dvije različite stvari</b> i
+        nemaju veze jedna s drugom:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Što</th><th>Odakle</th><th>Što dira</th><th>Restart</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><b>1. Saguaro</b><br><span class="muted">ovo sučelje i API</span></td>
+              <td>GitHub (<code>SGSWRT</code>) ili učitani paket</td>
+              <td>samo <code>/opt/saguaro</code> — program i web</td>
+              <td>samo servis, ~2 s</td>
+            </tr>
+            <tr>
+              <td><b>2. OpenWrt</b><br><span class="muted">sustav samog uređaja</span></td>
+              <td>službeni build servis ili učitana slika</td>
+              <td>cijeli sustav uređaja i tablicu particija diska</td>
+              <td class="sched">cijeli uređaj, 1–3 min</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="hint">Saguaro se nadograđuje često i bezopasno. OpenWrt rijetko
+        i <b>to je jedina radnja koja se ne može poništiti na daljinu</b>.</p>
+    </section>
+
     <section class="grid-2">
       <div class="card">
-        <h2>Stanje verzija</h2>
+        <div class="card-head">
+          <h2>1. Saguaro — s GitHuba</h2>
+          <span class="st" id="up-state">—</span>
+        </div>
         <dl class="kv" id="up-kv"></dl>
         <div class="form-actions" style="justify-content:flex-start">
           <button id="up-github" class="primary hidden">Nadogradi s GitHuba</button>
@@ -1211,8 +1272,8 @@
         <p class="hint" id="up-github-note"></p>
       </div>
       <div class="card">
-        <h2>Ručna nadogradnja</h2>
-        <p class="hint">Učitaj release paket
+        <h2>1b. Saguaro — iz paketa s računala</h2>
+        <p class="hint">Za uređaj bez pristupa internetu. Učitaj release paket
           (<code>saguaro-…-linux-amd64.tar.gz</code>). Prije primjene radi se
           puni backup, a servis se nakon zamjene sam ponovno pokreće.</p>
         <input type="file" id="up-file" accept=".tar.gz,.tgz">
@@ -1226,21 +1287,22 @@
 
     <section class="card">
       <div class="card-head">
-        <h2>Disk i korijenska particija</h2>
+        <h2>Disk i root particija</h2>
         <span class="st" id="dk-state">—</span>
         <span class="head-note" id="dk-note">—</span>
       </div>
       <dl class="kv" id="dk-kv"></dl>
-      <p class="hint">Nadogradnja OpenWrt-a na ovakvim uređajima upisuje cijelu
-        sliku, <b>zajedno s tablicom particija</b> — korijenska particija se
-        vrati na veličinu koju slika nosi. Zato se veličina zadaje unaprijed,
-        pri naručivanju slike, a ne širi se naknadno na uređaju koji radi.</p>
+      <p class="hint">Ovo se tiče <b>samo nadogradnje OpenWrt-a</b>. Ona upisuje
+        cijeli disk image, <b>zajedno s tablicom particija</b>, pa se root
+        particija vrati na veličinu koju slika nosi. Saguaro zato sliku naručuje
+        s najvećom root particijom koju build servis daje — <b>1024 MB</b> — i
+        ništa se ne mora upisivati ni računati.</p>
       <p class="hint hidden" id="dk-tail"></p>
     </section>
 
     <section class="card">
       <div class="card-head">
-        <h2>OpenWrt — nadogradnja sustava uređaja</h2>
+        <h2>2. OpenWrt — sustav samog uređaja</h2>
         <span class="st" id="ow-state">—</span>
         <span class="head-note" id="ow-note">—</span>
         <button id="ow-refresh" class="ghost">Provjeri</button>
@@ -1256,15 +1318,9 @@
         ostaju mwan3, banIP, OpenVPN, bird2 i ostalo. Obična slika s
         downloads.openwrt.org sadrži samo zadane pakete.</p>
 
-      <div class="hd-item" style="border:0">
-        <label class="stack-label" style="max-width:420px">Veličina korijenske particije u novoj slici (MB)
-          <input id="ow-rootfs" type="number" min="64" max="1024" step="64" autocomplete="off">
-          <span class="hint" id="ow-rootfs-note">Zadano je preporuka prema
-            sadašnjem zauzeću. Servis za izgradnju dopušta najviše 1024 MB.</span></label>
-      </div>
       <div class="form-actions" style="justify-content:flex-start">
-        <button id="ow-build" class="ghost">1. Naruči sliku</button>
-        <button id="ow-fetch" class="ghost" disabled>2. Preuzmi na uređaj</button>
+        <button id="ow-build" class="ghost">Korak 1 — naruči sliku</button>
+        <button id="ow-fetch" class="ghost" disabled>Korak 2 — preuzmi na uređaj</button>
       </div>
       <p class="hint" id="ow-build-result"></p>
 
@@ -1283,9 +1339,9 @@
         <label class="stack-label" style="max-width:420px">Za potvrdu upiši ime uređaja
           <input id="ow-confirm" placeholder="ime uređaja" autocomplete="off"></label>
         <label class="hidden" id="ow-accept-wrap"><input type="checkbox" id="ow-accept">
-          Nastavljam iako se za ovu sliku ne zna koliku korijensku particiju nosi</label>
+          Nastavljam iako se za ovu sliku ne zna koliku root particiju nosi</label>
         <div class="form-actions" style="justify-content:flex-start">
-          <button id="ow-flash" class="primary" disabled>Nadogradi i ponovno pokreni</button>
+          <button id="ow-flash" class="primary" disabled>Korak 3 — nadogradi i ponovno pokreni</button>
         </div>
         <p class="hint" id="ow-flash-result"></p>
       </div>
@@ -2207,10 +2263,12 @@
             <option value="DROP">Odbaci tiho (DROP)</option>
           </select>
         </label>
-        <label>Vrijedi od (HH:MM)<input name="start_time" placeholder="npr. 22:00"></label>
-        <label>Vrijedi do (HH:MM)<input name="stop_time" placeholder="npr. 06:00"></label>
-        <label class="wide">Dani (prazno = svi)<input name="weekdays"
-          placeholder="mon tue wed thu fri sat sun"></label>
+        <label>Vrijedi od (HH:MM)<input name="start_time" placeholder="npr. 22:00">
+          <span class="hint">prazno = pravilo vrijedi cijeli dan</span></label>
+        <label>Vrijedi do (HH:MM)<input name="stop_time" placeholder="npr. 06:00">
+          <span class="hint">manje od „od" = pravilo prelazi ponoć</span></label>
+        <label class="wide">Dani u tjednu (ništa označeno = svi dani)
+          <span id="rl-days" class="daypick"></span></label>
         <label class="wide">Napomene<textarea name="notes" rows="2"></textarea></label>
         <label class="check"><input type="checkbox" name="enabled" checked>
           Aktivno — uključi u primjenu</label>

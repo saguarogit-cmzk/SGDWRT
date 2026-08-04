@@ -5,6 +5,9 @@ name: release
 on:
   push:
     tags: ["v*"]
+    # probne grane grade sve i ostavljaju artefakte, ali NE stvaraju izdanje —
+    # tako se gradnja slike provjerava prije objave verzije
+    branches: ["ci/**"]
   # ručno pokretanje: gradi sve i objavi kao artefakt, BEZ stvaranja izdanja —
   # da se gradnja slike može provjeriti prije nego se objavi verzija
   workflow_dispatch:

@@ -15,6 +15,9 @@ ssh "$TARGET" "mkdir -p $DEST/bin $DEST/web $DEST/etc $DEST/data $DEST/log"
 [ -f dist/saguaro-core ] && scp -O dist/saguaro-core "$TARGET:$DEST/bin/saguaro-core.new"
 [ -d dist/web ] && scp -O -r dist/web/* "$TARGET:$DEST/web/"
 [ -f image/files/etc/init.d/saguaro-core ] && scp -O image/files/etc/init.d/saguaro-core "$TARGET:/etc/init.d/saguaro-core"
+# samoprovjera ide uz build — inače na uređaju ostane stara verzija i tiho
+# provjerava manje nego što misliš
+[ -f scripts/selftest.sh ] && scp -O scripts/selftest.sh "$TARGET:$DEST/selftest.sh"
 
 ssh "$TARGET" "
   chmod +x /etc/init.d/saguaro-core 2>/dev/null || true

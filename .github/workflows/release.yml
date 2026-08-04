@@ -30,13 +30,16 @@ jobs:
 
       - name: Package
         run: |
+          # ime refa ide u naziv datoteke, a grana ga ima s kosom crtom
+          # (ci/image-test) — bez zamjene tar puca na nepostojećem direktoriju
+          NAME="${GITHUB_REF_NAME//\//-}"
           STAGE=$(mktemp -d)
           cp dist/saguaro-core "$STAGE/"
           mkdir -p "$STAGE/web"
           cp web/* "$STAGE/web/"
           cp image/files/etc/init.d/saguaro-core "$STAGE/init.d-saguaro-core"
           cp scripts/selftest.sh "$STAGE/selftest.sh"
-          tar -czf "saguaro-${GITHUB_REF_NAME}-linux-amd64.tar.gz" -C "$STAGE" .
+          tar -czf "saguaro-${NAME}-linux-amd64.tar.gz" -C "$STAGE" .
 
       # Gotova slika: OpenWrt + svi paketi + Saguaro + data particija na prvom
       # dizanju. Kod korisnika je onda dovoljno napisati je na USB.

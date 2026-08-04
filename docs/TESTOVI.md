@@ -258,4 +258,7 @@ Vidi odluku D-012.
 | Uključivanje bez SMTP-a ili bez lozinke arhive | odbija se s HTTP 409 |
 | `GET /api/v1/backup/mail` na uređaju | **radi** — `pass_set: true`, `smtp_ready: false`, granica 15 MB |
 | Samoprovjera javlja da kopija ne izlazi s uređaja | **radi** — 42 prošlo / **1 palo** (namjerno: ni poslužitelj ni e-mail nisu uključeni) |
-| **Stvarna isporuka poruke** | **nije provjereno** — traži SMTP račun i lozinku, koju unosi korisnik. Kad SMTP bude postavljen, provjeriti gumbom *Pošalji zadnju arhivu odmah* i otvaranjem privitka naredbom `-decrypt-backup`. |
+| **Stvarna isporuka poruke** | **radi** — nakon što je korisnik unio SMTP (lin10.croadria.com:587, STARTTLS), poslužitelj je prihvatio poruku s privitkom `full-20260804-034810.tar.gz.enc` (HTTP 200 tek nakon `QUIT`, dakle poruka je predana). **Otvaranje privitka kod primatelja još nije potvrđeno** — provjeriti s `-decrypt-backup`. |
+| Automatsko slanje uz noćni backup | **radi** — uz `always` novi backup vrati `"mail":"poslano"` |
+| Učestalost slanja (uz svaki / dnevno / tjedno / mjesečno) | **radi** — uz `weekly` i već poslanu poruku isti dan, novi backup vrati `"mail":"preskočeno (jednom tjedno)"`; nepoznata vrijednost odbijena s HTTP 400 |
+| Samoprovjera nakon uključenja | **44 prošlo / 0 palo** |

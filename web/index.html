@@ -910,8 +910,17 @@
         — inače bi šifriranje bilo ukras.</p>
       <div class="form-grid">
         <label class="check" style="grid-column:1/-1"><input type="checkbox" id="bm-enabled">
-          Pošalji i svaku novu arhivu koju uređaj napravi sam</label>
-        <label class="wide">Primatelji (odvoji razmakom; prazno = isti kao za upozorenja)
+          Šalji arhive na e-mail sam</label>
+        <label>Koliko često
+          <select id="bm-freq">
+            <option value="always">Uz svaki backup</option>
+            <option value="daily">Jednom dnevno</option>
+            <option value="weekly">Jednom tjedno</option>
+            <option value="monthly">Jednom mjesečno</option>
+          </select>
+          <span class="hint">Uređaj radi backup svaku noć, ali ne mora svaku
+            noć slati poruku — inače se gomilaju i prestanu se gledati.</span></label>
+        <label>Primatelji (odvoji razmakom; prazno = isti kao za upozorenja)
           <input id="bm-to" placeholder="ime@primjer.hr" autocomplete="off"></label>
       </div>
       <dl class="kv" id="bm-kv"></dl>

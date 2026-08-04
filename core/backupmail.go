@@ -29,6 +29,52 @@ import (
 // naraste za trećinu, a poslužitelji uglavnom odbijaju poruke preko 25 MB.
 const mailBackupMaxBytes = 15 << 20
 
+// Učestalost slanja. Arhiva se pravi svaku noć, ali ne treba svaku noć i u
+// sandučić — inače se poruke gomilaju i prestanu se gledati. Razmaci su malo
+// kraći od punog razdoblja jer backup ide uvijek u isti sat: da razlika od
+// nekoliko minuta ne preskoči cijeli tjedan.
+var mailFreqs = []struct {
+	ID    string
+	Label string
+	Every time.Duration
+}{
+	{"always", "uz svaki backup", 0},
+	{"daily", "jednom dnevno", 20 * time.Hour},
+	{"weekly", "jednom tjedno", (6*24 + 20) * time.Hour},
+	{"monthly", "jednom mjesečno", 27 * 24 * time.Hour},
+}
+
+func mailFreq(id string) (string, time.Duration, bool) {
+	for _, f := range mailFreqs {
+		if f.ID == id {
+			return f.Label, f.Every, true
+		}
+	}
+	return "", 0, false
+}
+
+// backupMailDue javlja smije li automatsko slanje proći. Ručno slanje gumbom
+// ovo ne pita — ako čovjek klikne, poruka ide.
+func (s *server) backupMailDue() (bool, string) {
+	id := s.getSetting("backup_mail_freq", "weekly")
+	label, every, ok := mailFreq(id)
+	if !ok || every == 0 {
+		return true, ""
+	}
+	last := s.getSetting("backup_mail_last_ok", "")
+	if last == "" {
+		return true, ""
+	}
+	t, err := time.ParseInLocation("2006-01-02 15:04:05", last, time.Local)
+	if err != nil {
+		return true, ""
+	}
+	if time.Since(t) >= every {
+		return true, ""
+	}
+	return false, label
+}
+
 // backupMailTargets vraća primatelje: zasebni popis ako je upisan, inače isti
 // kao za obavijesti.
 func (s *server) backupMailTargets() []string {
@@ -146,6 +192,9 @@ func (s *server) mailBackupAfterCreate(ctx context.Context, archive string) stri
 	if s.getSetting("backup_mail_enabled", "0") != "1" {
 		return "isključeno"
 	}
+	if due, label := s.backupMailDue(); !due {
+		return "preskočeno (" + label + ")"
+	}
 	if err := s.sendBackupMail(ctx, archive); err != nil {
 		s.setSetting("backup_mail_last_error", err.Error())
 		s.alert("backup", "warning",
@@ -160,10 +209,24 @@ func (s *server) mailBackupAfterCreate(ctx context.Context, archive string) stri
 /* ---------- API ---------- */
 
 func (s *server) handleBackupMailGet(w http.ResponseWriter, r *http.Request) {
+	freq := s.getSetting("backup_mail_freq", "weekly")
+	label, _, ok := mailFreq(freq)
+	if !ok {
+		freq, label = "weekly", "jednom tjedno"
+	}
+	opts := []map[string]string{}
+	for _, f := range mailFreqs {
+		opts = append(opts, map[string]string{"id": f.ID, "label": f.Label})
+	}
+	due, _ := s.backupMailDue()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enabled":     s.getSetting("backup_mail_enabled", "0") == "1",
 		"to":          s.getSetting("backup_mail_to", ""),
 		"targets":     s.backupMailTargets(),
+		"freq":        freq,
+		"freq_label":  label,
+		"freqs":       opts,
+		"due_now":     due,
 		"smtp_ready":  s.getSetting("smtp_host", "") != "",
 		"pass_set":    s.getSetting("backup_pass", "") != "",
 		"last_ok":     s.getSetting("backup_mail_last_ok", ""),
@@ -177,9 +240,18 @@ func (s *server) handleBackupMailSet(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Enabled *bool  `json:"enabled"`
 		To      string `json:"to"`
+		Freq    string `json:"freq"`
 	}
 	if !decodeBody(w, r, &in) {
 		return
+	}
+	if in.Freq != "" {
+		if _, _, ok := mailFreq(in.Freq); !ok {
+			writeErr(w, http.StatusBadRequest,
+				"učestalost mora biti always, daily, weekly ili monthly")
+			return
+		}
+		s.setSetting("backup_mail_freq", in.Freq)
 	}
 	if in.Enabled != nil {
 		if *in.Enabled && s.getSetting("smtp_host", "") == "" {

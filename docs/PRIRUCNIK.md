@@ -463,8 +463,14 @@ na vanjski syslog poslužitelj (kartica ispod).
     za šifriranje); da putuje uz privitak, šifriranje ne bi značilo ništa.
   - Primatelji se mogu upisati zasebno; prazno polje znači iste kao za
     upozorenja (Nadzor → E-mail).
-  - Kvačica *„Pošalji i svaku novu arhivu"* pokriva i noćni raspored.
-    Pojedina arhiva se šalje i ikonom ✉ u tablici.
+  - **Učestalost**: uz svaki backup, jednom dnevno, tjedno ili mjesečno.
+    Uređaj radi arhivu svaku noć, ali ne mora svaku noć slati poruku — inače
+    se gomilaju i prestanu se gledati. Zadano je **jednom tjedno**. Razmaci su
+    namjerno malo kraći od punog razdoblja (tjedno = 6 dana i 20 sati) jer
+    backup ide uvijek u isti sat, pa razlika od par minuta ne smije preskočiti
+    cijeli tjedan.
+  - Gumb *Pošalji zadnju arhivu odmah* i ikona ✉ u tablici **ne pitaju za
+    učestalost** — ako čovjek klikne, poruka ide.
   - Granica privitka je **15 MB** (base64 privitak naraste za trećinu, a
     poslužitelji uglavnom odbijaju poruke preko 25 MB). Veće arhive idu na
     poslužitelj ili ručnim preuzimanjem.

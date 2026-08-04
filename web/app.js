@@ -4055,6 +4055,7 @@ $("os-test").addEventListener("click", async () => {
 async function loadBackupMail() {
   const m = await api("/backup/mail");
   $("bm-enabled").checked = !!m.enabled;
+  $("bm-freq").value = m.freq || "weekly";
   $("bm-to").value = m.to || "";
   $("bm-to").placeholder = (m.targets && m.targets.length)
     ? "prazno = " + m.targets.join(", ") : "ime@primjer.hr";
@@ -4066,6 +4067,8 @@ async function loadBackupMail() {
       : "nema — upiši ovdje ili u Nadzor → E-mail"],
     ["Lozinka arhive", m.pass_set ? "postavljena"
       : "nije postavljena — postavi je gore, bez nje se ne šalje"],
+    ["Učestalost", (m.freq_label || "—") +
+      (m.enabled && !m.due_now ? " — sljedeći noćni backup se preskače" : "")],
     ["Najveći privitak", (m.max_mb || 15) + " MB"],
     ["Zadnje uspješno slanje", m.last_ok || "još nijedno"],
     ["Zadnja greška", m.last_error || "nema"],
@@ -4088,7 +4091,7 @@ async function loadBackupMail() {
     setPill(badge, "crit", "zadnje slanje palo");
     setNote("bm-note", m.last_error);
   } else if (m.enabled) {
-    setPill(badge, "good", "uključeno");
+    setPill(badge, "good", m.freq_label || "uključeno");
     setNote("bm-note", m.last_ok ? "zadnje slanje " + m.last_ok : "još nijedno slanje");
   } else {
     setPill(badge, "off", "isključeno");
@@ -4101,6 +4104,7 @@ $("bm-save").addEventListener("click", async () => {
   try {
     await api("/backup/mail", "POST", {
       enabled: $("bm-enabled").checked,
+      freq: $("bm-freq").value,
       to: $("bm-to").value.trim(),
     });
     $("bm-result").textContent = "Spremljeno.";

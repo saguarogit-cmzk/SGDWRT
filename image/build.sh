@@ -96,7 +96,9 @@ SRC=$(find "$WORK/$IB_NAME/bin/targets/$TARGET/$SUBTARGET" \
 SAG_VER=$(sed -n 's/^const version = "\(.*\)"/\1/p' "$ROOT/core/main.go")
 DST="$OUT/saguaro-v${SAG_VER}-openwrt-${OPENWRT_VERSION}-x86-64.img.gz"
 cp "$SRC" "$DST"
-sha256sum "$DST" > "$DST.sha256"
+# otisak se zapisuje uz samo ime datoteke, ne uz punu putanju s build stroja —
+# inače `sha256sum -c` kod korisnika ne radi
+( cd "$OUT" && sha256sum "$(basename "$DST")" > "$(basename "$DST").sha256" )
 
 echo
 echo ">> gotovo: $DST"

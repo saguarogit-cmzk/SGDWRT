@@ -244,3 +244,16 @@ pokrenuti.
 > ostatak diska ima smisla samo kao zasebna particija za podatke.
 
 Vidi odluku D-012.
+
+## Slanje backupa e-mailom (v0.31.0)
+
+| Provjera | Ishod |
+|---|---|
+| Sastavljanje MIME poruke s privitkom | **radi** — poruka se raspakira natrag (`net/mail` + `mime/multipart`), privitak bajt-u-bajt jednak, naslov s hrvatskim znakovima ispravno kodiran (`TestBuildMailWithAttachment`) |
+| Šifriranje pa vraćanje arhive | **radi** — sadržaj se ne pojavljuje u šifriranoj datoteci, kriva lozinka odbijena (`TestBackupMailEncryptRoundTrip`) |
+| Lozinka nije nigdje u poruci | **provjereno testom** — poruka se pretražuje na lozinku i mora je ne sadržavati |
+| Slanje bez SMTP-a | **radi** — HTTP 502 uz „SMTP poslužitelj nije postavljen (Nadzor → E-mail)" |
+| Uključivanje bez SMTP-a ili bez lozinke arhive | odbija se s HTTP 409 |
+| `GET /api/v1/backup/mail` na uređaju | **radi** — `pass_set: true`, `smtp_ready: false`, granica 15 MB |
+| Samoprovjera javlja da kopija ne izlazi s uređaja | **radi** — 42 prošlo / **1 palo** (namjerno: ni poslužitelj ni e-mail nisu uključeni) |
+| **Stvarna isporuka poruke** | **nije provjereno** — traži SMTP račun i lozinku, koju unosi korisnik. Kad SMTP bude postavljen, provjeriti gumbom *Pošalji zadnju arhivu odmah* i otvaranjem privitka naredbom `-decrypt-backup`. |

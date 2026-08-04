@@ -893,6 +893,35 @@
       </div>
       <p class="hint" id="os-result"></p>
     </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Slanje backupa na e-mail</h2>
+        <span class="st" id="bm-state">—</span>
+        <span class="head-note" id="bm-note">—</span>
+      </div>
+      <p class="hint">Za uređaj koji nema server za kopije, sandučić e-pošte je
+        jedina kopija izvan uređaja — a arhiva je mala (obično ispod 100 KB) i
+        stane u poruku. Ovo je neovisno o slanju na poslužitelj; može se
+        koristiti oboje ili samo jedno.</p>
+      <p class="hint"><b>Arhiva se uvijek šalje šifrirana</b> jer sadrži
+        privatne ključeve VPN-a, certifikate i otiske lozinki. Koristi se ista
+        lozinka kao za slanje na poslužitelj i <b>nikad ne ide istom porukom</b>
+        — inače bi šifriranje bilo ukras.</p>
+      <div class="form-grid">
+        <label class="check" style="grid-column:1/-1"><input type="checkbox" id="bm-enabled">
+          Pošalji i svaku novu arhivu koju uređaj napravi sam</label>
+        <label class="wide">Primatelji (odvoji razmakom; prazno = isti kao za upozorenja)
+          <input id="bm-to" placeholder="ime@primjer.hr" autocomplete="off"></label>
+      </div>
+      <dl class="kv" id="bm-kv"></dl>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="bm-save" class="primary">Spremi</button>
+        <button id="bm-send" class="ghost">Pošalji zadnju arhivu odmah</button>
+      </div>
+      <p class="hint" id="bm-result"></p>
+    </section>
+
     <section class="grid-2">
       <div class="card">
         <h2>Puni backup uređaja</h2>
@@ -925,7 +954,7 @@
           <tbody id="bk-rows"></tbody>
         </table>
       </div>
-      <p class="legend">⤓ preuzmi · ↺ vrati · 🗑 obriši</p>
+      <p class="legend">⤓ preuzmi · ✉ pošalji mailom (šifrirano) · ↺ vrati · 🗑 obriši</p>
     </section>
     <section class="card" style="max-width:560px">
       <h2>Automatski raspored</h2>

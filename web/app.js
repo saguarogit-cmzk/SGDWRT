@@ -1804,6 +1804,7 @@ const ROW_ICONS = {
   "Pristup": "🔑",
   "Ukloni lozinku": "⛔",
   "Preuzmi": "⤓",
+  "Pošalji mailom": "✉",
   "Preuzmi .ovpn": "⤓",
   "Preuzmi .conf": "⤓",
   "Prikaži": "👁",
@@ -1891,6 +1892,7 @@ async function loadBackup() {
     api("/backup/archives"), api("/backup/schedule"),
   ]);
   loadOffsite().catch(() => {});
+  loadBackupMail().catch(() => {});
   $("bs-enabled").checked = !!sch.enabled;
   $("bs-freq").value = sch.freq || "daily";
 
@@ -1899,6 +1901,17 @@ async function loadBackup() {
   for (const b of x.archives) {
     tb.append(backupRow(b, [
       btnSm("Preuzmi", false, () => downloadBackup(b.name).catch(alertErr)),
+      btnSm("Pošalji mailom", false, async () => {
+        $("bm-result").textContent = "Šifriram i šaljem " + b.name + "…";
+        try {
+          const r = await api("/backup/mail/send", "POST", { name: b.name });
+          $("bm-result").textContent =
+            "Poslano: " + r.sent + ".enc → " + (r.to || []).join(", ");
+        } catch (e) {
+          $("bm-result").textContent = "Greška: " + (e.message || e);
+        }
+        loadBackupMail().catch(() => {});
+      }),
       btnSm("Vrati", true, () => restoreBackup(b.name)),
       btnSm("Obriši", true, async () => {
         if (!confirm(`Obrisati arhivu "${b.name}"?`)) return;
@@ -3778,8 +3791,12 @@ $("bk-create").addEventListener("click", async () => {
   $("bk-create-result").textContent = "Izrađujem backup…";
   try {
     const r = await api("/backup/create", "POST", {});
+    const kopije = [];
+    if (r.offsite && r.offsite !== "isključeno") kopije.push("poslužitelj: " + r.offsite);
+    if (r.mail && r.mail !== "isključeno") kopije.push("e-mail: " + r.mail);
     $("bk-create-result").textContent =
-      `Izrađeno: ${r.archive} (${fmtBytes(r.size_bytes)})`;
+      `Izrađeno: ${r.archive} (${fmtBytes(r.size_bytes)})` +
+      (kopije.length ? " · " + kopije.join(" · ") : "");
     await loadBackup();
   } catch (e) {
     $("bk-create-result").textContent = "Greška: " + (e.message || e);
@@ -4030,6 +4047,79 @@ $("os-test").addEventListener("click", async () => {
     await loadOffsite();
   } catch (e) {
     $("os-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+/* ---------- slanje backupa e-mailom ---------- */
+
+async function loadBackupMail() {
+  const m = await api("/backup/mail");
+  $("bm-enabled").checked = !!m.enabled;
+  $("bm-to").value = m.to || "";
+  $("bm-to").placeholder = (m.targets && m.targets.length)
+    ? "prazno = " + m.targets.join(", ") : "ime@primjer.hr";
+
+  const kv = $("bm-kv");
+  kv.replaceChildren();
+  for (const [k, v] of [
+    ["Primatelji", (m.targets && m.targets.length) ? m.targets.join(", ")
+      : "nema — upiši ovdje ili u Nadzor → E-mail"],
+    ["Lozinka arhive", m.pass_set ? "postavljena"
+      : "nije postavljena — postavi je gore, bez nje se ne šalje"],
+    ["Najveći privitak", (m.max_mb || 15) + " MB"],
+    ["Zadnje uspješno slanje", m.last_ok || "još nijedno"],
+    ["Zadnja greška", m.last_error || "nema"],
+  ]) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    kv.append(dt, dd);
+  }
+
+  // stanje se čita iz preduvjeta, ne iz same kvačice — kvačica bez SMTP-a
+  // i bez lozinke ne šalje ništa, a to se mora vidjeti odmah
+  const badge = $("bm-state");
+  if (!m.smtp_ready) {
+    setPill(badge, "off", "SMTP nije postavljen");
+    setNote("bm-note", "Nadzor → E-mail: poslužitelj, korisnik i lozinka");
+  } else if (!m.pass_set) {
+    setPill(badge, "warn", "nema lozinke arhive");
+    setNote("bm-note", "nešifrirana kopija ne izlazi s uređaja");
+  } else if (m.last_error) {
+    setPill(badge, "crit", "zadnje slanje palo");
+    setNote("bm-note", m.last_error);
+  } else if (m.enabled) {
+    setPill(badge, "good", "uključeno");
+    setNote("bm-note", m.last_ok ? "zadnje slanje " + m.last_ok : "još nijedno slanje");
+  } else {
+    setPill(badge, "off", "isključeno");
+    setNote("bm-note", "arhive se ne šalju e-mailom");
+  }
+}
+
+$("bm-save").addEventListener("click", async () => {
+  $("bm-result").textContent = "Spremam…";
+  try {
+    await api("/backup/mail", "POST", {
+      enabled: $("bm-enabled").checked,
+      to: $("bm-to").value.trim(),
+    });
+    $("bm-result").textContent = "Spremljeno.";
+    await loadBackupMail();
+  } catch (e) {
+    $("bm-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("bm-send").addEventListener("click", async () => {
+  $("bm-result").textContent = "Šifriram i šaljem…";
+  try {
+    const r = await api("/backup/mail/send", "POST", {});
+    $("bm-result").textContent =
+      "Poslano: " + r.sent + ".enc → " + (r.to || []).join(", ") +
+      " (lozinka nije u toj poruci).";
+    await loadBackupMail();
+  } catch (e) {
+    $("bm-result").textContent = "Greška: " + (e.message || e);
   }
 });
 

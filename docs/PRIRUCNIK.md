@@ -452,6 +452,22 @@ na vanjski syslog poslužitelj (kartica ispod).
     saguaro-core -decrypt-backup arhiva.tar.gz.enc -backup-pass 'lozinka'
     ```
     Radi i na drugom računalu ako se prenese binary.
+- **Slanje na e-mail**: za uređaj koji nema server za kopije, sandučić e-pošte
+  je jedina kopija izvan uređaja — a arhiva je mala (obično ispod 100 KB) i
+  stane u poruku. Neovisno je o slanju na poslužitelj; može se koristiti oboje
+  ili samo jedno.
+  - Arhiva se **uvijek** šalje šifrirana, istim postupkom i istom lozinkom kao
+    za slanje na poslužitelj. Bez postavljene lozinke se ne šalje ništa —
+    nešifrirana kopija ne izlazi s uređaja.
+  - **Lozinka nikad ne ide istom porukom.** Stoji u sučelju (Backup → lozinka
+    za šifriranje); da putuje uz privitak, šifriranje ne bi značilo ništa.
+  - Primatelji se mogu upisati zasebno; prazno polje znači iste kao za
+    upozorenja (Nadzor → E-mail).
+  - Kvačica *„Pošalji i svaku novu arhivu"* pokriva i noćni raspored.
+    Pojedina arhiva se šalje i ikonom ✉ u tablici.
+  - Granica privitka je **15 MB** (base64 privitak naraste za trećinu, a
+    poslužitelji uglavnom odbijaju poruke preko 25 MB). Veće arhive idu na
+    poslužitelj ili ručnim preuzimanjem.
 - **Preuzmi** arhive na sigurno mjesto izvan uređaja — to je pravi backup.
 - **Vraćanje** prepiše cijelu konfiguraciju i ponovno pokrene uređaj; radi i s
   arhivom drugog uređaja (kloniranje) i nakon reinstalacije firmwarea.

@@ -416,14 +416,30 @@ fi
 OFF=$(api backup/offsite)
 if echo "$OFF" | grep -q '"enabled":true'; then
     if echo "$OFF" | grep -q '"last_ok":""'; then
-        bad "Slanje backupa izvan uređaja je uključeno, ali nikad nije uspjelo" \
+        bad "Slanje backupa na poslužitelj je uključeno, ali nikad nije uspjelo" \
             "Backup → Pošalji zadnju arhivu odmah, pa pogledaj grešku"
     else
-        ok "Backup se šalje izvan uređaja"
+        ok "Backup se šalje na vanjski poslužitelj"
     fi
 else
-    skip "Backup se ne šalje izvan uređaja" \
-         "arhive postoje samo na ovom disku — kvar diska znači gubitak svega"
+    skip "Backup se ne šalje na vanjski poslužitelj"
+fi
+
+# druga kopija izvan uređaja: e-mail. Barem jedan od ta dva puta mora raditi,
+# inače arhive postoje samo na ovom disku
+BM=$(api backup/mail)
+if echo "$BM" | grep -q '"enabled":true'; then
+    if echo "$BM" | grep -q '"last_ok":""'; then
+        bad "Slanje backupa na e-mail je uključeno, ali nikad nije uspjelo" \
+            "Backup → Pošalji zadnju arhivu odmah, pa pogledaj grešku"
+    else
+        ok "Backup se šalje na e-mail (šifriran)"
+    fi
+elif echo "$OFF" | grep -q '"enabled":true'; then
+    skip "Backup se ne šalje na e-mail" "slanje na poslužitelj je uključeno"
+else
+    bad "Backup ne izlazi s uređaja ni na poslužitelj ni na e-mail" \
+        "arhive postoje samo na ovom disku — kvar diska znači gubitak svega"
 fi
 
 # u odgovoru /monitor i pojedini nadzirani uređaji imaju polje enabled,

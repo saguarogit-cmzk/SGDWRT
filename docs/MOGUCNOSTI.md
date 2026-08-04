@@ -93,11 +93,12 @@ konfiguracije.
 | Puni backup (OpenWrt + Saguaro baza + certifikati) | radi | |
 | Automatski raspored backupa | radi | |
 | **Šifrirano slanje backupa izvan uređaja** | radi | AES-256-GCM, provjeren povratak bajt-u-bajt |
+| **Slanje backupa e-mailom (šifrirano)** | radi | za uređaj bez servera za kopije; lozinka nikad u istoj poruci, granica privitka 15 MB |
 | Vraćanje iz arhive | radi | |
 | Nadogradnja Saguara s GitHuba uz automatski backup | radi | |
 | Preživljavanje `sysupgrade`-a (keep lista) | radi | |
 | Safe mode — rizična promjena se sama poništi ako izgubiš pristup | radi | |
-| Samoprovjera uređaja (40 provjera) | radi | `/opt/saguaro/selftest.sh` |
+| Samoprovjera uređaja (43 provjere) | radi | `/opt/saguaro/selftest.sh` |
 | Inventar opreme | radi | |
 | Lozinka uređaja (root/SSH) iz sučelja, API token | radi | |
 

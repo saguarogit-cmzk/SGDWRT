@@ -156,21 +156,31 @@ func (s *server) sendMail(subject, body string) {
 }
 
 func (s *server) smtpSend(subject, body string) error {
+	from := s.getSetting("smtp_from", "saguaro@localhost")
+	to := strings.Fields(s.getSetting("smtp_to", ""))
+	if len(to) == 0 {
+		return fmt.Errorf("SMTP postavke nisu popunjene")
+	}
+	msg := []byte("From: " + from + "\r\nTo: " + strings.Join(to, ", ") +
+		"\r\nSubject: " + mimeHeader(subject) + "\r\n" +
+		"MIME-Version: 1.0\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n\r\n" + body + "\r\n")
+	return s.smtpDeliver(to, msg)
+}
+
+// smtpDeliver je sama isporuka — spajanje, šifriranje veze, prijava i predaja
+// poruke. Odvojeno je od sastavljanja poruke da se ista veza koristi i za
+// obavijesti i za slanje arhive s privitkom.
+func (s *server) smtpDeliver(to []string, msg []byte) error {
 	host := s.getSetting("smtp_host", "")
 	port := s.getSetting("smtp_port", "587")
 	from := s.getSetting("smtp_from", "saguaro@localhost")
 	user := s.getSetting("smtp_user", "")
 	pass := s.getSetting("smtp_pass", "")
-	to := strings.Fields(s.getSetting("smtp_to", ""))
 	if host == "" || len(to) == 0 {
 		return fmt.Errorf("SMTP postavke nisu popunjene")
 	}
 	insecure := s.getSetting("smtp_insecure", "0") == "1"
-
-	msg := []byte("From: " + from + "\r\nTo: " + strings.Join(to, ", ") +
-		"\r\nSubject: " + mimeHeader(subject) + "\r\n" +
-		"MIME-Version: 1.0\r\n" +
-		"Content-Type: text/plain; charset=utf-8\r\n\r\n" + body + "\r\n")
 
 	addr := host + ":" + port
 	tlsCfg := &tls.Config{ServerName: host, InsecureSkipVerify: insecure}

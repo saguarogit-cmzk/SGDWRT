@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.30.0"
+const version = "0.31.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -189,6 +189,9 @@ func main() {
 	mux.Handle("GET /api/v1/backup/offsite", s.auth(s.handleOffsiteGet))
 	mux.Handle("POST /api/v1/backup/offsite", s.auth(s.handleOffsiteSet))
 	mux.Handle("POST /api/v1/backup/offsite/test", s.auth(s.handleOffsiteTest))
+	mux.Handle("GET /api/v1/backup/mail", s.auth(s.handleBackupMailGet))
+	mux.Handle("POST /api/v1/backup/mail", s.auth(s.handleBackupMailSet))
+	mux.Handle("POST /api/v1/backup/mail/send", s.auth(s.handleBackupMailSend))
 	mux.Handle("POST /api/v1/system/device-password", s.auth(s.handleDevicePasswordSet))
 	mux.Handle("GET /api/v1/storage", s.auth(s.handleStorage))
 	mux.Handle("GET /api/v1/interfaces", s.auth(s.handleInterfaces))
@@ -401,6 +404,7 @@ func mutatingRequest(method, path string) bool {
 	case "/api/v1/audit/run", "/api/v1/alerts/run", "/api/v1/notify/test",
 		"/api/v1/rollback/confirm", "/api/v1/auth/logout",
 		"/api/v1/auth/logout-others", "/api/v1/backup/offsite/test",
+		"/api/v1/backup/mail/send",
 		// priprema slike ne dira konfiguraciju uređaja
 		"/api/v1/openwrt/build", "/api/v1/openwrt/fetch", "/api/v1/openwrt/upload":
 		return false

@@ -105,8 +105,11 @@ func (s *server) handleBackupCreate(w http.ResponseWriter, r *http.Request) {
 			offsite = "poslano"
 		}
 	}
+	// slanje e-mailom je druga, neovisna kopija izvan uređaja — i ono smije
+	// pasti bez posljedica po samu arhivu
+	mailed := s.mailBackupAfterCreate(r.Context(), name)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"archive": name, "size_bytes": size, "offsite": offsite,
+		"archive": name, "size_bytes": size, "offsite": offsite, "mail": mailed,
 	})
 }
 

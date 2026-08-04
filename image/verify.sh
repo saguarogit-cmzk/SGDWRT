@@ -19,13 +19,19 @@ MNT="$TMP/mnt"
 RAW="$TMP/disk.img"
 
 cleanup() {
-    mountpoint -q "$MNT" 2>/dev/null && umount "$MNT" || true
-    [ -n "${LOOP:-}" ] && losetup -d "$LOOP" 2>/dev/null || true
+    umount "$MNT" 2>/dev/null || true
+    if [ -n "${LOOP:-}" ]; then losetup -d "$LOOP" 2>/dev/null || true; fi
     rm -rf "$TMP"
 }
 trap cleanup EXIT
 
-fail() { echo "!! $1"; exit 1; }
+# u GitHub Actions se razlog pada ispisuje i kao annotation, jer se logovi
+# javnog repozitorija ne mogu čitati bez prijave
+fail() {
+    echo "!! $1"
+    [ -n "${GITHUB_ACTIONS:-}" ] && echo "::error::$1"
+    exit 1
+}
 ok()   { echo "   OK  $1"; }
 
 echo ">> provjera slike: $(basename "$IMG")"
@@ -88,11 +94,12 @@ done
 [ -x "$MNT/opt/saguaro/bin/saguaro-core" ] || fail "saguaro-core nije izvršan"
 ok "saguaro-core je izvršan ($(du -h "$MNT/opt/saguaro/bin/saguaro-core" | cut -f1))"
 
-# paketi koji su nužni za data particiju i rad sustava
+# Alati bez kojih data particija i VPN ne rade. NE traži se "-type f":
+# mkfs.ext4 je simbolička poveznica na mke2fs, pa bi takva provjera pala.
 for p in parted mkfs.ext4 wg openvpn; do
-    find "$MNT" -name "$p" -type f 2>/dev/null | grep -q . ||
-        fail "u slici nema alata $p"
-    ok "alat $p"
+    FOUND=$(find "$MNT" -name "$p" 2>/dev/null | head -1)
+    [ -n "$FOUND" ] || fail "u slici nema alata $p"
+    ok "alat $p (${FOUND#"$MNT"})"
 done
 
 echo

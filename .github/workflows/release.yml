@@ -54,7 +54,15 @@ jobs:
 
       # slika se ne isporučuje na vjeru — otvara se i gleda što je unutra
       - name: Provjeri sliku
-        run: sudo sh image/verify.sh $(ls dist/saguaro-*-openwrt-*-x86-64.img.gz)
+        run: |
+          set -o pipefail
+          if ! sudo -E sh image/verify.sh $(ls dist/saguaro-*-openwrt-*-x86-64.img.gz) \
+               2>&1 | tee /tmp/verify.log; then
+            # logovi se ne mogu čitati bez prijave, pa zadnji redci idu u
+            # annotation koji je vidljiv i preko javnog API-ja
+            tail -25 /tmp/verify.log | while IFS= read -r l; do echo "::error::$l"; done
+            exit 1
+          fi
 
       - name: Artefakti (ručno pokretanje)
         uses: actions/upload-artifact@v4

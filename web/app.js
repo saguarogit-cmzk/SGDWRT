@@ -1284,6 +1284,86 @@ function openPeerDialog(p) {
   $("peer-dialog").showModal();
 }
 
+/* ---------- mjesečni izvještaj ---------- */
+
+async function loadReports() {
+  const x = await api("/report");
+  $("rep-enabled").checked = !!x.enabled;
+  $("rep-day").value = x.day || "1";
+  $("rep-keep").value = x.keep_months || "13";
+
+  const sel = $("rep-month");
+  const months = (x.months || []).length ? x.months : [x.prev_month];
+  const keep = sel.value;
+  sel.replaceChildren();
+  for (const m of months) {
+    const o = document.createElement("option");
+    o.value = m;
+    o.textContent = m;
+    sel.append(o);
+  }
+  if (keep && months.includes(keep)) sel.value = keep;
+
+  const badge = $("rep-state");
+  if (!x.smtp_ready) setPill(badge, "off", "nema SMTP-a");
+  else if (x.enabled) setPill(badge, "good", "šalje se");
+  else setPill(badge, "off", "ne šalje se");
+  setNote("rep-note", [
+    "dana s mjerenjima: " + x.days_collected,
+    x.last_sent ? "zadnji poslan: " + x.last_sent : "još nije slan",
+  ].join(" · "));
+}
+
+$("rep-save").addEventListener("click", async () => {
+  $("rep-result").textContent = "Spremam…";
+  try {
+    await api("/report/settings", "POST", {
+      enabled: $("rep-enabled").checked,
+      day: parseInt($("rep-day").value, 10) || 1,
+      keep_months: parseInt($("rep-keep").value, 10) || 13,
+    });
+    $("rep-result").textContent = "Spremljeno.";
+    await loadReports();
+  } catch (e) {
+    $("rep-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+// Izvještaj se otvara kao stranica u novoj kartici — isti HTML koji ide
+// e-mailom, pa se vidi točno ono što će primatelj dobiti. Dohvaća se kroz
+// api sloj pa otvara iz memorije: da token ne završi u adresi, povijesti
+// preglednika i logovima.
+$("rep-open").addEventListener("click", async () => {
+  const m = $("rep-month").value;
+  if (!m) return;
+  $("rep-send-result").textContent = "Sastavljam…";
+  try {
+    const blob = await apiBlob("/report/monthly?format=html&month=" +
+      encodeURIComponent(m));
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    $("rep-send-result").textContent = "";
+  } catch (e) {
+    $("rep-send-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("rep-mail").addEventListener("click", async () => {
+  const m = $("rep-month").value;
+  const btn = $("rep-mail");
+  btn.disabled = true;
+  $("rep-send-result").textContent = "Šaljem…";
+  try {
+    const r = await api("/report/send?month=" + encodeURIComponent(m), "POST", {});
+    $("rep-send-result").textContent = "Poslano za " + r.month + ".";
+  } catch (e) {
+    $("rep-send-result").textContent = "Greška: " + (e.message || e);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 /* ---------- veza ured-ured (site-to-site) ---------- */
 
 let editSiteUUID = null;
@@ -2498,6 +2578,7 @@ const MODULES = {
   devices:   ["Inventory", "Inventar opreme — ovaj uređaj i susjedni", () => loadDevices()],
   backup:    ["Backup", "Sigurnosne kopije uređaja i vraćanje", () => loadBackup()],
   update:    ["Updates", "Nadogradnja Saguara i sustava uređaja (OpenWrt)", () => loadUpdate()],
+  reports:   ["Reports", "Mjesečni izvještaj o radu uređaja i mreže", () => loadReports()],
   settings:  ["Settings", "Lozinke, sesije, vrijeme i API token", () => loadSettings()],
   users:     ["Users", "Korisnici sučelja i njihove uloge", () => loadUsers()],
   logs:      ["System log", "Sustavski log, trajno spremanje i slanje na poslužitelj", () => loadLogsView()],
@@ -2530,6 +2611,7 @@ const MODULE_KEYS = {
   devices: "uređaji inventar oprema",
   backup: "sigurnosna kopija vraćanje arhiva",
   update: "ažuriranje nadogradnja verzija",
+  reports: "izvještaj mjesečni raport dostupnost promet sažetak statistika",
   settings: "postavke lozinka sesija vrijeme token",
   users: "korisnici računi uloge ovlasti prava pristup admin operater",
   logs: "logovi zapisi dnevnik syslog",
@@ -2544,7 +2626,7 @@ const NAV_GROUPS = [
   ["Filtering", ["protection", "dnsfilter", "scan"]],
   ["Proxy", ["rproxy"]],
   ["VPN", ["wireguard", "wgsite", "openvpn"]],
-  ["System", ["settings", "users", "logs", "backup", "devices", "update", "help"]],
+  ["System", ["settings", "users", "logs", "backup", "devices", "reports", "update", "help"]],
 ];
 // uloga prijavljenog korisnika; postavlja se pri pokretanju iz /auth/session
 let myRole = "admin";
@@ -4754,7 +4836,7 @@ $("ls-save").addEventListener("click", async () => {
 
 async function loadOffsite() {
   const o = await api("/backup/offsite");
-  $("os-enabled").checked = !!o.enabled;
+  $("ob-enabled").checked = !!o.enabled;
   $("os-host").value = o.host || "";
   $("os-port").value = o.port || 22;
   $("os-user").value = o.user || "";
@@ -4777,11 +4859,11 @@ async function loadOffsite() {
   }
 }
 
-$("os-save").addEventListener("click", async () => {
-  $("os-result").textContent = "Spremam…";
+$("ob-save").addEventListener("click", async () => {
+  $("ob-result").textContent = "Spremam…";
   try {
     await api("/backup/offsite", "POST", {
-      enabled: $("os-enabled").checked,
+      enabled: $("ob-enabled").checked,
       host: $("os-host").value.trim(),
       port: parseInt($("os-port").value, 10) || 22,
       user: $("os-user").value.trim(),
@@ -4790,21 +4872,21 @@ $("os-save").addEventListener("click", async () => {
       passphrase: $("os-pass").value,
     });
     $("os-pass").value = "";
-    $("os-result").textContent = "Spremljeno. Ne zaboravi dodati javni ključ na poslužitelj.";
+    $("ob-result").textContent = "Spremljeno. Ne zaboravi dodati javni ključ na poslužitelj.";
     await loadOffsite();
   } catch (e) {
-    $("os-result").textContent = "Greška: " + (e.message || e);
+    $("ob-result").textContent = "Greška: " + (e.message || e);
   }
 });
 
 $("os-test").addEventListener("click", async () => {
-  $("os-result").textContent = "Šaljem…";
+  $("ob-result").textContent = "Šaljem…";
   try {
     const r = await api("/backup/offsite/test", "POST", {});
-    $("os-result").textContent = "Poslano: " + r.sent;
+    $("ob-result").textContent = "Poslano: " + r.sent;
     await loadOffsite();
   } catch (e) {
-    $("os-result").textContent = "Greška: " + (e.message || e);
+    $("ob-result").textContent = "Greška: " + (e.message || e);
   }
 });
 

@@ -674,6 +674,58 @@
     </section>
   </div>
 
+  <div class="view hidden" id="view-reports">
+    <section class="card">
+      <div class="card-head">
+        <h2>Mjesečni izvještaj</h2>
+        <span class="st" id="rep-state">—</span>
+        <span class="head-note" id="rep-note">—</span>
+      </div>
+      <p class="hint">Uređaj svake minute zapiše kako stoji — radi li internet,
+        javljaju li se nadzirani uređaji, koliko je prošlo prometa. Od toga
+        jednom mjesečno sam sastavi izvještaj za prethodni mjesec i pošalje ga
+        e-mailom. Bez tog mjerenja izvještaj bi bio samo trenutna slika stanja.</p>
+      <div class="form-grid wide-4">
+        <label>Šalji na dan u mjesecu
+          <input id="rep-day" type="number" min="1" max="28" placeholder="1"></label>
+        <label>Čuvaj mjerenja (mjeseci)
+          <input id="rep-keep" type="number" min="2" max="60" placeholder="13"></label>
+      </div>
+      <p class="hint">Dan mora biti između 1 i 28 — da postoji u svakom mjesecu.
+        Izvještaj se uvijek odnosi na <b>prethodni</b>, dovršeni mjesec.</p>
+      <label class="check-row"><input type="checkbox" id="rep-enabled">
+        Šalji izvještaj e-mailom</label>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="rep-save" class="primary">Spremi</button>
+      </div>
+      <p class="hint" id="rep-result"></p>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Pogledaj izvještaj</h2>
+      </div>
+      <div class="form-grid wide-4">
+        <label>Mjesec<select id="rep-month"></select></label>
+      </div>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="rep-open" class="primary">Otvori</button>
+        <button id="rep-mail" class="ghost">Pošalji e-mailom sada</button>
+      </div>
+      <p class="hint" id="rep-send-result"></p>
+      <details class="help"><summary>Što je u izvještaju</summary><div>
+        Dostupnost interneta i svakog nadziranog uređaja u postocima i
+        minutama, promet po danima i ukupno, najveći potrošači, upozorenja s
+        najčešćim porukama, ponovna pokretanja uređaja, sigurnosne kopije i
+        opterećenje uređaja. Postoci se računaju <b>samo iz izmjerenog
+        vremena</b>: ako je uređaj bio ugašen, izvještaj to kaže umjesto da
+        tvrdi 100 %.
+        <br><br>Slanje traži popunjene SMTP postavke (Status → Alerts). Gumb
+        „Pošalji sada" šalje odabrani mjesec odmah, bez čekanja na termin.
+      </div></details>
+    </section>
+  </div>
+
   <div class="view hidden" id="view-wgsite">
     <section class="card">
       <div class="card-head">
@@ -1145,7 +1197,7 @@
         sigurno: <b>bez nje se arhiva ne može otvoriti.</b> Otvara se naredbom
         <code>saguaro-core -decrypt-backup arhiva.enc -backup-pass 'lozinka'</code>.</p>
       <div class="form-grid">
-        <label class="check" style="grid-column:1/-1"><input type="checkbox" id="os-enabled">
+        <label class="check" style="grid-column:1/-1"><input type="checkbox" id="ob-enabled">
           Šalji svaku novu arhivu na vanjski poslužitelj</label>
         <label>Poslužitelj (IP ili ime)<input id="os-host" placeholder="192.168.50.10"></label>
         <label>Port<input id="os-port" type="number" placeholder="22"></label>
@@ -1163,10 +1215,10 @@
       <pre id="os-pubkey" style="font-size:11.5px;overflow-x:auto;background:#f6f8fa;border:1px solid var(--line);border-radius:8px;padding:10px">—</pre>
       <dl class="kv" id="os-kv"></dl>
       <div class="form-actions" style="justify-content:flex-start">
-        <button id="os-save" class="primary">Spremi</button>
+        <button id="ob-save" class="primary">Spremi</button>
         <button id="os-test" class="ghost">Pošalji zadnju arhivu odmah</button>
       </div>
-      <p class="hint" id="os-result"></p>
+      <p class="hint" id="ob-result"></p>
     </section>
 
     <section class="card">

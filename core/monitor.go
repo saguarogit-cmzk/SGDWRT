@@ -304,8 +304,59 @@ func (s *server) handleSyslogView(w http.ResponseWriter, r *http.Request) {
 
 /* ---------- potrošnja prometa (nlbwmon) ---------- */
 
-// handleTraffic vraća top potrošače iz nlbwmon-a (CSV izlaz `nlbw` alata —
-// strojni format; nlbwmon nema ubus sučelje).
+// nlbwHost je jedan redak iz nlbwmon-a: koliko je koja adresa u mreži povukla.
+type nlbwHost struct {
+	IP      string
+	Conns   int64
+	RxBytes int64
+	TxBytes int64
+}
+
+// parseNlbwCSV čita izlaz naredbe `nlbw -c csv`. Unatoč imenu, taj format je
+// razdvojen **tabovima**, a ne točkazarezom — kod koji je pretpostavljao
+// točkazarez nikad nije pročitao nijedan redak i tablica potrošnje je stajala
+// prazna (nađeno 05.08.2026. na uređaju). Zato se razdjelnik prepoznaje iz
+// zaglavlja, pa radi u oba slučaja.
+func parseNlbwCSV(out string, limit int) []nlbwHost {
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) < 2 {
+		return nil
+	}
+	sep := "\t"
+	if !strings.Contains(lines[0], "\t") && strings.Contains(lines[0], ";") {
+		sep = ";"
+	}
+	idx := map[string]int{}
+	for n, c := range strings.Split(lines[0], sep) {
+		idx[strings.Trim(c, "\"")] = n
+	}
+	hosts := []nlbwHost{}
+	for _, line := range lines[1:] {
+		f := strings.Split(line, sep)
+		get := func(col string) string {
+			if n, ok := idx[col]; ok && n < len(f) {
+				return strings.Trim(f[n], "\"")
+			}
+			return ""
+		}
+		ip := get("ip")
+		if ip == "" {
+			continue
+		}
+		var h nlbwHost
+		h.IP = ip
+		h.Conns, _ = strconv.ParseInt(get("conns"), 10, 64)
+		h.RxBytes, _ = strconv.ParseInt(get("rx_bytes"), 10, 64)
+		h.TxBytes, _ = strconv.ParseInt(get("tx_bytes"), 10, 64)
+		hosts = append(hosts, h)
+		if limit > 0 && len(hosts) >= limit {
+			break
+		}
+	}
+	return hosts
+}
+
+// handleTraffic vraća top potrošače iz nlbwmon-a (nlbwmon nema ubus sučelje).
 func (s *server) handleTraffic(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -324,33 +375,9 @@ func (s *server) handleTraffic(w http.ResponseWriter, r *http.Request) {
 		Conns   int64  `json:"conns"`
 	}
 	hosts := []th{}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	colIdx := map[string]int{}
-	for i, line := range lines {
-		f := strings.Split(line, ";")
-		if i == 0 {
-			for n, c := range f {
-				colIdx[strings.Trim(c, "\"")] = n
-			}
-			continue
-		}
-		get := func(col string) string {
-			if idx, ok := colIdx[col]; ok && idx < len(f) {
-				return strings.Trim(f[idx], "\"")
-			}
-			return ""
-		}
-		rx, _ := strconv.ParseInt(get("rx_bytes"), 10, 64)
-		tx, _ := strconv.ParseInt(get("tx_bytes"), 10, 64)
-		cn, _ := strconv.ParseInt(get("conns"), 10, 64)
-		ip := get("ip")
-		if ip == "" {
-			continue
-		}
-		hosts = append(hosts, th{IP: ip, RxBytes: rx, TxBytes: tx, Conns: cn})
-		if len(hosts) >= 15 {
-			break
-		}
+	for _, h := range parseNlbwCSV(string(out), 15) {
+		hosts = append(hosts, th{IP: h.IP, RxBytes: h.RxBytes,
+			TxBytes: h.TxBytes, Conns: h.Conns})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"available": true, "hosts": hosts})
 }

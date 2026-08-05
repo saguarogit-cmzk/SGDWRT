@@ -978,3 +978,59 @@ i sve ostalo, isključeno.
 - Za više od dvije poslovnice: svaka se doda kao svoj zapis. Sve ih drži isti
   tunel, ali **poslovnice preko nas ne vide jedna drugu** — za to bi trebalo
   proširiti pravila.
+
+## Reports (System) — mjesečni izvještaj
+
+Jednom mjesečno uređaj sam sastavi izvještaj o prethodnom mjesecu i pošalje ga
+e-mailom. Namijenjen je da se pokaže onome tko plaća mrežu: koliko je interneta
+radilo, koliko je prošlo prometa, što se javljalo i je li se uređaj održavao.
+
+### Odakle podaci
+
+Uređaj **svake minute zapiše kako stoji** — radi li internet, javlja li se
+svaki nadzirani uređaj, koliko je prometa prošlo kroz WAN, koliko su zauzeti
+procesor, memorija i root particija. Ti zapisi se čuvaju po danima (zadano 13
+mjeseci) i od njih se računa izvještaj.
+
+To je razlika prema „trenutnoj slici stanja": dnevnik događaja se rotira, a
+brojači prometa se pri svakom pokretanju uređaja vraćaju na nulu. Bez vlastitog
+mjerenja izvještaj ne bi mogao pošteno reći „internet je radio 99,87 % vremena".
+
+> **Postoci se računaju samo iz izmjerenog vremena.** Ako je uređaj bio ugašen
+> ili je Saguaro postavljen usred mjeseca, izvještaj to **napiše** umjesto da
+> tvrdi 100 %.
+
+### Što je unutra
+
+- **Ukratko** — dostupnost interneta, koliko ga nije bilo, ukupan promet, broj
+  upozorenja
+- **Dostupnost** — internet i svaki nadzirani uređaj, u postotcima i minutama
+- **Promet** — preuzeto i poslano, najjači dan, i **top 10 uređaja u mreži**
+- **Upozorenja** — koliko ih je bilo i koje su se poruke najčešće ponavljale
+- **Uređaj** — opterećenje, zauzeće memorije i diska, broj sigurnosnih kopija,
+  broj VPN korisnika i veza s poslovnicama
+- **Po danima** — tablica dan po dan; dan s prekidom interneta je crven
+
+### Postavke
+
+- **Šalji na dan u mjesecu** — 1 do 28 (da postoji u svakom mjesecu). Izvještaj
+  se uvijek odnosi na **prethodni, dovršeni** mjesec i šalje se samo jednom.
+- **Čuvaj mjerenja** — koliko mjeseci dnevnih zapisa ostaje na uređaju.
+- **Šalji izvještaj e-mailom** — zadano isključeno; traži popunjene SMTP
+  postavke (Status → Alerts).
+
+Gumb **Otvori** prikaže izvještaj u pregledniku — isti onaj koji ide e-mailom,
+pa se vidi točno što će primatelj dobiti. **Pošalji e-mailom sada** šalje
+odabrani mjesec odmah, bez čekanja termina.
+
+### Što treba znati o brojkama
+
+- **Promet na WAN-u** mjeri sam Saguaro i točan je preko cijelog mjeseca, i kad
+  se uređaj u međuvremenu pokretao iznova.
+- **Promet po uređaju** vodi `nlbwmon` u vlastitom razdoblju. Njegova baza
+  zadano stoji u radnoj memoriji, pa se pri ponovnom pokretanju gubi — izvještaj
+  to izrijekom napiše. Broji se **samo promet koji uređaj prosljeđuje** (iz
+  mreže prema internetu), ne i promet prema samom uređaju.
+- **Broj upozorenja** teče od dana kad je ova verzija postavljena; popis
+  najčešćih poruka dolazi iz dnevnika, koji seže dalje unatrag. Kad se to dvoje
+  ne poklapa, izvještaj to kaže.

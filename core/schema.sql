@@ -122,6 +122,35 @@ CREATE TABLE IF NOT EXISTS wg_sites (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Dnevni sažetak za mjesečni izvještaj (D3). Uređaj se svake minute sam
+-- pogleda i zapiše jedan redak po danu — bez toga bi "mjesečni izvještaj" bio
+-- samo trenutna slika stanja, jer se dnevnik događaja rotira, a brojači
+-- prometa se pri restartu vraćaju na nulu.
+CREATE TABLE IF NOT EXISTS report_days (
+    day        TEXT PRIMARY KEY,             -- YYYY-MM-DD po vremenu uređaja
+    samples    INTEGER NOT NULL DEFAULT 0,   -- koliko puta smo taj dan gledali
+    wan_ok     INTEGER NOT NULL DEFAULT 0,   -- od toga koliko puta je internet radio
+    load_max   REAL    NOT NULL DEFAULT 0,
+    mem_max    INTEGER NOT NULL DEFAULT 0,   -- postotak
+    disk_max   INTEGER NOT NULL DEFAULT 0,   -- postotak
+    rx_bytes   INTEGER NOT NULL DEFAULT 0,   -- promet na WAN-u tog dana
+    tx_bytes   INTEGER NOT NULL DEFAULT 0,
+    reboots    INTEGER NOT NULL DEFAULT 0,
+    ev_warn    INTEGER NOT NULL DEFAULT 0,
+    ev_crit    INTEGER NOT NULL DEFAULT 0
+);
+
+-- Dostupnost po nadziranom uređaju, isti princip (jedan redak po danu i uređaju)
+CREATE TABLE IF NOT EXISTS report_monitor_days (
+    day          TEXT NOT NULL,
+    monitor_uuid TEXT NOT NULL,
+    name         TEXT NOT NULL,              -- pamti se i ime, da izvještaj
+    ip           TEXT NOT NULL,              -- vrijedi i ako se uređaj obriše
+    samples      INTEGER NOT NULL DEFAULT 0,
+    ok           INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, monitor_uuid)
+);
+
 -- OpenVPN klijenti: certifikat+ključ generirani na uređaju (za .ovpn export),
 -- fiksna adresa u tunelu preko CCD datoteke (ccd-exclusive: bez CCD-a nema spajanja)
 CREATE TABLE IF NOT EXISTS ovpn_clients (

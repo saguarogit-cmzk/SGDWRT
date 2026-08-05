@@ -180,7 +180,7 @@ paketa. Trud je procijenjen u danima rada.
 |---|---|---|---|---|---|
 | ~~D1~~ | **NAPRAVLJENO (v0.39.0)** — pregled aktivnih veza | „tko trenutno s kim razgovara"; zbroj po uređaju + puna tablica s filterom | čita se izravno /proc/net/nf_conntrack, bez dodatnih paketa | 1 dan | **visoka**, jako se dobro pokazuje |
 | ~~D2~~ | **NAPRAVLJENO (v0.39.0)** — snimanje prometa iz sučelja | snimka za analizu (`.pcap`) bez SSH-a; granice 10 min / 100 MB, samo zaglavlja paketa | `tcpdump-mini` na klik, preuzimanje datoteke | 1–2 dana | **visoka** |
-| **D3** | **Mjesečni izvještaj e-mailom** | PDF/HTML sažetak: dostupnost, promet po uređaju, upozorenja, blokade | postojeći podaci + generator | 3 dana | **visoka** za prezentaciju korisniku |
+| ~~D3~~ | **NAPRAVLJENO (v0.44.0)** — mjesečni izvještaj e-mailom | HTML sažetak: dostupnost interneta i nadziranih uređaja, promet ukupno i po uređaju, upozorenja, održavanje; uređaj sam mjeri svake minute, pa postoci vrijede i preko restarta | vlastito dnevno uzorkovanje + generator (D-018) | 3 dana | **visoka** za prezentaciju korisniku |
 | **D4** | **Povijest prometa po mjesecima** | „koliko smo potrošili u srpnju" | `vnstat2` uz postojeći nlbwmon | 1–2 dana | srednja |
 | **D5** | **Izvoz mjerenja u vanjski nadzor** | Zabbix/Grafana/Prometheus kod korisnika | `prometheus-node-exporter-lua` ili vlastiti `/metrics` | 1–2 dana | srednja |
 | **D6** | **SNMP** | uređaj vidljiv u postojećem korisnikovom nadzoru | `mini_snmpd` (puni `net-snmp` nije u repozitoriju) | 1–2 dana | srednja |
@@ -230,7 +230,7 @@ paketa. Trud je procijenjen u danima rada.
 
 5. ~~E1 više korisnika i uloge~~ · ~~E2 dvofaktorska prijava~~ — oboje napravljeno
 6. ~~C1 WireGuard ured–ured~~ — napravljeno
-7. D3 mjesečni izvještaj e-mailom
+7. ~~D3 mjesečni izvještaj e-mailom~~ — napravljeno
 8. ~~E5 nadogradnja OpenWrt-a iz sučelja~~ — napravljeno
 
 **Treći krug — veći zahvati, po potrebi korisnika**

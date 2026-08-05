@@ -773,3 +773,56 @@ jednu vezu (izmjereno: prije do 30 s prekida, sada bez prekida).
 | Dvije **fizički odvojene** lokacije preko interneta | u labu postoji jedan uređaj; druga strana je pravi WireGuard, ali na istom računalu u odvojenom mrežnom prostoru. Sve što ovisi o putu kroz internet (NAT operatera, MTU na tuđoj vezi) ostaje za prvu stvarnu ugradnju |
 | Više od dvije poslovnice odjednom | logika je ista po zapisu, ali isprobana je jedna |
 | Promet između dvije poslovnice **preko nas** | namjerno nije dopušten (zona ne prosljeđuje samu u sebe) |
+
+## Mjesečni izvještaj (v0.44.0)
+
+Provjereno na uređaju **05.08.2026.**
+
+| Provjera | Ishod |
+|---|---|
+| Uzorkovanje svake minute | **radi** — dnevni zapis se puni (mjerenja, WAN, opterećenje, promet) |
+| Dostupnost po nadziranom uređaju | **radi** — „glavni router 100 %" iz stvarnih pingova |
+| Sastavljanje izvještaja | **radi** — HTML se otvara iz sučelja i vraća kroz API |
+| Nepotpun mjesec | **kaže se izrijekom** („zapisi za 1 od 31 dana; postoci se računaju samo iz izmjerenog vremena") |
+| Uključivanje bez SMTP-a | **odbijeno** (400) s uputom gdje se SMTP popunjava |
+| Dan slanja izvan 1–28 | **odbijeno** (400) |
+| Bijeg od HTML-a u porukama | pokriveno jediničnim testom (ime uređaja s `<script>` ne završi kao kod u tuđem sandučiću) |
+| Oblik poruke (multipart, kodiran naslov) | pokriveno jediničnim testom |
+| Prethodni mjesec na prijelazu godine i 31. u mjesecu | pokriveno jediničnim testom |
+
+### Tri greške koje je test uhvatio prije objave
+
+**1. Prvo mjerenje je u dan upisalo cijeli brojač sučelja.** Brojači sučelja
+pokazuju sve od zadnjeg pokretanja uređaja, pa je prvi izvještaj na uređaju u
+pogonu pokazao stotine gigabajta „u jednom danu". Sada se prvo viđenje sučelja
+samo zapamti kao polazište i ne ulazi u zbroj.
+
+**2. Tablica „promet po uređaju" nikad nije ništa pokazivala — ni u
+Monitoringu.** Naredba `nlbw -c csv` unatoč imenu ispisuje razdvojeno
+**tabovima**, a kod je razdvajao točkazarezom, pa nije pročitao nijedan redak.
+Nađeno pri sastavljanju izvještaja, popravljeno na jednom mjestu za oba modula;
+razdjelnik se sada prepoznaje iz zaglavlja.
+
+**3. Dva modula dijelila su iste id-eve u sučelju.** `offsite backup` i `OSPF`
+oba su koristili `os-save`, `os-enabled` i `os-result`. Preglednik u tom slučaju
+uzima prvi element, pa gumb „Spremi" kod slanja backupa izvan uređaja **nije bio
+njegov** — a kod OSPF-a je jedan klik pokretao obje radnje. Popravljeno, a u
+`scripts/build.sh` je dodana provjera (`scripts/webcheck.js`) koja dvostruke
+id-eve i nepostojeće elemente odsad ruši build.
+
+### Provjereno, a lako se pogriješi
+
+Smjer brojki `rx_bytes` / `tx_bytes` iz nlbwmon-a **nije pogođen nego provjeren
+u izvornom kodu** (`client.c`: `rx_bytes → in_bytes`, `nfnetlink.c`: `in_bytes`
+su bajtovi koje je primio uređaj u mreži). Pokusi na uređaju nisu mogli
+odgovoriti na to pitanje jer nlbwmon ne broji promet prema samom uređaju, nego
+samo onaj koji se prosljeđuje — što je i samo po sebi vrijedan nalaz i stoji u
+priručniku.
+
+### Što nije provjereno
+
+| Stavka | Zašto |
+|---|---|
+| Stvarno slanje izvještaja e-mailom | SMTP postavke na uređaju nisu popunjene (vraćena arhiva je starija od njih). Sastavljanje poruke i isporuka kroz `smtpDeliver` isti su put kojim već ide backup e-mailom, koji radi |
+| Puni mjesec podataka | mjerenje je počelo danas; brojke za cijeli mjesec bit će prvi put u rujnu |
+| Automatsko slanje na zadani dan | traži čekanje do 1. u mjesecu; ručno slanje istog izvještaja radi kroz isti kod |

@@ -41,12 +41,14 @@ func (s *server) watchdogLoop() {
 		s.checkResources(ctx)
 		s.checkVPNClients(ctx)
 		s.checkFailedLogins(ctx)
+		s.reportSample(ctx)
 		if tick%5 == 0 { // svakih 5 minuta
 			s.checkPublicIP(ctx)
 			s.checkIPv6Prefix(ctx)
 		}
 		if tick%720 == 0 { // jednom dnevno
 			s.checkCerts()
+			s.reportDue(ctx)
 		}
 		tick++
 		time.Sleep(watchInterval)

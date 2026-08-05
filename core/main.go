@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.43.0"
+const version = "0.44.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -265,6 +265,10 @@ func main() {
 	mux.Handle("DELETE /api/v1/wgsite/sites/{uuid}", s.auth(s.handleWGSiteDelete))
 	mux.Handle("GET /api/v1/wgsite/sites/{uuid}/config", s.auth(s.handleWGSiteConfig))
 	mux.Handle("POST /api/v1/wgsite/apply", s.auth(s.handleWGSApply))
+	mux.Handle("GET /api/v1/report", s.auth(s.handleReportStatus))
+	mux.Handle("POST /api/v1/report/settings", s.auth(s.handleReportSettings))
+	mux.Handle("GET /api/v1/report/monthly", s.auth(s.handleReportView))
+	mux.Handle("POST /api/v1/report/send", s.auth(s.handleReportSend))
 	mux.Handle("GET /api/v1/openvpn/status", s.auth(s.handleOvpnStatus))
 	mux.Handle("POST /api/v1/openvpn/server", s.auth(s.handleOvpnServerSet))
 	mux.Handle("POST /api/v1/openvpn/access", s.auth(s.handleOvpnAccessSet))

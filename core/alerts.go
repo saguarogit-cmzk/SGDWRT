@@ -88,8 +88,9 @@ func (s *server) alertQuiet() time.Duration {
 // svejedno zapiše, pa se u dnevniku vidi da se ponovila).
 func (s *server) alert(kind, level, message string) {
 	s.db.Exec(`INSERT INTO events (level, message) VALUES (?,?)`, level, message)
+	s.reportCountEvent(level)
 	s.db.Exec(`DELETE FROM events WHERE id NOT IN
-		(SELECT id FROM events ORDER BY id DESC LIMIT 500)`)
+		(SELECT id FROM events ORDER BY id DESC LIMIT 2000)`)
 	if !s.alertEnabled(kind) {
 		return
 	}

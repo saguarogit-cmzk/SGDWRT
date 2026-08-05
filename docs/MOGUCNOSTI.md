@@ -178,8 +178,8 @@ paketa. Trud je procijenjen u danima rada.
 
 | # | Mogućnost | Što korisnik dobiva | Kako | Trud | Preporuka |
 |---|---|---|---|---|---|
-| **D1** | **Pregled aktivnih veza** | „tko trenutno s kim razgovara" — najbrži način da se vidi što troši vezu | `conntrack` + tablica u sučelju | 1 dan | **visoka**, jako se dobro pokazuje |
-| **D2** | **Snimanje prometa iz sučelja** | snimka za analizu (`.pcap`) bez SSH-a | `tcpdump-mini`, preuzimanje datoteke | 1–2 dana | **visoka** |
+| ~~D1~~ | **NAPRAVLJENO (v0.39.0)** — pregled aktivnih veza | „tko trenutno s kim razgovara"; zbroj po uređaju + puna tablica s filterom | čita se izravno /proc/net/nf_conntrack, bez dodatnih paketa | 1 dan | **visoka**, jako se dobro pokazuje |
+| ~~D2~~ | **NAPRAVLJENO (v0.39.0)** — snimanje prometa iz sučelja | snimka za analizu (`.pcap`) bez SSH-a; granice 10 min / 100 MB, samo zaglavlja paketa | `tcpdump-mini` na klik, preuzimanje datoteke | 1–2 dana | **visoka** |
 | **D3** | **Mjesečni izvještaj e-mailom** | PDF/HTML sažetak: dostupnost, promet po uređaju, upozorenja, blokade | postojeći podaci + generator | 3 dana | **visoka** za prezentaciju korisniku |
 | **D4** | **Povijest prometa po mjesecima** | „koliko smo potrošili u srpnju" | `vnstat2` uz postojeći nlbwmon | 1–2 dana | srednja |
 | **D5** | **Izvoz mjerenja u vanjski nadzor** | Zabbix/Grafana/Prometheus kod korisnika | `prometheus-node-exporter-lua` ili vlastiti `/metrics` | 1–2 dana | srednja |
@@ -223,7 +223,7 @@ paketa. Trud je procijenjen u danima rada.
 
 1. ~~A2 statičke rute~~ · ~~A1 izlazna javna adresa po mreži~~ — oboje napravljeno
 2. ~~B1 prisilni DNS~~ · ~~B2 vremenska pravila~~ — oboje napravljeno
-3. D1 pregled aktivnih veza · D2 snimanje prometa
+3. ~~D1 pregled aktivnih veza~~ · ~~D2 snimanje prometa~~ — oboje napravljeno
 4. E3 pravi certifikat za sučelje
 
 **Drugi krug — ono što korisnik traži kad sustav uđe u ozbiljan pogon (oko 10–12 dana)**

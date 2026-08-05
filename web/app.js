@@ -2154,6 +2154,7 @@ const MODULES = {
   monitorx:  ["Monitoring", "Praćenje uređaja, događaji i potrošnja prometa", () => loadMonitorx()],
   alerts:    ["Alerts", "Što uređaj javlja e-mailom i kome", () => loadAlertsView()],
   audit:     ["Audit log", "Tko je i što promijenio u postavkama uređaja", () => loadAudit()],
+  diag:      ["Diagnostics", "Aktivne veze i snimanje prometa za analizu", () => loadDiag()],
   network:   ["Interfaces", "LAN adresa, WAN veze i VLAN mreže", () => loadNetwork()],
   multiwan:  ["Multi-WAN", "Više internet veza — failover, raspodjela i nadzor", () => loadMultiwan()],
   routes:    ["Static routes", "Ručno upisani putevi do mreža koje nisu izravno na uređaju", () => loadRoutes()],
@@ -2183,6 +2184,7 @@ const MODULE_KEYS = {
   monitorx: "nadzor praćenje ping promet potrošnja",
   alerts: "upozorenja obavijesti e-mail mail dojava",
   audit: "promjene tko je mijenjao dnevnik izmjena",
+  diag: "dijagnostika veze conntrack tko trosi snimanje prometa pcap tcpdump wireshark",
   network: "mreža sučelja lan wan vlan adresa",
   multiwan: "više veza failover pričuvna veza rezervna",
   routes: "statičke rute ruta usmjeravanje put mreža iza rutera gateway",
@@ -2209,7 +2211,7 @@ const MODULE_KEYS = {
 // Skupine su razdvojene po poslu: filtriranje prometa po adresama i domenama
 // više nije u istoj skupini kao pravila vatrozida.
 const NAV_GROUPS = [
-  ["Status", ["dashboard", "monitorx", "alerts", "audit"]],
+  ["Status", ["dashboard", "monitorx", "diag", "alerts", "audit"]],
   ["Network", ["network", "multiwan", "routes", "ospf", "qos", "dhcp", "dns"]],
   ["Firewall", ["firewall", "publish", "hardening"]],
   ["Filtering", ["protection", "dnsfilter", "scan"]],
@@ -4467,6 +4469,179 @@ $("rt-apply").addEventListener("click", async () => {
   } catch (e) {
     $("rt-result").textContent = "Greška: " + (e.message || e);
   }
+});
+
+/* ---------- dijagnostika: aktivne veze i snimanje prometa ---------- */
+
+let diagConns = [];
+
+function fmtLeft(s) {
+  if (s >= 3600) return Math.floor(s / 3600) + " h";
+  if (s >= 60) return Math.floor(s / 60) + " min";
+  return s + " s";
+}
+
+function renderConnRows() {
+  const q = $("cn-filter").value.trim().toLowerCase();
+  const tb = $("cn-rows");
+  tb.replaceChildren();
+  let shown = 0;
+  for (const c of diagConns) {
+    if (q) {
+      const hay = (c.src + " " + c.dst + " :" + c.sport + " :" + c.dport +
+        " " + (c.src_name || "") + " " + c.proto).toLowerCase();
+      if (!hay.includes(q)) continue;
+    }
+    if (++shown > 200) break;
+    const tr = document.createElement("tr");
+    for (const v of [
+      (c.src_name ? c.src_name + " · " : "") + c.src + ":" + c.sport,
+      c.dst + ":" + c.dport,
+      c.proto,
+      c.state || "—",
+      fmtBytes(c.out_bytes),
+      fmtBytes(c.in_bytes),
+      fmtLeft(c.timeout_s),
+    ]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    tb.append(tr);
+  }
+  setNote("cn-conn-note", shown > 200
+    ? "prikazano prvih 200 — suzi filterom" : shown + " veza");
+}
+
+async function loadDiag() {
+  loadCapture().catch(() => setPill($("cp-state"), "off", "nedostupno"));
+  const x = await api("/connections");
+  diagConns = x.connections || [];
+
+  const tb = $("cn-devs");
+  tb.replaceChildren();
+  for (const d of x.devices || []) {
+    const tr = document.createElement("tr");
+    for (const v of [(d.name ? d.name + " · " : "") + d.ip, String(d.conns),
+      fmtBytes(d.out_bytes), fmtBytes(d.in_bytes)]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    tb.append(tr);
+  }
+  setPill($("cn-state"), "good", x.total + " uređaja");
+  setNote("cn-note", "otvorenih veza: " + diagConns.length +
+    (x.truncated ? " (prikaz ograničen)" : "") +
+    " · promet: " + fmtBytes(x.total_out) + " ↑ / " + fmtBytes(x.total_in) + " ↓");
+  renderConnRows();
+}
+
+$("cn-refresh").addEventListener("click", () => loadDiag().catch(alertErr));
+$("cn-filter").addEventListener("input", renderConnRows);
+
+async function loadCapture() {
+  const x = await api("/capture");
+  $("cp-install-wrap").classList.toggle("hidden", !!x.installed);
+  $("cp-controls").classList.toggle("hidden", !x.installed);
+  $("cp-stop").classList.toggle("hidden", !x.running);
+  $("cp-start").disabled = !!x.running;
+
+  const badge = $("cp-state");
+  if (!x.installed) {
+    setPill(badge, "off", "alat nije instaliran");
+    setNote("cp-note", "instalira se jednim klikom (tcpdump-mini)");
+  } else if (x.running) {
+    setPill(badge, "warn", "snima");
+    setNote("cp-note", (x.file || "") + " · " + (x.running_s || 0) + " s");
+  } else {
+    setPill(badge, "good", "spremno");
+    setNote("cp-note", "");
+  }
+
+  const sel = $("cp-iface");
+  const cur = sel.value;
+  sel.replaceChildren();
+  const any = document.createElement("option");
+  any.value = "any"; any.textContent = "sva sučelja";
+  sel.append(any);
+  for (const [name, subs] of Object.entries(x.ifaces || {})) {
+    const o = document.createElement("option");
+    o.value = name;
+    o.textContent = subs && subs.length ? `${name} (${subs.join(", ")})` : name;
+    sel.append(o);
+  }
+  if (cur) sel.value = cur;
+
+  const tb = $("cp-files");
+  tb.replaceChildren();
+  for (const f of x.files || []) {
+    const tr = document.createElement("tr");
+    for (const v of [f.name, fmtBytes(f.size_bytes),
+      new Date(f.modified_at * 1000).toLocaleString("hr-HR")]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdA = document.createElement("td");
+    tdA.className = "row-actions";
+    tdA.append(
+      btnSm("Preuzmi", false, async () => {
+        // preuzimanje ide s tokenom, pa kroz fetch a ne golim linkom
+        const r = await fetch(API + "/capture/files/" + encodeURIComponent(f.name),
+          { headers: { Authorization: "Bearer " + token } });
+        if (!r.ok) { alertErr(new Error("preuzimanje nije uspjelo")); return; }
+        const blob = await r.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = f.name;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }),
+      btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati snimku "${f.name}"?`)) return;
+        await api("/capture/files/" + encodeURIComponent(f.name), "DELETE").catch(alertErr);
+        loadCapture().catch(alertErr);
+      }));
+    tr.append(tdA);
+    tb.append(tr);
+  }
+}
+
+$("cp-install").addEventListener("click", async () => {
+  $("cp-result").textContent = "Instaliram tcpdump-mini…";
+  try {
+    await api("/capture/install", "POST", {});
+    $("cp-result").textContent = "Instalirano.";
+    await loadCapture();
+  } catch (e) {
+    $("cp-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("cp-start").addEventListener("click", async () => {
+  $("cp-result").textContent = "Pokrećem…";
+  try {
+    const r = await api("/capture/start", "POST", {
+      iface: $("cp-iface").value,
+      seconds: parseInt($("cp-seconds").value, 10) || 60,
+      filter: $("cp-filter").value.trim(),
+    });
+    $("cp-result").textContent = "Snima u " + r.file +
+      " — samo se zaustavi nakon zadanog vremena.";
+    await loadCapture();
+  } catch (e) {
+    $("cp-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("cp-stop").addEventListener("click", async () => {
+  try {
+    const r = await api("/capture/stop", "POST", {});
+    $("cp-result").textContent = r.stopped
+      ? "Zaustavljeno: " + r.file : "Ništa ne snima.";
+    await loadCapture();
+  } catch (e) { alertErr(e); }
 });
 
 /* ---------- slanje backupa e-mailom ---------- */

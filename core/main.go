@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.38.2"
+const version = "0.39.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -276,6 +276,13 @@ func main() {
 	mux.Handle("POST /api/v1/firewall/dmz", s.auth(s.handleDMZSet))
 	mux.Handle("GET /api/v1/dnsforce", s.auth(s.handleForcedDNSGet))
 	mux.Handle("POST /api/v1/dnsforce", s.auth(s.handleForcedDNSSet))
+	mux.Handle("GET /api/v1/connections", s.auth(s.handleConnections))
+	mux.Handle("GET /api/v1/capture", s.auth(s.handleCaptureStatus))
+	mux.Handle("POST /api/v1/capture/install", s.auth(s.handleCaptureInstall))
+	mux.Handle("POST /api/v1/capture/start", s.auth(s.handleCaptureStart))
+	mux.Handle("POST /api/v1/capture/stop", s.auth(s.handleCaptureStop))
+	mux.Handle("GET /api/v1/capture/files/{name}", s.auth(s.handleCaptureDownload))
+	mux.Handle("DELETE /api/v1/capture/files/{name}", s.auth(s.handleCaptureDelete))
 	mux.Handle("GET /api/v1/routes", s.auth(s.handleRouteList))
 	mux.Handle("POST /api/v1/routes", s.auth(s.handleRouteCreate))
 	mux.Handle("PUT /api/v1/routes/{uuid}", s.auth(s.handleRouteUpdate))
@@ -416,7 +423,9 @@ func mutatingRequest(method, path string) bool {
 		"/api/v1/auth/logout-others", "/api/v1/backup/offsite/test",
 		"/api/v1/backup/mail/send",
 		// priprema slike ne dira konfiguraciju uređaja
-		"/api/v1/openwrt/build", "/api/v1/openwrt/fetch", "/api/v1/openwrt/upload":
+		"/api/v1/openwrt/build", "/api/v1/openwrt/fetch", "/api/v1/openwrt/upload",
+		// snimanje prometa ne mijenja konfiguraciju
+		"/api/v1/capture/install", "/api/v1/capture/start", "/api/v1/capture/stop":
 		return false
 	}
 	return true

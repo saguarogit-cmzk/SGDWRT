@@ -621,3 +621,18 @@ arhiva nije imala.
 (prekopiran s USB-a) obrisan, data particija sada jedna od **218 GB** do kraja
 diska. Ista logika ugrađena u instalaciju, pa kod budućih instalacija rupa ni
 ne nastaje.
+
+## Dijagnostika: aktivne veze i snimanje prometa (v0.39.0)
+
+Provjereno na uređaju **05.08.2026.**:
+
+| Provjera | Ishod |
+|---|---|
+| Čitanje `/proc/net/nf_conntrack` | **radi** — bez dodatnih paketa; veze sortirane po prometu, zbroj po uređaju, imena iz DHCP leasea |
+| Parser na stvarnim redcima | **radi** — jedinični test s pravim zapisima s uređaja (tcp SYN_SENT, udp, ESTABLISHED s [ASSURED]) |
+| **Greška nađena na živim podacima** | troznamenkasti timeout (`114`) završavao je kao „stanje" veze — goli brojčani token prošao je heuristiku. Popravljeno (stanje mora sadržavati slovo), test dopunjen upravo takvim retkom |
+| Instalacija `tcpdump-mini` na klik | **radi** |
+| Snimka 10 s s filterom `port 22` | **radi** — 2160 B, ispravan pcap potpis (`d4c3`), samo se zaustavila nakon isteka, bez zaostalog procesa |
+| Preuzimanje i brisanje snimke | **radi** — HTTP 200 / `deleted` |
+| Pokušaj izlaska iz direktorija (`..%2F..`) | **odbijen**, HTTP 404 |
+| Samoprovjera | 42 prošlo / 1 palo (istinit: vraćena arhiva je starija od SMTP postavki, pa kopija opet ne izlazi s uređaja — treba ponovno unijeti SMTP) |

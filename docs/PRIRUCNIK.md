@@ -9,7 +9,7 @@ Moduli su složeni u sedam skupina, po načelu **jedan modul = jedan posao**:
 
 | Skupina | Moduli |
 |---|---|
-| **Status** | Dashboard · Monitoring · Alerts · Audit log |
+| **Status** | Dashboard · Monitoring · Diagnostics · Alerts · Audit log |
 | **Network** | Interfaces · Multi-WAN · Static routes · OSPF · QoS · DHCP · DNS |
 | **Firewall** | Firewall rules · Port forwarding / NAT · System access |
 | **Proxy** | Reverse proxy |
@@ -771,3 +771,29 @@ sustav bi se znao dići s krivog diska (vidi D-015).
 Odredištu se vraća i skripta prvog dizanja, pa pri prvom pokretanju s diska
 sam napravi **data particiju** od ostatka diska. Zapis o data particiji medija
 s kojeg je kopirano se briše — odnosi se na taj medij, ne na novi disk.
+
+## Diagnostics (Status) — aktivne veze i snimanje prometa
+
+### Tko troši vezu
+
+Čita se conntrack tablica same jezgre (`/proc/net/nf_conntrack`) — bez
+dodatnih paketa. Gornja tablica zbraja po **uređaju u mreži** (ime iz DHCP
+leasea, broj veza, poslano/primljeno), najveći promet na vrhu. Donja tablica
+su pojedinačne veze s filterom (adresa, port ili ime); prikazuje se prvih 200.
+
+Brojke su promet **trenutno otvorenih veza**, ne povijest — za mjesečnu
+potrošnju služi Monitoring (nlbwmon).
+
+### Snimanje prometa (.pcap)
+
+Snimka paketa za analizu u Wiresharku, bez SSH-a. Alat (`tcpdump-mini`) se
+instalira jednim klikom, kao i haproxy za obrnuti proxy.
+
+- Bira se **sučelje**, **trajanje** i po želji filter (`host 192.168.50.10`,
+  `port 53`…).
+- Snimaju se **zaglavlja paketa** (prvih 96 bajtova), ne cijeli sadržaj — za
+  analizu je dovoljno, snimka ostaje mala i ne zadire u sadržaj komunikacije.
+- Granice: **10 minuta** odnosno **100 MB** po snimci; snimanje se tada samo
+  zaustavi. Granice čuva Saguaro nadzor, ne tcpdump — pokriva i slučaj da
+  proces ostane visjeti. Zaboravljena snimka ne može puniti disk danima.
+- Snimke leže na **data particiji** i preuzimaju se odnosno brišu iz tablice.

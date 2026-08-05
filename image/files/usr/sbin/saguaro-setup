@@ -289,6 +289,19 @@ install_disk() {
 	partx -u "/dev/$TGT" 2>/dev/null || partprobe "/dev/$TGT" 2>/dev/null
 	sleep 2
 
+	# S MBR-a se prekopirala i tablica particija izvornog medija — uključivo
+	# zapis o NJEGOVOJ data particiji. Na odredištu taj zapis nema smisla: bio
+	# bi mrtva particija usred diska, a nova data particija bi nastala tek iza
+	# nje i izgubila taj prostor. Zato se sve iza root particije briše.
+	for p in 4 3; do
+		if [ -e "/sys/block/$TGT/${TGT}${p}" ]; then
+			parted -s "/dev/$TGT" rm "$p" 2>/dev/null &&
+				ok_ "Uklonjen prekopiran zapis o particiji ${TGT}${p}"
+		fi
+	done
+	partx -u "/dev/$TGT" 2>/dev/null || partprobe "/dev/$TGT" 2>/dev/null
+	sleep 1
+
 	# Odredišni disk mora dobiti VLASTITI potpis: inače bi imao isti kao ovaj s
 	# kojeg smo kopirali, pa jezgra kod root=PARTUUID=… ne bi znala koji je koji.
 	#

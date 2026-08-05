@@ -564,3 +564,35 @@ starog zapisa.
 3. **Odmontiranje odredišta.** Sustav je sam montirao particiju s odredišnog
    diska (`EXT4-fs (sda3): mounted filesystem`), pa se pisalo ispod montiranog
    datotečnog sustava. Sada se sve s tog diska prvo odmontira.
+
+## Instalacija na disk — uspjela (05.08.2026., v0.38.1)
+
+Uređaj instaliran s USB-a na interni disk i digao se s njega:
+
+| Provjera | Ishod |
+|---|---|
+| Root particija | **990,7 MB** — diže se s diska, s novom slikom |
+| Data particija | **stvorena sama**, 204,8 GB, montirana na `/opt/saguaro` |
+| Zapis geometrije | `/etc/saguaro-datapart.json` (disk `sda`, particija 4) |
+| Saguaro servis | radi; `GET /api/v1/health` → **HTTP 200** |
+| Mreža | `192.168.50.222/24`, zadana ruta preko `.1` — postavljeno kroz konzolni čarobnjak |
+| Samoprovjera | **21 prošlo / 2 palo** (oba istinita za svjež uređaj: nema backupa ni kopije izvan uređaja) |
+
+### Neurednost koju je instalacija ostavila
+
+Tablica particija nakon instalacije:
+
+```
+sda1     16 MB   boot
+sda2   1024 MB   root
+sda3   13,4 GB   ← zaostatak, prekopiran s USB-a
+sda4    209 GB   data particija
+```
+
+Instalacija kopira MBR izvornog medija, pa je s njim došao i **zapis o data
+particiji tog medija**. Skripta prvog dizanja je onda vidjela `sda3` kao zadnju
+i data particiju napravila tek iza nje — čime je 13,4 GB ostalo neiskorišteno,
+a ta particija se zna i sama montirati.
+
+Popravljeno: instalacija nakon kopiranja **briše sve zapise iza root
+particije**, pa data particija nastane odmah iza roota i zauzme cijeli ostatak.

@@ -124,16 +124,22 @@ echo ">> potpis diska: $OLD_SIG -> $NEW_SIG (PARTUUID $OLD_UUID -> $NEW_UUID)"
 
 # Bajtovi se pišu preko oktalnog zapisa: "\xNN" ne podržava svaki printf
 # (provjereno — negdje ispadne 12 bajtova umjesto 4), a "\NNN" podržava svaki.
+# Pretvorba hex->broj ide preko "0x", NE preko "16#": potonje je bash/ksh
+# proširenje, a dash (koji vrti gradnju na runneru) ga ne zna — aritmetika
+# tiho padne i ispišu se sami backslashevi.
 hex2bin() {
     h="$1"
     while [ -n "$h" ]; do
         b=$(printf '%.2s' "$h"); h=$(printf '%s' "$h" | cut -c3-)
-        printf "\\$(printf '%03o' "$((16#$b))")"
+        printf "\\$(printf '%03o' "$((0x$b))")"
     done
 }
 hex2bin "$NEW_SIG" > "$WORK/sig.bin"
 [ "$(wc -c < "$WORK/sig.bin")" -eq 4 ] || {
     echo "!! potpis nije 4 bajta nego $(wc -c < "$WORK/sig.bin")"; exit 1; }
+[ "$(od -An -tx1 < "$WORK/sig.bin" | tr -d ' \n')" = "$NEW_SIG" ] || {
+    echo "!! potpis se ne slaže: napisano $(od -An -tx1 < "$WORK/sig.bin" | tr -d ' \n'), traženo $NEW_SIG"
+    exit 1; }
 dd if="$WORK/sig.bin" of="$RAW" bs=1 seek=440 count=4 conv=notrunc 2>/dev/null
 
 # svaki zapis starog PARTUUID-a (u grub.cfg) zamijeni novim; jednake su

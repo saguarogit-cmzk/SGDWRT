@@ -406,3 +406,34 @@ stvaranje data particije i selidbu podataka. Ono što nije radilo je sam USB 3.0
 stick na tom starom kontroleru: konzola je javljala da ne može pokrenuti
 `/usr/libexec/login.sh`, a sustav je prestao odgovarati na mreži ubrzo nakon
 pokretanja — što odgovara greškama čitanja s medija, ne s pogreškom u slici.
+
+## Jedinstven potpis diska u slici (v0.36.1)
+
+Prvi pokušaj (v0.36.0) **pao je na provjeri slike**, i to je provjera i uhvatila:
+
+```
+::error::GRUB u slici ne traži PARTUUID 5c5c5c5c — potpis i grub.cfg nisu usklađeni
+```
+
+`5c` je obrnuta kosa crta — dakle upisana su četiri backslasha umjesto potpisa.
+Uzrok: pretvorba hex→bajt koristila je `$((16#7a))`, što je **bash/ksh
+proširenje**. Gradnju na runneru vrti `dash`, koji to ne zna; aritmetika tiho
+padne i ostane goli `\`. Lokalni test je prošao jer msys `sh` podržava `16#`.
+
+Potvrđeno usporedbom pod `dash`-om:
+
+| Oblik | Ishod pod `dash` |
+|---|---|
+| `$((16#$b))` | `5c5c5c5c` — točno ono što je CI prijavio |
+| `$((0x$b))` | `7aea0bf7` — ispravno |
+
+Popravljeno na `0x`, uz dodatnu provjeru **odmah pri upisu** (potpis se pročita
+natrag i usporedi), pa se ovakvo što više ne oslanja samo na završnu kontrolu.
+
+Provjereno lokalno na objavljenoj slici prije objave: potpis promijenjen, oba
+zapisa `PARTUUID`-a zamijenjena, nula zaostalih starih, MBR potpis `55aa`,
+particija 1 zastavica `0x80` 16 MB, particija 2 1024 MB, GRUB i dalje u boot
+kodu.
+
+> Vrijedi zapamtiti: annotation koji je dodan da se razlog pada vidi bez
+> prijave na GitHub odradio je posao iz prve — bez njega bi se pogađalo.

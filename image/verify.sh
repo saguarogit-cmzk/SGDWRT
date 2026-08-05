@@ -98,7 +98,10 @@ for f in \
     /opt/saguaro/selftest.sh \
     /etc/init.d/saguaro-core \
     /etc/init.d/saguaro-datapart \
-    /etc/uci-defaults/99-saguaro-firstboot
+    /etc/uci-defaults/99-saguaro-firstboot \
+    /usr/share/saguaro/99-saguaro-firstboot \
+    /usr/sbin/saguaro-setup \
+    /etc/profile.d/99-saguaro.sh
 do
     [ -e "$MNT$f" ] || fail "u slici nedostaje $f"
     ok "$f"

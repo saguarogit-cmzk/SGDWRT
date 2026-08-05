@@ -721,3 +721,43 @@ Na uređaju postoje **dvije odvojene lozinke** i lako ih je pomiješati:
 - **API token**: za skripte i integracije (`Authorization: Bearer <token>`);
   regeneracija odmah poništava stari.
 - **Syslog**: slanje kopije logova na vanjski poslužitelj (IP, port, UDP/TCP).
+
+## Postavljanje s konzole — `saguaro-setup`
+
+Uređaj iz slike dolazi na `192.168.1.1`, a to gotovo nikad nije adresa mreže u
+koju se stavlja. Dok se do sučelja ne može, sve bi se moralo tipkati po
+konzoli. Zato na konzoli postoji izbornik — pokreće se naredbom:
+
+```sh
+saguaro-setup
+```
+
+Podsjetnik na njega ispisuje se pri svakoj prijavi na konzolu, zajedno s
+adresom sučelja.
+
+| Stavka | Što radi |
+|---|---|
+| **Pregled stanja** | ime uređaja, verzije, LAN i WAN adresa, zadana ruta, root i data particija, adresa sučelja |
+| **Postavi LAN adresu** | IP, maska, gateway i DNS uz provjeru svake vrijednosti; Enter zadržava postojeće. Nakon spremanja radi `network restart` (ne `reload` — kod promjene adrese zna ostati na pola) i **provjeri je li adresa stvarno primijenjena** |
+| **Instaliraj na interni disk** | prepiše sustav s medija s kojeg se diglo na odabrani disk |
+| Ponovno pokreni / Ugasi | uredno gašenje s konzole |
+
+### Instalacija na interni disk
+
+Namijenjena je uobičajenom slučaju: uređaj se digne s USB-a, pa se sustav
+prebaci na njegov disk.
+
+Kočnice, jer je radnja nepovratna:
+
+- disk s kojeg sustav radi **ne nudi se** kao odredište;
+- prije upisa se traži da se upiše točno `obrisi <disk>` — ne samo „da";
+- odredište koje je manje od onoga što treba upisati se odbija.
+
+Nakon kopiranja odredišni disk dobiva **vlastiti potpis diska** i njegov
+`grub.cfg` se uskladi s njim. Bez toga bi imao isti potpis kao medij s kojeg
+je kopiran, pa jezgra kod `root=PARTUUID=…` ne bi znala koji je koji — i
+sustav bi se znao dići s krivog diska (vidi D-015).
+
+Odredištu se vraća i skripta prvog dizanja, pa pri prvom pokretanju s diska
+sam napravi **data particiju** od ostatka diska. Zapis o data particiji medija
+s kojeg je kopirano se briše — odnosi se na taj medij, ne na novi disk.

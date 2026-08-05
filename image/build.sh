@@ -77,6 +77,13 @@ chmod +x "$FILES/opt/saguaro/bin/saguaro-core" "$FILES/opt/saguaro/selftest.sh"
 for d in init.d uci-defaults board.d; do
     [ -d "$FILES/etc/$d" ] && chmod +x "$FILES/etc/$d/"* || true
 done
+[ -d "$FILES/usr/sbin" ] && chmod +x "$FILES/usr/sbin/"* || true
+
+# Pričuvna kopija skripte prvog dizanja: na sustavu se ona potroši i obriše,
+# a instalacija na disk je mora vratiti odredištu da ondje napravi data
+# particiju.
+mkdir -p "$FILES/usr/share/saguaro"
+cp "$FILES/etc/uci-defaults/99-saguaro-firstboot" "$FILES/usr/share/saguaro/"
 
 # ------------------------------------------------------------------- paketi
 PKGS=$(grep -v '^#' "$ROOT/image/packages.txt" | tr '\n' ' ')

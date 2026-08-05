@@ -1,0 +1,265 @@
+#!/bin/sh
+# Saguaro — postavljanje s konzole.
+#
+# Uređaj se iz slike digne na 192.168.1.1, što gotovo nikad nije adresa mreže
+# u koju se stavlja. Dok se do sučelja ne može, sve se mora tipkati po
+# konzoli — a to je i sporo i lako se pogriješi. Ovaj izbornik pokriva ono
+# što treba odmah nakon dizanja:
+#
+#   1. pregled stanja
+#   2. postavljanje LAN adrese
+#   3. instalacija na interni disk
+#
+# Pokreće se naredbom:  saguaro-setup
+
+BOLD=""; DIM=""; N=""
+if [ -t 1 ]; then BOLD="\033[1m"; DIM="\033[2m"; N="\033[0m"; fi
+
+say()  { printf "%b\n" "$1"; }
+head_() { printf "\n%b\n" "${BOLD}$1${N}"; printf '%s\n' "----------------------------------------------------------"; }
+err()  { printf "%b\n" "  !! $1"; }
+ok_()  { printf "%b\n" "  $1"; }
+
+pause() { printf "\n  Enter za nastavak… "; read -r _; }
+
+# ---------------------------------------------------------------- pomoćne
+
+# valid_ip provjerava IPv4 adresu, uključivo raspon svakog okteta
+valid_ip() {
+	echo "$1" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
+	for o in $(echo "$1" | tr '.' ' '); do
+		[ "$o" -le 255 ] 2>/dev/null || return 1
+	done
+	return 0
+}
+
+# boot_disk vraća disk s kojeg sustav radi (npr. sda)
+boot_disk() {
+	mm=$(awk '$5=="/"{print $3}' /proc/self/mountinfo | head -1)
+	p=$(readlink -f "/sys/dev/block/$mm" 2>/dev/null)
+	[ -n "$p" ] || return 1
+	if [ -f "$p/partition" ]; then basename "$(dirname "$p")"; else basename "$p"; fi
+}
+
+# disks nabraja prave diskove (bez loop, ram i sličnog)
+disks() {
+	for d in /sys/block/*; do
+		n=$(basename "$d")
+		case "$n" in loop*|ram*|sr*|dm-*|md*) continue ;; esac
+		[ -b "/dev/$n" ] || continue
+		echo "$n"
+	done
+}
+
+disk_gb() { echo "$(( $(cat "/sys/block/$1/size") * 512 / 1000000000 ))"; }
+
+hex2bin() {
+	h="$1"
+	while [ -n "$h" ]; do
+		b=$(printf '%.2s' "$h"); h=$(printf '%s' "$h" | cut -c3-)
+		printf "\\$(printf '%03o' "$((0x$b))")"
+	done
+}
+
+# ---------- 1. stanje ----------
+show_status() {
+	head_ "Stanje uređaja"
+	ok_ "Ime uređaja:   $(uci -q get system.@system[0].hostname || echo '?')"
+	ok_ "OpenWrt:       $(sed -n 's/^DISTRIB_RELEASE=.\(.*\).$/\1/p' /etc/openwrt_release 2>/dev/null)"
+	ok_ "Saguaro:       $(/etc/init.d/saguaro-core status 2>/dev/null || echo 'ne radi')"
+	printf "\n"
+	ok_ "LAN adresa:    $(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2}' | head -1)"
+	ok_ "WAN adresa:    $(ip -4 addr show "$(uci -q get network.wan.device)" 2>/dev/null | awk '/inet /{print $2}' | head -1)"
+	ok_ "Zadana ruta:   $(ip -4 route show default 2>/dev/null | head -1)"
+	printf "\n"
+	ok_ "Root particija: $(df -h / | awk 'NR==2{print $2" ukupno, "$4" slobodno"}')"
+	if [ -f /etc/saguaro-datapart.json ]; then
+		ok_ "Data particija: $(df -h /opt/saguaro | awk 'NR==2{print $1"  "$2" ukupno, "$4" slobodno"}')"
+	else
+		ok_ "Data particija: nema — podaci su na root particiji"
+	fi
+	printf "\n"
+	LAN=$(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | head -1)
+	[ -n "$LAN" ] && ok_ "Sučelje:       ${BOLD}https://$LAN:8443/${N}   (admin / Sgs#2026)"
+	pause
+}
+
+# ---------- 2. LAN adresa ----------
+set_lan() {
+	head_ "LAN adresa uređaja"
+	CUR=$(uci -q get network.lan.ipaddr)
+	say "  Sadašnja: ${BOLD}${CUR:-nije postavljena}${N}"
+	say "  ${DIM}(Enter bez upisa zadržava sadašnju vrijednost)${N}\n"
+
+	printf "  IP adresa      [%s]: " "$CUR"; read -r IP
+	[ -z "$IP" ] && IP="$CUR"
+	valid_ip "$IP" || { err "neispravna adresa"; pause; return; }
+
+	CURM=$(uci -q get network.lan.netmask); [ -z "$CURM" ] && CURM="255.255.255.0"
+	printf "  Mrežna maska   [%s]: " "$CURM"; read -r MASK
+	[ -z "$MASK" ] && MASK="$CURM"
+	valid_ip "$MASK" || { err "neispravna maska"; pause; return; }
+
+	CURG=$(uci -q get network.lan.gateway)
+	printf "  Gateway        [%s]: " "$CURG"; read -r GW
+	[ -z "$GW" ] && GW="$CURG"
+	[ -n "$GW" ] && { valid_ip "$GW" || { err "neispravan gateway"; pause; return; }; }
+
+	CURD=$(uci -q get network.lan.dns); [ -z "$CURD" ] && CURD="$GW"
+	printf "  DNS            [%s]: " "$CURD"; read -r DNS
+	[ -z "$DNS" ] && DNS="$CURD"
+	[ -n "$DNS" ] && { valid_ip "$DNS" || { err "neispravan DNS"; pause; return; }; }
+
+	printf "\n  Postaviti %s / %s, gateway %s, DNS %s? [d/N] " "$IP" "$MASK" "${GW:-nema}" "${DNS:-nema}"
+	read -r YN
+	case "$YN" in d|D|y|Y) ;; *) say "  odustao"; pause; return ;; esac
+
+	uci set network.lan.proto='static'
+	uci set network.lan.ipaddr="$IP"
+	uci set network.lan.netmask="$MASK"
+	if [ -n "$GW" ]; then uci set network.lan.gateway="$GW"; else uci -q delete network.lan.gateway; fi
+	if [ -n "$DNS" ]; then uci set network.lan.dns="$DNS"; else uci -q delete network.lan.dns; fi
+	uci commit network
+
+	say "\n  Primjenjujem…"
+	# restart, ne reload: promjena adrese kroz reload zna ostati na pola
+	/etc/init.d/network restart >/dev/null 2>&1
+	sleep 4
+	NEW=$(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2}' | head -1)
+	if [ "${NEW%/*}" = "$IP" ]; then
+		ok_ "Postavljeno: $NEW"
+		ok_ "Sučelje: ${BOLD}https://$IP:8443/${N}"
+	else
+		err "adresa nije primijenjena (sada: ${NEW:-nema}) — provjeri je li kabel u prvom portu"
+	fi
+	pause
+}
+
+# ---------- 3. instalacija na disk ----------
+install_disk() {
+	head_ "Instalacija na interni disk"
+
+	SRCD=$(boot_disk) || { err "ne mogu odrediti s kojeg diska sustav radi"; pause; return; }
+	say "  Sustav sada radi s: ${BOLD}/dev/$SRCD${N} ($(disk_gb "$SRCD") GB)\n"
+
+	CAND=""
+	for d in $(disks); do
+		[ "$d" = "$SRCD" ] && continue
+		CAND="$CAND $d"
+	done
+	[ -n "$CAND" ] || { err "nema drugog diska na koji bi se instaliralo"; pause; return; }
+
+	say "  Dostupni diskovi:"
+	for d in $CAND; do
+		say "    ${BOLD}$d${N}  $(disk_gb "$d") GB  $(cat "/sys/block/$d/device/model" 2>/dev/null)"
+	done
+	printf "\n  Na koji disk instalirati? (npr. sda, prazno = odustani): "
+	read -r TGT
+	[ -n "$TGT" ] || { say "  odustao"; pause; return; }
+	echo " $CAND " | grep -q " $TGT " || { err "$TGT nije u popisu"; pause; return; }
+
+	say ""
+	err "SVE NA /dev/$TGT ($(disk_gb "$TGT") GB) BIT ĆE OBRISANO."
+	say "  Za potvrdu upiši točno:  ${BOLD}obrisi $TGT${N}"
+	printf "  > "; read -r CONF
+	[ "$CONF" = "obrisi $TGT" ] || { say "  odustao"; pause; return; }
+
+	# koliko kopirati: do kraja zadnje particije izvornog diska
+	END=0
+	for p in /sys/block/"$SRCD"/"$SRCD"*; do
+		[ -f "$p/partition" ] || continue
+		e=$(( $(cat "$p/start") + $(cat "$p/size") ))
+		[ "$e" -gt "$END" ] && END=$e
+	done
+	MB=$(( (END * 512 + 1048575) / 1048576 ))
+	TGT_MB=$(( $(cat "/sys/block/$TGT/size") * 512 / 1048576 ))
+	[ "$TGT_MB" -gt "$MB" ] || { err "odredišni disk je premalen ($TGT_MB MB, treba > $MB MB)"; pause; return; }
+
+	say "\n  Kopiram $MB MB na /dev/$TGT — potraje minutu-dvije…"
+	dd if="/dev/$SRCD" of="/dev/$TGT" bs=1M count="$MB" conv=fsync 2>&1 | tail -1
+	sync
+	partx -u "/dev/$TGT" 2>/dev/null || partprobe "/dev/$TGT" 2>/dev/null
+	sleep 2
+
+	# Odredišni disk mora dobiti VLASTITI potpis: inače bi imao isti kao ovaj s
+	# kojeg smo kopirali, pa jezgra kod root=PARTUUID=… ne bi znala koji je koji.
+	say "  Dajem odredišnom disku vlastiti potpis…"
+	OLD_SIG=$(dd if="/dev/$TGT" bs=1 skip=440 count=4 2>/dev/null | od -An -tx1 | tr -d ' \n')
+	OLD_UUID=$(echo "$OLD_SIG" | sed 's/\(..\)\(..\)\(..\)\(..\)/\4\3\2\1/')
+	NEW_SIG=$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n')
+	NEW_UUID=$(echo "$NEW_SIG" | sed 's/\(..\)\(..\)\(..\)\(..\)/\4\3\2\1/')
+	hex2bin "$NEW_SIG" > /tmp/sag-sig.bin
+	if [ "$(wc -c < /tmp/sag-sig.bin)" -ne 4 ]; then
+		err "potpis nije 4 bajta — prekidam prije nego išta pokvarim"; pause; return
+	fi
+	dd if=/tmp/sag-sig.bin of="/dev/$TGT" bs=1 seek=440 count=4 conv=notrunc 2>/dev/null
+	rm -f /tmp/sag-sig.bin
+
+	mkdir -p /tmp/sagtgt
+	if mount "/dev/${TGT}1" /tmp/sagtgt 2>/dev/null; then
+		[ -f /tmp/sagtgt/boot/grub/grub.cfg ] &&
+			sed -i "s/$OLD_UUID-0/$NEW_UUID-0/g" /tmp/sagtgt/boot/grub/grub.cfg
+		sync; umount /tmp/sagtgt
+		ok_ "GRUB usklađen s novim potpisom ($NEW_UUID)"
+	else
+		err "boot particija odredišta se ne montira — GRUB nije usklađen"
+	fi
+
+	# Data particija se stvara pri prvom dizanju. Skripta koja to radi već je
+	# potrošena na ovom sustavu, pa se odredištu vraća iz pričuvne kopije.
+	if mount "/dev/${TGT}2" /tmp/sagtgt 2>/dev/null; then
+		if [ -f /usr/share/saguaro/99-saguaro-firstboot ]; then
+			mkdir -p /tmp/sagtgt/etc/uci-defaults
+			cp /usr/share/saguaro/99-saguaro-firstboot /tmp/sagtgt/etc/uci-defaults/
+			chmod +x /tmp/sagtgt/etc/uci-defaults/99-saguaro-firstboot
+			ok_ "Data particija će se napraviti pri prvom dizanju s diska"
+		fi
+		# zapis geometrije se odnosi na OVAJ medij, odredištu ne valja
+		rm -f /tmp/sagtgt/etc/saguaro-datapart.json
+		rm -f /tmp/sagtgt/etc/config/fstab.sag_data 2>/dev/null
+		uci -q -c /tmp/sagtgt/etc/config delete fstab.sag_data 2>/dev/null
+		uci -q -c /tmp/sagtgt/etc/config commit fstab 2>/dev/null
+		sync; umount /tmp/sagtgt
+	else
+		err "root particija odredišta se ne montira — provjeri ručno"
+	fi
+	rmdir /tmp/sagtgt 2>/dev/null
+
+	say ""
+	ok_ "${BOLD}Instalacija gotova.${N}"
+	say "  Ugasi uređaj, izvadi USB i upali ga ponovno."
+	say "  Pri prvom dizanju s diska sam napravi data particiju od ostatka diska."
+	pause
+}
+
+# ---------- izbornik ----------
+menu() {
+	while true; do
+		clear 2>/dev/null
+		LAN=$(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2}' | head -1)
+		printf "%b\n" "${BOLD}  Saguaro Infrastructure — postavljanje${N}"
+		printf '%s\n' "  =========================================================="
+		printf "  LAN: %s     Root: %s\n\n" "${LAN:-nema}" "$(df -h / | awk 'NR==2{print $2}')"
+		say "    1)  Pregled stanja"
+		say "    2)  Postavi LAN adresu"
+		say "    3)  Instaliraj na interni disk"
+		say "    4)  Ponovno pokreni uređaj"
+		say "    5)  Ugasi uređaj"
+		say "    0)  Izlaz u naredbeni redak"
+		printf "\n  Izbor: "
+		read -r C
+		case "$C" in
+			1) show_status ;;
+			2) set_lan ;;
+			3) install_disk ;;
+			4) printf "  Ponovno pokrenuti? [d/N] "; read -r y
+			   case "$y" in d|D|y|Y) reboot; exit 0 ;; esac ;;
+			5) printf "  Ugasiti uređaj? [d/N] "; read -r y
+			   case "$y" in d|D|y|Y) poweroff; exit 0 ;; esac ;;
+			0) exit 0 ;;
+			*) ;;
+		esac
+	done
+}
+
+menu

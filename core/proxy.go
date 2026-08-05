@@ -503,6 +503,9 @@ func (s *server) handleProxyApply(w http.ResponseWriter, r *http.Request) {
 		_ = exec.CommandContext(ctx, "/etc/init.d/haproxy", "stop").Run()
 		_ = exec.CommandContext(ctx, "/etc/init.d/haproxy", "disable").Run()
 		_ = rpFirewall(ctx, false)
+		// proxy vise ne prima port 80 — ako sucelje ima ACME certifikat,
+		// put za provjeru preuzima izravno preusmjerenje
+		_ = s.guiCertFirewallSync(ctx)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"sites": 0, "running": false, "backup": backup,
 		})
@@ -520,6 +523,9 @@ func (s *server) handleProxyApply(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "firewall: "+err.Error())
 		return
 	}
+	// port 80 sada prima proxy — izravno preusmjerenje za ACME provjeru
+	// suceljnog certifikata mora otici, inace se dva DNAT-a otimaju
+	_ = s.guiCertFirewallSync(ctx)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"sites": active, "running": haproxyRunning(ctx), "backup": backup,
 	})

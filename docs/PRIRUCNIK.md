@@ -797,3 +797,29 @@ instalira jednim klikom, kao i haproxy za obrnuti proxy.
   zaustavi. Granice čuva Saguaro nadzor, ne tcpdump — pokriva i slučaj da
   proces ostane visjeti. Zaboravljena snimka ne može puniti disk danima.
 - Snimke leže na **data particiji** i preuzimaju se odnosno brišu iz tablice.
+
+## Certifikat sučelja (Settings)
+
+Sučelje zadano radi sa self-signed certifikatom — veza je šifrirana, ali
+preglednik upozorava. S pravim certifikatom (Let's Encrypt) upozorenja
+nestaju, a korisnik se odvikava od klikanja „prihvati rizik".
+
+**Preduvjeti:** javna adresa (ne CGNAT), DNS ime koje pokazuje na nju i
+port 80 dostupan izvana za HTTP-01 provjeru. Ako obrnuti proxy radi, provjera
+ide kroz njega; inače Saguaro sam upiše preusmjerenje porta 80 na svoj
+poslužitelj provjere (koji poslužuje isključivo putanju
+`/.well-known/acme-challenge/`). Ta se dva puta **ne preklapaju** — pri
+uključivanju proxyja izravno preusmjerenje se samo makne, i obrnuto.
+
+Postupak: upiši DNS ime i e-mail (Let's Encrypt račun), po želji probni
+poslužitelj (staging) za isprobavanje, pa **Zatraži certifikat**. Certifikat:
+
+- vrijedi za :8443 **odmah, bez restarta** — poslužitelj ga uzima iz spremišta
+  koje se samo osvježi kad se datoteka promijeni;
+- **obnavlja se sam** (noćni cron paketa acme) i zamjena opet prolazi bez
+  prekida;
+- ako ga nema ili je neispravan, sučelje **uvijek** pada natrag na
+  self-signed — nikad ne ostaje bez TLS-a.
+
+Micanjem DNS imena sve se počisti: firewall preusmjerenje, acme zapis (da ga
+noćni cron ne pokušava obnavljati) i povratak na self-signed.

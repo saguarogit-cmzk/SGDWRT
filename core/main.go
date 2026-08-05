@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.39.0"
+const version = "0.40.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -157,6 +157,15 @@ func main() {
 	}
 
 	s.startChallengeServer()
+	// put za ACME provjeru sučeljnog certifikata se uskladi pri svakom startu
+	// (proxy se mogao uključiti ili isključiti dok servis nije radio)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := s.guiCertFirewallSync(ctx); err != nil {
+			log.Printf("guicert firewall: %v", err)
+		}
+	}()
 	go s.checkRootAfterUpgrade()
 	go collectMetrics()
 	go s.monitorLoop()
@@ -339,6 +348,9 @@ func main() {
 	mux.Handle("GET /api/v1/syslog", s.auth(s.handleSyslogView))
 	mux.Handle("POST /api/v1/settings/mgmtacl", s.auth(s.handleMgmtACLSet))
 	mux.Handle("POST /api/v1/settings/time", s.auth(s.handleTimeSet))
+	mux.Handle("GET /api/v1/settings/guicert", s.auth(s.handleGuiCertGet))
+	mux.Handle("POST /api/v1/settings/guicert", s.auth(s.handleGuiCertSet))
+	mux.Handle("POST /api/v1/settings/guicert/issue", s.auth(s.handleGuiCertIssue))
 	mux.Handle("GET /api/v1/update/status", s.auth(s.handleUpdateStatus))
 	mux.Handle("POST /api/v1/update/upload", s.auth(s.handleUpdateUpload))
 	mux.Handle("POST /api/v1/update/apply", s.auth(s.handleUpdateApply))
@@ -379,8 +391,15 @@ func main() {
 		if cerr != nil {
 			log.Fatalf("certifikat: %v", cerr)
 		}
+		// Certifikat ide kroz spremište s vrućom zamjenom: ACME certifikat za
+		// sučelje (ako je zatražen) ima prednost, self-signed je pričuva, a
+		// noćna obnova se pokupi bez restarta servisa.
+		guiCerts = newCertStore(certFile, keyFile,
+			func() string { return s.getSetting("gui_cert_host", "") })
+		srv.TLSConfig.GetCertificate = guiCerts.getCertificate
+		go guiCerts.watch()
 		log.Printf("saguaro-core %s sluša na %s (TLS)", version, *listen)
-		err = srv.ListenAndServeTLS(certFile, keyFile)
+		err = srv.ListenAndServeTLS("", "")
 	}
 	if err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)

@@ -1778,7 +1778,89 @@ async function applyUpdate(source) {
 
 let tokVisible = false;
 
+async function loadGuiCert() {
+  const x = await api("/settings/guicert");
+  $("gc-host").value = x.host || "";
+  $("gc-email").value = x.email || "";
+  $("gc-staging").checked = !!x.staging;
+  $("gc-install").classList.toggle("hidden", !!x.installed);
+
+  const kv = $("gc-kv");
+  kv.replaceChildren();
+  const rows = [];
+  const c = x.cert || {};
+  if (x.host && c.issued) {
+    rows.push(["Certifikat za " + x.host,
+      "izdao " + (c.issuer || "?") + " · vrijedi do " + c.not_after +
+      " (" + c.days_left + " dana)"]);
+  } else if (x.host) {
+    rows.push(["Certifikat za " + x.host, "još nije izdan"]);
+  }
+  for (const [k, v] of rows) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    kv.append(dt, dd);
+  }
+
+  const badge = $("gc-state");
+  if (x.using_acme && c.issued && c.days_left > 14) {
+    setPill(badge, "good", "pravi certifikat");
+    setNote("gc-note", x.host + " · još " + c.days_left + " dana, obnavlja se sam");
+  } else if (x.using_acme && c.issued) {
+    setPill(badge, "warn", "istječe za " + c.days_left + " dana");
+    setNote("gc-note", "obnova bi trebala proći sama — provjeri za koji dan");
+  } else if (x.host) {
+    setPill(badge, "warn", "čeka izdavanje");
+    setNote("gc-note", "sučelje zasad radi sa self-signed certifikatom");
+  } else {
+    setPill(badge, "off", "self-signed");
+    setNote("gc-note", "preglednik upozorava na certifikat — to je očekivano");
+  }
+}
+
+$("gc-save").addEventListener("click", async () => {
+  $("gc-result").textContent = "Spremam…";
+  try {
+    await api("/settings/guicert", "POST", {
+      host: $("gc-host").value.trim(),
+      email: $("gc-email").value.trim(),
+      staging: $("gc-staging").checked,
+    });
+    $("gc-result").textContent = "Spremljeno.";
+    await loadGuiCert();
+  } catch (e) {
+    $("gc-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("gc-install").addEventListener("click", async () => {
+  $("gc-result").textContent = "Instaliram acme paket…";
+  try {
+    await api("/proxy/acme/install", "POST", {});
+    $("gc-result").textContent = "Instalirano.";
+    await loadGuiCert();
+  } catch (e) {
+    $("gc-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("gc-issue").addEventListener("click", async () => {
+  $("gc-result").textContent =
+    "Tražim certifikat — provjera vlasništva zna potrajati minutu-dvije…";
+  try {
+    const r = await api("/settings/guicert/issue", "POST", {});
+    const c = r.cert || {};
+    $("gc-result").textContent = c.issued
+      ? "Izdano — sučelje već radi s novim certifikatom (osvježi stranicu)."
+      : "Certifikat nije izdan. Dnevnik: " + (r.log || "prazan").slice(-400);
+    await loadGuiCert();
+  } catch (e) {
+    $("gc-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
 async function loadSettings() {
+  loadGuiCert().catch(() => setPill($("gc-state"), "off", "nedostupno"));
   const [s, sys, mon] = await Promise.all([
     api("/auth/session"), api("/settings/system"), api("/monitor"),
   ]);

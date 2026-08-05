@@ -636,3 +636,18 @@ Provjereno na uređaju **05.08.2026.**:
 | Preuzimanje i brisanje snimke | **radi** — HTTP 200 / `deleted` |
 | Pokušaj izlaska iz direktorija (`..%2F..`) | **odbijen**, HTTP 404 |
 | Samoprovjera | 42 prošlo / 1 palo (istinit: vraćena arhiva je starija od SMTP postavki, pa kopija opet ne izlazi s uređaja — treba ponovno unijeti SMTP) |
+
+## Certifikat sučelja (v0.40.0)
+
+Provjereno na uređaju **05.08.2026.**:
+
+| Provjera | Ishod |
+|---|---|
+| Spremište certifikata s vrućom zamjenom | ugrađeno — `GetCertificate` + nadzor promjene datoteke; self-signed uvijek kao pričuva |
+| Krivo DNS ime | **odbijeno**, HTTP 400 |
+| Izdavanje bez imena / bez e-maila | **odbijeno**, HTTP 409 |
+| Postavljanje imena bez proxyja | **radi** — upisana fw pravila `sag_ac_r80` (DNAT 80→8081) + accept; fw4 prihvatio sve (0 odbijenih) |
+| Poslužitelj provjere | **radi** — vraća sadržaj challenge datoteke |
+| Cijeli lanac izdavanja (staging) | **radi do očekivanog kraja** — acme konfiguracija upisana (`sag_gui`, staging), `renew` pokrenut, certifikat pošteno javljen kao neizdan (probno ime ne pokazuje na uređaj) |
+| Micanje imena | **radi** — počišćena fw pravila i acme zapis (bez toga bi noćni cron zauvijek pokušavao izdati za staro ime — nađeno i popravljeno prije objave), sučelje i dalje radi |
+| **Stvarno izdavanje certifikata** | **nije provjerivo iz laba** — uređaj je iza NAT-a bez javnog DNS imena. Kod korisnika s javnom adresom: upiši ime, e-mail i klikni Zatraži; sve ostalo u lancu je dokazano. |

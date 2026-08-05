@@ -41,9 +41,11 @@ func acmeInstalled() bool {
 	return err == nil
 }
 
-// startChallengeServer poslužuje mapu s odgovorima na provjeru. Sluša samo na
-// petlji: izvana se do njega dolazi kroz proxy, koji propušta isključivo
-// putanju provjere.
+// startChallengeServer poslužuje mapu s odgovorima na provjeru. Do njega se
+// dolazi kroz proxy (koji propušta isključivo putanju provjere), a kad
+// proxyja nema, izravnim preusmjerenjem porta 80 (guiCertFirewallSync) —
+// zato sluša na svim adresama, ne samo na petlji. Poslužuje jedino statične
+// datoteke iz mape provjere, ništa drugo.
 func (s *server) startChallengeServer() {
 	dir := filepath.Join(acmeWebroot, ".well-known", "acme-challenge")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -53,7 +55,7 @@ func (s *server) startChallengeServer() {
 	mux.Handle(acmeChallengePath, http.StripPrefix(acmeChallengePath,
 		http.FileServer(http.Dir(dir))))
 	srv := &http.Server{
-		Addr:         fmt.Sprintf("127.0.0.1:%d", acmeChallengePort),
+		Addr:         fmt.Sprintf(":%d", acmeChallengePort),
 		Handler:      mux,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
@@ -101,6 +103,21 @@ func (s *server) writeAcmeConfig(ctx context.Context, sites []RPSite) error {
 		fmt.Fprintf(&b, "set acme.%s.key_type=ec256\n", sn)
 		staging := "0"
 		if st.AcmeStaging {
+			staging = "1"
+		}
+		fmt.Fprintf(&b, "set acme.%s.staging=%s\n", sn, staging)
+		n++
+	}
+	// certifikat samog sučelja (E3) dijeli istu acme konfiguraciju
+	if guiHost := s.getSetting("gui_cert_host", ""); guiHost != "" {
+		sn := acmeSecPrefix + "gui"
+		fmt.Fprintf(&b, "set acme.%s=cert\n", sn)
+		fmt.Fprintf(&b, "set acme.%s.enabled=1\n", sn)
+		fmt.Fprintf(&b, "add_list acme.%s.domains=%s\n", sn, uciQuote(guiHost))
+		fmt.Fprintf(&b, "set acme.%s.validation_method=webroot\n", sn)
+		fmt.Fprintf(&b, "set acme.%s.key_type=ec256\n", sn)
+		staging := "0"
+		if s.getSetting("gui_cert_staging", "0") == "1" {
 			staging = "1"
 		}
 		fmt.Fprintf(&b, "set acme.%s.staging=%s\n", sn, staging)

@@ -193,7 +193,7 @@ paketa. Trud je procijenjen u danima rada.
 |---|---|---|---|---|---|
 | **E1** | **Više korisnika i uloge** | serviser vidi sve, korisnik samo svoje module; tko je što radio piše u tragu promjena | tablica `users` već postoji, treba uloge i sučelje | 2–3 dana | **visoka** |
 | **E2** | **Dvofaktorska prijava (TOTP)** | ukradena lozinka nije dovoljna | u Go-u, bez novih paketa | 1–2 dana | **visoka** |
-| **E3** | **Pravi certifikat za sučelje** | nema više upozorenja preglednika | `acme-acmesh` (Let's Encrypt) ili unos vlastitog certifikata | 1–2 dana | **visoka** |
+| ~~E3~~ | **NAPRAVLJENO (v0.40.0)** — pravi certifikat za sučelje | Let's Encrypt za :8443, ista infrastruktura kao za proxy; vruća zamjena bez restarta, self-signed kao pričuva | paket acme + spremište certifikata s GetCertificate | 1 dan | srednja |
 | **E4** | **Prijava kroz Active Directory / LDAP** | korisnici iz domene, bez zasebnih lozinka | LDAP klijent u Go-u | 3–4 dana | srednja |
 | ~~E5~~ | **NAPRAVLJENO (v0.26.0)** — nadogradnja OpenWrt-a iz sučelja | firmware uz automatski backup i keep listu (koja već radi) | `sysupgrade` + provjera potpisa | 2–3 dana | srednja |
 | **E6** | **Zakazane izmjene** | primjena rizične promjene u dogovorenom terminu | raspored + postojeći safe mode | 1–2 dana | niska |
@@ -224,7 +224,7 @@ paketa. Trud je procijenjen u danima rada.
 1. ~~A2 statičke rute~~ · ~~A1 izlazna javna adresa po mreži~~ — oboje napravljeno
 2. ~~B1 prisilni DNS~~ · ~~B2 vremenska pravila~~ — oboje napravljeno
 3. ~~D1 pregled aktivnih veza~~ · ~~D2 snimanje prometa~~ — oboje napravljeno
-4. E3 pravi certifikat za sučelje
+4. ~~E3 pravi certifikat za sučelje~~ — napravljeno
 
 **Drugi krug — ono što korisnik traži kad sustav uđe u ozbiljan pogon (oko 10–12 dana)**
 

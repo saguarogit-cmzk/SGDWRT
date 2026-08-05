@@ -449,3 +449,31 @@ Popravljeno dvostruko: radna datoteka se sada zove kao i konačna slika, a
 pakiranje ide sa `gzip -n` (bez imena i vremena u zaglavlju, uz to je gradnja
 ponovljiva). Provjereno: zaglavlje sa spremljenim imenom je 41 bajt, sa `-n`
 25 — razlika je točno naziv.
+
+## Konzolni čarobnjak — dvije greške nađene odmah pri upotrebi (v0.37.1)
+
+Korisnik je pri prvoj upotrebi naletio na oboje:
+
+1. **`192.168.50.224/24` je odbijano kao neispravno.** A to je oblik koji se
+   najčešće upisuje. Sada se prihvaća i maska se uzme iz prefiksa; maska se
+   može upisati i kao `24` i kao `255.255.255.0`.
+2. **Provjera nakon primjene bila je prerana.** Čekalo se 4 sekunde, a
+   `network restart` traje i do dvadesetak — pa je javljalo „adresa nije
+   primijenjena" iako jest. Sada se čeka do 25 s uz točkice, pa ako ne uspije
+   slijedi još jedan pokušaj samo za `lan` sučelje, a tek onda ispis stanja
+   (što je u konfiguraciji, što na sučelju, koji su portovi u `br-lan` i zadnji
+   redci iz dnevnika).
+
+Usput nađeno i treće, prije nego je stiglo do uređaja: pretvorba prefiksa u
+masku koristila je `**`, što **nije POSIX** — `dash` i busybox `ash` ga ne
+znaju, pa bi maske `/25`–`/31` ispale prazne. Zamijenjeno pomakom `>>`.
+
+Provjereno pod `dash`-om (najbliži busybox `ash`-u):
+
+| Ulaz | Ishod |
+|---|---|
+| `/8 /16 /22 /24 /25 /26 /30 /31 /32` | sve maske točne |
+| `24` i `255.255.255.0` | oboje prihvaćeno |
+| `33`, `0`, `abc`, `255.255.255.999` | odbijeno |
+| `192.168.50.224/24` | ip `192.168.50.224`, maska `255.255.255.0` |
+| `1.2.3.4/33` | odbijen prefiks |

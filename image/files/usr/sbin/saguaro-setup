@@ -85,30 +85,69 @@ show_status() {
 }
 
 # ---------- 2. LAN adresa ----------
+
+# prefix2mask pretvara duljinu prefiksa (npr. 24) u masku (255.255.255.0)
+prefix2mask() {
+	p="$1"; m=""
+	for i in 1 2 3 4; do
+		# NE koristiti "**": to nije POSIX, a busybox ash i dash ga ne znaju
+		# (maske /25–/31 bi ispale prazne). Pomak radi svugdje.
+		if [ "$p" -ge 8 ]; then o=255; p=$((p - 8))
+		elif [ "$p" -le 0 ]; then o=0
+		else o=$((256 - (256 >> p))); p=0
+		fi
+		m="${m:+$m.}$o"
+	done
+	echo "$m"
+}
+
+# mask_of prihvaća masku u oba oblika koja ljudi upisuju: 255.255.255.0 ili 24
+mask_of() {
+	case "$1" in
+		*.*) valid_ip "$1" && echo "$1" ;;
+		*)   [ "$1" -ge 1 ] 2>/dev/null && [ "$1" -le 32 ] && prefix2mask "$1" ;;
+	esac
+}
+
 set_lan() {
 	head_ "LAN adresa uređaja"
 	CUR=$(uci -q get network.lan.ipaddr)
-	say "  Sadašnja: ${BOLD}${CUR:-nije postavljena}${N}"
-	say "  ${DIM}(Enter bez upisa zadržava sadašnju vrijednost)${N}\n"
+	CURM=$(uci -q get network.lan.netmask); [ -z "$CURM" ] && CURM="255.255.255.0"
+	say "  Sadašnja: ${BOLD}${CUR:-nije postavljena}${N} / $CURM"
+	say "  ${DIM}Može se upisati i skraćeno: 192.168.50.224/24${N}"
+	say "  ${DIM}Enter bez upisa zadržava sadašnju vrijednost.${N}\n"
 
 	printf "  IP adresa      [%s]: " "$CUR"; read -r IP
 	[ -z "$IP" ] && IP="$CUR"
-	valid_ip "$IP" || { err "neispravna adresa"; pause; return; }
 
-	CURM=$(uci -q get network.lan.netmask); [ -z "$CURM" ] && CURM="255.255.255.0"
-	printf "  Mrežna maska   [%s]: " "$CURM"; read -r MASK
-	[ -z "$MASK" ] && MASK="$CURM"
-	valid_ip "$MASK" || { err "neispravna maska"; pause; return; }
+	# Ako je upisano s prefiksom (192.168.50.224/24), maska se uzme odatle i
+	# za nju se više ne pita — tako se ionako najčešće piše.
+	PFX=""
+	case "$IP" in
+		*/*) PFX="${IP#*/}"; IP="${IP%%/*}" ;;
+	esac
+	valid_ip "$IP" || { err "neispravna adresa: $IP"; pause; return; }
+
+	if [ -n "$PFX" ]; then
+		MASK=$(mask_of "$PFX")
+		[ -n "$MASK" ] || { err "neispravan prefiks /$PFX"; pause; return; }
+		ok_ "Maska iz prefiksa /$PFX: $MASK"
+	else
+		printf "  Mrežna maska   [%s]: " "$CURM"; read -r MI
+		[ -z "$MI" ] && MI="$CURM"
+		MASK=$(mask_of "$MI")
+		[ -n "$MASK" ] || { err "neispravna maska: $MI (upiši 255.255.255.0 ili 24)"; pause; return; }
+	fi
 
 	CURG=$(uci -q get network.lan.gateway)
 	printf "  Gateway        [%s]: " "$CURG"; read -r GW
 	[ -z "$GW" ] && GW="$CURG"
-	[ -n "$GW" ] && { valid_ip "$GW" || { err "neispravan gateway"; pause; return; }; }
+	[ -n "$GW" ] && { valid_ip "$GW" || { err "neispravan gateway: $GW"; pause; return; }; }
 
 	CURD=$(uci -q get network.lan.dns); [ -z "$CURD" ] && CURD="$GW"
 	printf "  DNS            [%s]: " "$CURD"; read -r DNS
 	[ -z "$DNS" ] && DNS="$CURD"
-	[ -n "$DNS" ] && { valid_ip "$DNS" || { err "neispravan DNS"; pause; return; }; }
+	[ -n "$DNS" ] && { valid_ip "$DNS" || { err "neispravan DNS: $DNS"; pause; return; }; }
 
 	printf "\n  Postaviti %s / %s, gateway %s, DNS %s? [d/N] " "$IP" "$MASK" "${GW:-nema}" "${DNS:-nema}"
 	read -r YN
@@ -121,16 +160,45 @@ set_lan() {
 	if [ -n "$DNS" ]; then uci set network.lan.dns="$DNS"; else uci -q delete network.lan.dns; fi
 	uci commit network
 
-	say "\n  Primjenjujem…"
-	# restart, ne reload: promjena adrese kroz reload zna ostati na pola
+	printf "\n  Primjenjujem"
+	# restart, ne reload: promjena adrese kroz reload zna ostati na pola.
+	# Traje i do dvadesetak sekundi, pa se čeka dok se ne pojavi — ranija
+	# provjera je lagala da nije uspjelo.
 	/etc/init.d/network restart >/dev/null 2>&1
-	sleep 4
-	NEW=$(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2}' | head -1)
-	if [ "${NEW%/*}" = "$IP" ]; then
-		ok_ "Postavljeno: $NEW"
+	APPLIED=""
+	i=0
+	while [ $i -lt 25 ]; do
+		NEW=$(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2}' | head -1)
+		if [ "${NEW%/*}" = "$IP" ]; then APPLIED="$NEW"; break; fi
+		printf "."
+		sleep 1
+		i=$((i + 1))
+	done
+	printf "\n"
+
+	# ako restart nije prošao, još jedan pokušaj samo za lan sučelje
+	if [ -z "$APPLIED" ]; then
+		say "  Još jednom, samo LAN sučelje…"
+		ifup lan >/dev/null 2>&1
+		i=0
+		while [ $i -lt 15 ]; do
+			NEW=$(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2}' | head -1)
+			if [ "${NEW%/*}" = "$IP" ]; then APPLIED="$NEW"; break; fi
+			sleep 1
+			i=$((i + 1))
+		done
+	fi
+
+	if [ -n "$APPLIED" ]; then
+		ok_ "Postavljeno: $APPLIED"
 		ok_ "Sučelje: ${BOLD}https://$IP:8443/${N}"
 	else
-		err "adresa nije primijenjena (sada: ${NEW:-nema}) — provjeri je li kabel u prvom portu"
+		err "adresa se nije primijenila. Stanje:"
+		say "    u konfiguraciji: $(uci -q get network.lan.ipaddr)/$(uci -q get network.lan.netmask)"
+		say "    na sučelju:      $(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2}' | head -1)"
+		say "    portovi br-lan:  $(uci -q get network.@device[0].ports)"
+		say "    zadnje iz dnevnika:"
+		logread 2>/dev/null | grep -i netifd | tail -5 | sed 's/^/      /'
 	fi
 	pause
 }

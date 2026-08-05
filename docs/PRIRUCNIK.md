@@ -228,13 +228,17 @@ Jedan raspon po mreži. **Glavna mreža (LAN)** i svaka **podmreža** (VLAN ili
 mreža na portu) imaju svoj; kod veze prema internetu (WAN) adrese se namjerno
 ne dijele. Za svaki raspon se postavlja:
 
-- **Prva i zadnja adresa** — upisuju se kao prave adrese (npr.
-  192.168.50.100 – 192.168.50.249), ne kao brojevi. Adresa samog uređaja ne
-  smije biti unutar raspona i Saguaro to odbija.
+- **Rasponi** — upisuju se kao prave adrese (npr. 192.168.50.100 –
+  192.168.50.249), ne kao brojevi. **Može ih biti više po istoj mreži**, npr.
+  `.100–.150` i `.200–.230`, da se preskoči dio adresa koje su već nekome
+  dodijeljene ručno. Rasponi se ne smiju preklapati, a adresa samog uređaja ne
+  smije biti ni u jednom — Saguaro oboje odbija.
 - **Trajanje leasea** — koliko dugo adresa vrijedi (npr. `12h`).
-- **Što se javlja klijentima** — gateway, DNS i domena. Prazno znači **ovaj
-  uređaj**, što je i uobičajeno. Upisuje se kad gateway ili DNS mora biti netko
-  drugi.
+- **Što se javlja klijentima** — gateway, DNS i domena, **po mreži**. Prazno
+  znači **ovaj uređaj**, što je i uobičajeno. Time svaki port, VLAN ili mreža
+  može dobiti **svoj DNS**: npr. gostima obiteljski (1.1.1.3), uredu ovaj
+  uređaj, serverskoj mreži interni DNS. To je i odgovor na pitanje kako se DNS
+  postavlja po mrežama kad uređaj radi kao router i gateway.
 
 > **Stupac Stanje govori radi li dijeljenje adresa stvarno**, a ne je li samo
 > upisano da bi trebalo. To nije isto: ako je na mreži već netko tko dijeli
@@ -251,6 +255,10 @@ ne dijele. Za svaki raspon se postavlja:
   gumbom *Primijeni rezervacije*.
 - **Aktivni leaseovi**: što je uređaj stvarno izdao. Prazan popis uz uključen
   raspon znači da dijeljenje ne radi — pogledaj stupac Stanje gore.
+
+Mreže koje još **nemaju nijedan raspon** također su na popisu, s napomenom
+„nema raspona". Tako se DHCP i DNS mogu dodijeliti svakoj mreži i svakom portu
+bez zalaženja u LuCI.
 
 ## DNS
 

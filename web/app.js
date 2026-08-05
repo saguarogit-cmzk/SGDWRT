@@ -345,11 +345,13 @@ async function loadDhcp() {
       sv.domain ? "domena " + sv.domain : "",
     ].filter(Boolean).join(", ") || "ovaj uređaj";
 
-    for (const v of [naziv, sv.subnet || "—",
-      sv.first_ip ? sv.first_ip + " – " + sv.last_ip : "—",
-      sv.leasetime || "—", javlja]) {
+    const rasponi = (sv.ranges || []).length
+      ? sv.ranges.map((x) => x.first_ip + " – " + x.last_ip).join("\n")
+      : "—";
+    for (const v of [naziv, sv.subnet || "—", rasponi, sv.leasetime || "—", javlja]) {
       const td = document.createElement("td");
       td.textContent = v;
+      if (v === rasponi) td.style.whiteSpace = "pre-line"; // svaki raspon u svom retku
       tr.append(td);
     }
 
@@ -1393,17 +1395,57 @@ $("dnsup-save").addEventListener("click", async () => {
 
 let editPoolIface = null;
 
+function poolRangeRow(first, last) {
+  // redak raspona je u jednom redu (Od / Do / Ukloni), ne u mreži polja —
+  // inače gumb padne u treći stupac i dijalog naraste bez potrebe
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "display:flex;gap:8px;align-items:flex-end;margin-bottom:6px";
+  const l1 = document.createElement("label");
+  l1.textContent = "Od";
+  const i1 = document.createElement("input");
+  i1.className = "pool-first";
+  i1.placeholder = "192.168.50.100";
+  i1.value = first || "";
+  l1.append(i1);
+  const l2 = document.createElement("label");
+  l2.textContent = "Do";
+  const i2 = document.createElement("input");
+  i2.className = "pool-last";
+  i2.placeholder = "192.168.50.150";
+  i2.value = last || "";
+  l2.append(i2);
+  l1.style.flex = "1";
+  l2.style.flex = "1";
+  const l3 = document.createElement("label");
+  l3.style.cssText = "flex:0 0 auto";
+  l3.textContent = " ";
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "btn-sm danger";
+  del.textContent = "Ukloni";
+  del.addEventListener("click", () => {
+    if ($("pool-ranges").children.length > 1) wrap.remove();
+  });
+  l3.append(del);
+  wrap.append(l1, l2, l3);
+  return wrap;
+}
+
 function openPoolDialog(sv) {
   const f = $("pool-form");
   editPoolIface = sv.interface;
   $("pool-dialog-title").textContent = sv.interface === "lan"
-    ? "Raspon adresa — glavna mreža (LAN)"
-    : "Raspon adresa — podmreža " + sv.interface;
+    ? "Dodjela adresa — glavna mreža (LAN)"
+    : "Dodjela adresa — " + sv.interface;
   $("pool-net").textContent = sv.subnet
     ? "Mreža " + sv.subnet + ", adresa uređaja " + (sv.device_ip || "—")
-    : "Sučelje nema statičku IPv4 adresu.";
-  f.elements.first_ip.value = sv.first_ip || "";
-  f.elements.last_ip.value = sv.last_ip || "";
+    : "Ova mreža nema statičku IPv4 adresu.";
+
+  const box = $("pool-ranges");
+  box.replaceChildren();
+  const rs = (sv.ranges || []).length ? sv.ranges : [{ first_ip: "", last_ip: "" }];
+  for (const r of rs) box.append(poolRangeRow(r.first_ip, r.last_ip));
+
   f.elements.leasetime.value = sv.leasetime || "";
   f.elements.gateway.value = sv.gateway || "";
   f.elements.dns.value = sv.dns || "";
@@ -1412,15 +1454,22 @@ function openPoolDialog(sv) {
   $("pool-dialog").showModal();
 }
 
+$("pool-add-range").addEventListener("click", () => {
+  $("pool-ranges").append(poolRangeRow("", ""));
+});
+
 $("pool-cancel").addEventListener("click", () => $("pool-dialog").close());
 $("pool-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const f = ev.target;
   try {
+    const ranges = [...$("pool-ranges").children].map((row) => ({
+      first_ip: row.querySelector(".pool-first").value.trim(),
+      last_ip: row.querySelector(".pool-last").value.trim(),
+    })).filter((x) => x.first_ip || x.last_ip);
     const r = await api("/dhcp/pool", "POST", {
       interface: editPoolIface,
-      first_ip: f.elements.first_ip.value.trim(),
-      last_ip: f.elements.last_ip.value.trim(),
+      ranges,
       leasetime: f.elements.leasetime.value.trim(),
       gateway: f.elements.gateway.value.trim(),
       dns: f.elements.dns.value.trim(),

@@ -73,7 +73,13 @@ func (s *server) handleDHCPStatus(w http.ResponseWriter, r *http.Request) {
 	// svi DHCP poolovi (jedan po sučelju/podmreži), ne samo lan
 	ranges := dhcpRanges()
 	blocked := dhcpBlockedIfaces(r.Context())
-	servers := []map[string]any{}
+	netCfg, _ := uciGetConfig(r.Context(), "network")
+
+	// Popis ide po MREŽAMA, ne po uci sekcijama: jedna mreža može imati više
+	// raspona (npr. .100–.150 i .200–.230, da se preskoče adrese koje su već
+	// nekome dane ručno). Uz to se prikazuju i mreže koje još nemaju nijedan
+	// raspon — inače im se DHCP i DNS ne bi mogli ni dodijeliti iz sučelja.
+	byIface := map[string][]string{}
 	for name, sec := range cfg {
 		if sectStr(sec, ".type") != "dhcp" {
 			continue
@@ -82,60 +88,109 @@ func (s *server) handleDHCPStatus(w http.ResponseWriter, r *http.Request) {
 		if iface == "" {
 			iface = name
 		}
-		start, _ := strconv.Atoi(sectStr(sec, "start"))
-		limit, _ := strconv.Atoi(sectStr(sec, "limit"))
-		devIP, subnet := ifaceIPv4(r.Context(), iface)
-		firstIP, lastIP := "", ""
-		if f, l := poolRange(subnet, start, limit); f != nil && l != nil {
-			firstIP, lastIP = f.String(), l.String()
+		byIface[iface] = append(byIface[iface], name)
+	}
+	for name, sec := range netCfg {
+		if sectStr(sec, ".type") != "interface" || name == "loopback" {
+			continue
 		}
-		gateway, dnsOpt, domain := parseDHCPOptions(uciList(sec, "dhcp_option"))
+		if _, seen := byIface[name]; seen {
+			continue
+		}
+		if _, subnet := sectionIPv4(sec); subnet != nil {
+			byIface[name] = nil // mreža bez raspona, ali se može dodati
+		}
+	}
 
-		// pool "radi" tek kad ga dnsmasq stvarno dobije u konfiguraciju;
-		// sama uci sekcija ne znači ništa
-		running := false
-		for _, rg := range ranges {
-			if firstIP != "" && strings.Contains(rg, firstIP) {
-				running = true
-				break
+	servers := []map[string]any{}
+	for iface, sections := range byIface {
+		sort.Strings(sections)
+		devIP, subnet := ifaceIPv4(r.Context(), iface)
+		rows := []map[string]any{}
+		running, ignored, leasetime := 0, 0, ""
+		gateway, dnsOpt, domain := "", "", ""
+		for _, name := range sections {
+			sec := cfg[name]
+			startN, _ := strconv.Atoi(sectStr(sec, "start"))
+			limitN, _ := strconv.Atoi(sectStr(sec, "limit"))
+			firstIP, lastIP := "", ""
+			if f, l := poolRange(subnet, startN, limitN); f != nil && l != nil {
+				firstIP, lastIP = f.String(), l.String()
+			}
+			if sectStr(sec, "ignore") == "1" {
+				ignored++
+			}
+			if leasetime == "" {
+				leasetime = sectStr(sec, "leasetime")
+			}
+			if g, d, dom := parseDHCPOptions(uciList(sec, "dhcp_option")); g != "" || d != "" || dom != "" {
+				if gateway == "" {
+					gateway = g
+				}
+				if dnsOpt == "" {
+					dnsOpt = d
+				}
+				if domain == "" {
+					domain = dom
+				}
+			}
+			live := false
+			for _, rg := range ranges {
+				if firstIP != "" && strings.Contains(rg, firstIP+",") {
+					live = true
+					break
+				}
+			}
+			if live {
+				running++
+			}
+			if firstIP != "" {
+				rows = append(rows, map[string]any{
+					"section": name, "first_ip": firstIP, "last_ip": lastIP,
+					"running": live,
+				})
 			}
 		}
+
+		allIgnored := len(sections) > 0 && ignored == len(sections)
 		note := ""
-		ignored := sectStr(sec, "ignore") == "1"
 		switch {
-		case ignored:
+		case len(rows) == 0:
+			note = "nema raspona — klikni Uredi da ga dodaš"
+		case allIgnored:
 			note = "isključen"
-		case running:
+		case running == len(rows):
 			note = "dijeli adrese"
 		case subnet == nil:
-			note = "sučelje nema statičku IPv4 adresu, pa ne može dijeliti adrese"
+			note = "mreža nema statičku IPv4 adresu, pa ne može dijeliti adrese"
 		case blocked[devName(r.Context(), iface)] || blocked[iface]:
 			note = "NE RADI — na ovoj mreži već postoji drugi DHCP poslužitelj, " +
 				"pa je OpenWrt svoj namjerno ostavio ugašenim"
 		default:
-			note = "NE RADI — dnsmasq nije preuzeo ovaj raspon; pogledaj System log"
+			note = "NE RADI — dnsmasq nije preuzeo raspon; pogledaj System log"
 		}
 
 		servers = append(servers, map[string]any{
-			"section":   name,
 			"interface": iface,
-			"start":     sectStr(sec, "start"),
-			"limit":     sectStr(sec, "limit"),
-			"first_ip":  firstIP,
-			"last_ip":   lastIP,
 			"subnet":    cidrOrEmpty(subnet),
 			"device_ip": ipOrEmpty(devIP),
-			"leasetime": sectStr(sec, "leasetime"),
+			"ranges":    rows,
+			"leasetime": leasetime,
 			"gateway":   gateway,
 			"dns":       dnsOpt,
 			"domain":    domain,
-			"ignore":    ignored,
-			"running":   running,
+			"ignore":    allIgnored,
+			"running":   len(rows) > 0 && running == len(rows),
 			"note":      note,
 		})
 	}
 	sort.Slice(servers, func(i, j int) bool {
-		return servers[i]["section"].(string) < servers[j]["section"].(string)
+		// glavna mreža prva, pa ostale po imenu
+		a, b := servers[i]["interface"].(string), servers[j]["interface"].(string)
+		if (a == "lan") != (b == "lan") {
+			return a == "lan"
+		}
+		return a < b
 	})
 
 	leases := []staticLease{}

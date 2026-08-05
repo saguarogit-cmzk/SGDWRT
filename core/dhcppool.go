@@ -8,13 +8,22 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// Upravljanje DHCP poolovima (raspon adresa koje uređaj dijeli) i, jednako
-// važno, **istina o tome radi li DHCP uopće**.
+// Upravljanje dodjelom adresa po mrežama i, jednako važno, **istina o tome
+// radi li DHCP uopće**.
+//
+// Dvije stvari koje uređaj u ulozi routera i gatewaya traži, a prije nisu bile
+// moguće iz sučelja:
+//
+//   - **više raspona po istoj mreži** (npr. .100–.150 i .200–.230), da se
+//     preskoče adrese koje su već nekome dodijeljene ručno
+//   - **DHCP i DNS po svakoj mreži/kartici** — svaki port i VLAN ima svoj
+//     raspon i svoj DNS koji javlja svojim klijentima
 //
 // OpenWrt pri pokretanju provjeri ima li na toj mreži već nekog tko dijeli
 // adrese i, ako ima, svoj DHCP tiho ne pokrene. To je dobra zaštita — dva
@@ -30,8 +39,11 @@ func ifaceIPv4(ctx context.Context, iface string) (net.IP, *net.IPNet) {
 	if err != nil {
 		return nil, nil
 	}
-	sec, ok := cfg[iface]
-	if !ok {
+	return sectionIPv4(cfg[iface])
+}
+
+func sectionIPv4(sec uciSection) (net.IP, *net.IPNet) {
+	if sec == nil {
 		return nil, nil
 	}
 	ip := net.ParseIP(sectStr(sec, "ipaddr"))
@@ -57,12 +69,7 @@ func poolRange(n *net.IPNet, start, limit int) (net.IP, net.IP) {
 	if base == nil {
 		return nil, nil
 	}
-	first := ipAdd(base, start)
-	last := ipAdd(base, start+limit-1)
-	if !n.Contains(first) || !n.Contains(last) {
-		return first, last // vraćamo kakvi jesu; provjera je posao validacije
-	}
-	return first, last
+	return ipAdd(base, start), ipAdd(base, start+limit-1)
 }
 
 func ipAdd(ip net.IP, n int) net.IP {
@@ -120,7 +127,7 @@ func devName(ctx context.Context, iface string) string {
 /* ---------- radi li DHCP stvarno ---------- */
 
 // dhcpRanges čita raspone koje je dnsmasq stvarno dobio u svojoj konfiguraciji.
-// Ako pool postoji u uci-ju, a ovdje ga nema, DHCP za tu mrežu **ne radi**.
+// Ako raspon postoji u uci-ju, a ovdje ga nema, DHCP za tu mrežu **ne radi**.
 func dhcpRanges() []string {
 	out := []string{}
 	ents, err := os.ReadDir("/var/etc")
@@ -172,15 +179,19 @@ func dhcpBlockedIfaces(ctx context.Context) map[string]bool {
 	return out
 }
 
-/* ---------- postavljanje raspona ---------- */
+/* ---------- opcije koje se javljaju klijentima ---------- */
+
+type dhcpRangeIn struct {
+	FirstIP string `json:"first_ip"`
+	LastIP  string `json:"last_ip"`
+}
 
 type dhcpPoolIn struct {
-	Interface string `json:"interface"`
-	FirstIP   string `json:"first_ip"`
-	LastIP    string `json:"last_ip"`
-	LeaseTime string `json:"leasetime"`
-	Enabled   *bool  `json:"enabled"`
-	// što uređaj javlja klijentima; prazno = javi sam sebe (uobičajeno)
+	Interface string        `json:"interface"`
+	Ranges    []dhcpRangeIn `json:"ranges"`
+	LeaseTime string        `json:"leasetime"`
+	Enabled   *bool         `json:"enabled"`
+	// što uređaj javlja klijentima te mreže; prazno = javi sam sebe
 	Gateway string `json:"gateway"`
 	DNS     string `json:"dns"` // jedna ili više adresa, razmakom odvojene
 	Domain  string `json:"domain"`
@@ -188,6 +199,7 @@ type dhcpPoolIn struct {
 
 // dhcpOptions slaže uci `dhcp_option` popis iz polja koja korisnik razumije.
 // Brojevi su standardni DHCP kodovi: 3 = gateway, 6 = DNS, 15 = domena.
+// Ovo je ujedno i način da svaka mreža ili VLAN dobije **svoj** DNS.
 func dhcpOptions(in dhcpPoolIn) ([]string, error) {
 	out := []string{}
 	if g := strings.TrimSpace(in.Gateway); g != "" {
@@ -250,6 +262,33 @@ func validLeaseTime(s string) bool {
 	return err == nil && n > 0 && n <= 9999
 }
 
+/* ---------- postavljanje raspona ---------- */
+
+// dhcpSectionsFor vraća sve uci sekcije koje dijele adrese u toj mreži,
+// poredane tako da zatečena (OpenWrt) sekcija ide prva.
+func dhcpSectionsFor(cfg map[string]uciSection, iface string) []string {
+	out := []string{}
+	for name, sec := range cfg {
+		if sectStr(sec, ".type") != "dhcp" {
+			continue
+		}
+		in := sectStr(sec, "interface")
+		if in == iface || (in == "" && name == iface) {
+			out = append(out, name)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		// naše dodatne sekcije (sag_) uvijek iza zatečene
+		si := strings.HasPrefix(out[i], sagPrefix)
+		sj := strings.HasPrefix(out[j], sagPrefix)
+		if si != sj {
+			return sj
+		}
+		return out[i] < out[j]
+	})
+	return out
+}
+
 func (s *server) handleDHCPPoolSet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var in dhcpPoolIn
@@ -258,7 +297,7 @@ func (s *server) handleDHCPPoolSet(w http.ResponseWriter, r *http.Request) {
 	}
 	in.Interface = strings.TrimSpace(in.Interface)
 	if in.Interface == "" {
-		writeErr(w, http.StatusBadRequest, "nedostaje sučelje")
+		writeErr(w, http.StatusBadRequest, "nedostaje mreža")
 		return
 	}
 	if in.LeaseTime == "" {
@@ -269,41 +308,68 @@ func (s *server) handleDHCPPoolSet(w http.ResponseWriter, r *http.Request) {
 			"trajanje leasea mora biti npr. 30m, 12h ili 2d")
 		return
 	}
+	if len(in.Ranges) == 0 {
+		writeErr(w, http.StatusBadRequest, "upiši bar jedan raspon adresa")
+		return
+	}
+	if len(in.Ranges) > 8 {
+		writeErr(w, http.StatusBadRequest, "najviše osam raspona po mreži")
+		return
+	}
 
 	devIP, subnet := ifaceIPv4(ctx, in.Interface)
 	if subnet == nil {
 		writeErr(w, http.StatusBadRequest,
-			"sučelje "+in.Interface+" nema statičku IPv4 adresu, pa ne može dijeliti adrese")
+			"mreža "+in.Interface+" nema statičku IPv4 adresu, pa ne može dijeliti adrese")
 		return
 	}
-	first := net.ParseIP(strings.TrimSpace(in.FirstIP))
-	last := net.ParseIP(strings.TrimSpace(in.LastIP))
-	if first == nil || last == nil || first.To4() == nil || last.To4() == nil {
-		writeErr(w, http.StatusBadRequest, "prva i zadnja adresa moraju biti IPv4")
-		return
-	}
-	switch {
-	case !subnet.Contains(first) || !subnet.Contains(last):
-		writeErr(w, http.StatusBadRequest, "raspon mora biti unutar mreže "+subnet.String())
-		return
-	case ipOffset(subnet, last) < ipOffset(subnet, first):
-		writeErr(w, http.StatusBadRequest, "zadnja adresa je manja od prve")
-		return
-	case devIP != nil && !first.Equal(devIP) && !last.Equal(devIP) &&
-		ipOffset(subnet, devIP) >= ipOffset(subnet, first) &&
-		ipOffset(subnet, devIP) <= ipOffset(subnet, last):
-		writeErr(w, http.StatusBadRequest, "u rasponu je adresa samog uređaja ("+
-			devIP.String()+") — pomakni početak ili kraj")
-		return
-	case first.Equal(subnet.IP):
-		writeErr(w, http.StatusBadRequest, "prva adresa je mrežna adresa, uzmi sljedeću")
-		return
-	}
-	start := ipOffset(subnet, first)
-	limit := ipOffset(subnet, last) - start + 1
-	if start <= 0 || limit <= 0 || limit > 4096 {
-		writeErr(w, http.StatusBadRequest, "raspon nije razuman (najviše 4096 adresa)")
-		return
+
+	type rng struct{ start, limit int }
+	rngs := []rng{}
+	for i, rIn := range in.Ranges {
+		first := net.ParseIP(strings.TrimSpace(rIn.FirstIP))
+		last := net.ParseIP(strings.TrimSpace(rIn.LastIP))
+		if first == nil || last == nil || first.To4() == nil || last.To4() == nil {
+			writeErr(w, http.StatusBadRequest,
+				fmt.Sprintf("%d. raspon: prva i zadnja adresa moraju biti IPv4", i+1))
+			return
+		}
+		start, end := ipOffset(subnet, first), ipOffset(subnet, last)
+		switch {
+		case !subnet.Contains(first) || !subnet.Contains(last):
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf(
+				"%d. raspon mora biti unutar mreže %s", i+1, subnet.String()))
+			return
+		case end < start:
+			writeErr(w, http.StatusBadRequest,
+				fmt.Sprintf("%d. raspon: zadnja adresa je manja od prve", i+1))
+			return
+		case start <= 0:
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf(
+				"%d. raspon počinje mrežnom adresom (%s) — uzmi sljedeću",
+				i+1, subnet.IP.String()))
+			return
+		case end-start+1 > 4096:
+			writeErr(w, http.StatusBadRequest,
+				fmt.Sprintf("%d. raspon je prevelik (najviše 4096 adresa)", i+1))
+			return
+		case devIP != nil && ipOffset(subnet, devIP) >= start &&
+			ipOffset(subnet, devIP) <= end:
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf(
+				"%d. raspon sadrži adresu samog uređaja (%s) — pomakni početak ili kraj",
+				i+1, devIP.String()))
+			return
+		}
+		// rasponi se ne smiju preklapati međusobno, inače bi dnsmasq istu
+		// adresu mogao ponuditi dvaput
+		for j, prev := range rngs {
+			if start <= prev.start+prev.limit-1 && prev.start <= end {
+				writeErr(w, http.StatusBadRequest, fmt.Sprintf(
+					"%d. i %d. raspon se preklapaju", j+1, i+1))
+				return
+			}
+		}
+		rngs = append(rngs, rng{start: start, limit: end - start + 1})
 	}
 
 	opts, err := dhcpOptions(in)
@@ -317,52 +383,55 @@ func (s *server) handleDHCPPoolSet(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	section := ""
-	for name, sec := range cfg {
-		if sectStr(sec, ".type") != "dhcp" {
-			continue
-		}
-		iface := sectStr(sec, "interface")
-		if iface == in.Interface || (iface == "" && name == in.Interface) {
-			section = name
-			break
-		}
-	}
-	created := false
-	if section == "" {
-		// pool za tu mrežu još ne postoji — stvara se pod našim prefiksom,
-		// da se poslije vidi tko ga je napravio (D-011)
-		section = sagPrefix + "dhcp_" + sanitizeDNSName(in.Interface)
-		created = true
-	}
+	existing := dhcpSectionsFor(cfg, in.Interface)
 
 	backupName, err := s.backupConfig(dhcpConfig)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "backup: "+err.Error())
 		return
 	}
+
 	var b strings.Builder
-	if created {
-		fmt.Fprintf(&b, "set dhcp.%s=dhcp\n", section)
-		fmt.Fprintf(&b, "set dhcp.%s.interface=%s\n", section, in.Interface)
-		fmt.Fprintf(&b, "set dhcp.%s.dhcpv4=server\n", section)
-	}
-	fmt.Fprintf(&b, "set dhcp.%s.start=%d\n", section, start)
-	fmt.Fprintf(&b, "set dhcp.%s.limit=%d\n", section, limit)
-	fmt.Fprintf(&b, "set dhcp.%s.leasetime=%s\n", section, in.LeaseTime)
-	if _, ok := cfg[section]["dhcp_option"]; ok {
-		fmt.Fprintf(&b, "delete dhcp.%s.dhcp_option\n", section)
-	}
-	for _, o := range opts {
-		fmt.Fprintf(&b, "add_list dhcp.%s.dhcp_option=%s\n", section, uciQuote(o))
-	}
-	if in.Enabled != nil {
-		if *in.Enabled {
-			if sectStr(cfg[section], "ignore") != "" {
-				fmt.Fprintf(&b, "delete dhcp.%s.ignore\n", section)
-			}
+	created, removed := 0, 0
+	for i, x := range rngs {
+		section := ""
+		if i < len(existing) {
+			section = existing[i]
 		} else {
-			fmt.Fprintf(&b, "set dhcp.%s.ignore=1\n", section)
+			section = fmt.Sprintf("%sdhcp_%s_%d", sagPrefix,
+				sanitizeUCIName(in.Interface), i+1)
+			created++
+			fmt.Fprintf(&b, "set dhcp.%s=dhcp\n", section)
+			fmt.Fprintf(&b, "set dhcp.%s.interface=%s\n", section, in.Interface)
+			fmt.Fprintf(&b, "set dhcp.%s.dhcpv4=server\n", section)
+		}
+		fmt.Fprintf(&b, "set dhcp.%s.start=%d\n", section, x.start)
+		fmt.Fprintf(&b, "set dhcp.%s.limit=%d\n", section, x.limit)
+		fmt.Fprintf(&b, "set dhcp.%s.leasetime=%s\n", section, in.LeaseTime)
+		if _, ok := cfg[section]["dhcp_option"]; ok {
+			fmt.Fprintf(&b, "delete dhcp.%s.dhcp_option\n", section)
+		}
+		for _, o := range opts {
+			fmt.Fprintf(&b, "add_list dhcp.%s.dhcp_option=%s\n", section, uciQuote(o))
+		}
+		if in.Enabled != nil {
+			if *in.Enabled {
+				if sectStr(cfg[section], "ignore") != "" {
+					fmt.Fprintf(&b, "delete dhcp.%s.ignore\n", section)
+				}
+			} else {
+				fmt.Fprintf(&b, "set dhcp.%s.ignore=1\n", section)
+			}
+		}
+	}
+	// višak sekcija: naše se brišu, zatečene se samo isključe — tuđe zapise
+	// Saguaro ne briše (D-011)
+	for _, name := range existing[min(len(rngs), len(existing)):] {
+		if strings.HasPrefix(name, sagPrefix) {
+			fmt.Fprintf(&b, "delete dhcp.%s\n", name)
+			removed++
+		} else {
+			fmt.Fprintf(&b, "set dhcp.%s.ignore=1\n", name)
 		}
 	}
 	b.WriteString("commit dhcp\n")
@@ -374,10 +443,31 @@ func (s *server) handleDHCPPoolSet(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	addEvent(s, "info", fmt.Sprintf("DHCP raspon za %s: %s–%s (%s)",
-		in.Interface, first, last, in.LeaseTime))
+	addEvent(s, "info", fmt.Sprintf("DHCP za %s: %d raspon(a), lease %s",
+		in.Interface, len(rngs), in.LeaseTime))
 	writeJSON(w, http.StatusOK, map[string]any{
-		"saved": true, "start": start, "limit": limit,
-		"created": created, "backup": backupName,
+		"saved": true, "ranges": len(rngs),
+		"created": created, "removed": removed, "backup": backupName,
 	})
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// sanitizeUCIName pretvara ime mreže u nešto što uci prihvaća kao ime sekcije.
+func sanitizeUCIName(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	return b.String()
 }

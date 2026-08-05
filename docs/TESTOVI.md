@@ -875,3 +875,36 @@ preuzimanje od 10 MB uopće nije pojavilo u statistici.
 | Preuzimanje dijeljenja adresa od postojećeg routera | traži gašenje DHCP-a na routeru 192.168.50.1, a to je Goranova mreža u pogonu |
 | Vlastita lista domena s interneta | polje i zapis su provjereni, samo preuzimanje velike liste nije pokrenuto da se uređaju ne troši memorija bez potrebe |
 | Filtriranje s klijentskog računala | radna stanica ne ide na internet kroz ovaj uređaj (vidi gore), pa se s nje ne može izmjeriti |
+
+## Više raspona po mreži i DNS po mreži (v0.46.0)
+
+Provjereno na uređaju **05.08.2026.**, na **izoliranoj testnoj mreži** (most
+bez ijednog porta, 10.66.0.1/24) — da se ništa ne dira u mreži u pogonu. Mreža
+je nakon testa uklonjena i od nje nema traga (`uci show | grep sagtest` = 0).
+
+| Provjera | Ishod |
+|---|---|
+| Dva raspona na istoj mreži | **radi** — dnsmasq je dobio oba: `10.66.0.100–150` i `10.66.0.200–230`, oba pod istom oznakom mreže |
+| DNS po mreži | **radi** — `dhcp-option=sagtest,6,1.1.1.3,1.0.0.3` (klijenti te mreže dobivaju obiteljski DNS) |
+| Domena po mreži | **radi** — `dhcp-option=sagtest,15,gosti.local` |
+| Trajanje leasea po mreži | **radi** — 6h |
+| Smanjenje broja raspona | **radi** — višak se ukloni, ostaje samo traženi raspon |
+| Preklapanje raspona | **odbijeno** — „1. i 2. raspon se preklapaju" |
+| Raspon koji sadrži adresu uređaja | **odbijeno** — imenuje adresu (10.66.0.1) |
+| Mreže bez raspona | **prikazuju se** s napomenom „nema raspona — klikni Uredi da ga dodaš" |
+| Saguaro čita natrag što je upisao | **da** — oba raspona s `running: true` |
+
+### Usput: čemu služi Audit log
+
+Tijekom rada se pokazalo da je **DHCP pool na glavnoj mreži isključen**, a nije
+bio kad je posao počeo. Audit log je pokazao točno: promjena u **20:41:08**,
+izvor **„admin"** (prijavljena sesija u sučelju), jedan dodani redak — dakle
+klik na kvačicu u sučelju, a ne izmjena kroz API token ili izvan Saguara.
+Bez tog traga bi se to tražilo po backupima i pogađalo.
+
+### Što nije provjereno
+
+| Stavka | Zašto |
+|---|---|
+| Klijent koji stvarno dobije adresu iz drugog raspona | testna mreža je most bez portova, pa na njoj nema nijednog uređaja; provjereno je da dnsmasq oba raspona ima u konfiguraciji i da ih drži pod istom mrežom |
+| Preuzimanje dijeljenja adresa na glavnoj mreži | traži gašenje DHCP-a na routeru 192.168.50.1 |

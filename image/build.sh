@@ -99,7 +99,55 @@ SRC=$(find "$WORK/$IB_NAME/bin/targets/$TARGET/$SUBTARGET" \
 }
 SAG_VER=$(sed -n 's/^const version = "\(.*\)"/\1/p' "$ROOT/core/main.go")
 DST="$OUT/saguaro-v${SAG_VER}-openwrt-${OPENWRT_VERSION}-x86-64.img.gz"
-cp "$SRC" "$DST"
+
+# ---------------------------------------------- jedinstven potpis diska
+#
+# OpenWrt svakoj slici daje isti potpis diska u MBR-u, pa svi uređaji
+# instalirani iz njih imaju i isti PARTUUID. Jezgra root traži upravo preko
+# PARTUUID-a — a ako su u istom računalu dva takva diska (npr. USB stick za
+# instalaciju i već instalirani interni disk), opis odgovara objema
+# particijama i uzme se prva. Posljedica: digneš se sa sticka, a sustav ti
+# krene s diska. Provjereno na uređaju 05.08.2026.
+#
+# Zato svaka slika dobiva vlastiti potpis. Mijenjaju se 4 bajta u MBR-u i
+# jednako dugački zapis PARTUUID-a u grub.cfg — sve na razini bajtova, bez
+# montiranja, pa gradnja i dalje ne traži root ovlasti.
+RAW="$WORK/personalize.img"
+gunzip -c "$SRC" > "$RAW"
+
+OLD_SIG=$(dd if="$RAW" bs=1 skip=440 count=4 2>/dev/null | od -An -tx1 | tr -d ' \n')
+# PARTUUID je isti zapis, samo obrnutim redoslijedom bajtova
+OLD_UUID=$(echo "$OLD_SIG" | sed 's/\(..\)\(..\)\(..\)\(..\)/\4\3\2\1/')
+NEW_SIG=$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n')
+NEW_UUID=$(echo "$NEW_SIG" | sed 's/\(..\)\(..\)\(..\)\(..\)/\4\3\2\1/')
+echo ">> potpis diska: $OLD_SIG -> $NEW_SIG (PARTUUID $OLD_UUID -> $NEW_UUID)"
+
+# Bajtovi se pišu preko oktalnog zapisa: "\xNN" ne podržava svaki printf
+# (provjereno — negdje ispadne 12 bajtova umjesto 4), a "\NNN" podržava svaki.
+hex2bin() {
+    h="$1"
+    while [ -n "$h" ]; do
+        b=$(printf '%.2s' "$h"); h=$(printf '%s' "$h" | cut -c3-)
+        printf "\\$(printf '%03o' "$((16#$b))")"
+    done
+}
+hex2bin "$NEW_SIG" > "$WORK/sig.bin"
+[ "$(wc -c < "$WORK/sig.bin")" -eq 4 ] || {
+    echo "!! potpis nije 4 bajta nego $(wc -c < "$WORK/sig.bin")"; exit 1; }
+dd if="$WORK/sig.bin" of="$RAW" bs=1 seek=440 count=4 conv=notrunc 2>/dev/null
+
+# svaki zapis starog PARTUUID-a (u grub.cfg) zamijeni novim; jednake su
+# duljine, pa se datoteka ne pomiče i ništa se drugo ne mijenja
+HITS=0
+for OFF in $(grep -abo -F "$OLD_UUID-0" "$RAW" | cut -d: -f1); do
+    printf '%s' "$NEW_UUID" | dd of="$RAW" bs=1 seek="$OFF" count=8 conv=notrunc 2>/dev/null
+    HITS=$((HITS + 1))
+done
+echo ">> PARTUUID zamijenjen na $HITS mjesta"
+[ "$HITS" -gt 0 ] || { echo "!! stari PARTUUID nije nađen u slici — grub bi ostao neusklađen"; exit 1; }
+
+gzip -c "$RAW" > "$DST"
+rm -f "$RAW"
 # otisak se zapisuje uz samo ime datoteke, ne uz punu putanju s build stroja —
 # inače `sha256sum -c` kod korisnika ne radi
 ( cd "$OUT" && sha256sum "$(basename "$DST")" > "$(basename "$DST").sha256" )

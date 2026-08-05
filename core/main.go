@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.35.0"
+const version = "0.36.0"
 
 type server struct {
 	tokenMu       sync.RWMutex

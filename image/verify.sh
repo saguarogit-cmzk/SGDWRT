@@ -65,6 +65,19 @@ DIFF=$((ROOT_MB - WANT_ROOT_MB))
 [ $DIFF -le 16 ] || fail "root particija je ${ROOT_MB} MB, a traženo je ${WANT_ROOT_MB} MB"
 ok "root particija ${ROOT_MB} MB"
 
+# --------------------------------------- potpis diska i usklađenost s GRUB-om
+#
+# Svaka slika mora imati vlastiti potpis: OpenWrt svima daje isti, pa kad su u
+# istom računalu dva takva diska (USB stick i već instalirani interni disk),
+# `root=PARTUUID=…` odgovara objema particijama i sustav krene s krivog diska.
+echo ">> potpis diska"
+SIG=$(dd if="$RAW" bs=1 skip=440 count=4 2>/dev/null | od -An -tx1 | tr -d ' \n')
+UUID=$(echo "$SIG" | sed 's/\(..\)\(..\)\(..\)\(..\)/\4\3\2\1/')
+echo "   potpis $SIG, očekivani PARTUUID $UUID"
+[ "$SIG" != "e82a2d68" ] || fail "slika ima zadani OpenWrt potpis diska — gradnja mu nije dala vlastiti"
+grep -aq -F "$UUID-0" "$RAW" || fail "GRUB u slici ne traži PARTUUID $UUID — potpis i grub.cfg nisu usklađeni"
+ok "grub.cfg traži PARTUUID koji odgovara potpisu"
+
 # ------------------------------------------------------- 2. sadržaj roota
 echo ">> sadržaj root particije"
 LOOP=$(losetup -f --show -P "$RAW")

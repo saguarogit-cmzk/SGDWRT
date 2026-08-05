@@ -230,10 +230,10 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	in.Username = strings.TrimSpace(in.Username)
 
 	var userUUID, passHash, role string
-	var mustChange, disabled int
-	err := s.db.QueryRow(`SELECT uuid, pass_hash, must_change_pw, role, disabled
-		FROM users WHERE username=?`, in.Username).
-		Scan(&userUUID, &passHash, &mustChange, &role, &disabled)
+	var mustChange, disabled, totpEnabled int
+	err := s.db.QueryRow(`SELECT uuid, pass_hash, must_change_pw, role, disabled,
+		totp_enabled FROM users WHERE username=?`, in.Username).
+		Scan(&userUUID, &passHash, &mustChange, &role, &disabled, &totpEnabled)
 	if err == sql.ErrNoRows {
 		verifyPassword(dummyHash, in.Password) // izjednači trajanje
 		loginFailed(ip)
@@ -257,20 +257,23 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	loginOK(ip)
-	s.db.Exec(`UPDATE users SET last_login=datetime('now') WHERE uuid=?`, userUUID)
 
-	s.db.Exec(`DELETE FROM sessions WHERE expires_at <= datetime('now')`)
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+	// Drugi faktor: lozinka je tek pola posla. Sesija se NE otvara dok kod ne
+	// prođe — vraća se kratkotrajan izazov, jednokratan i vezan uz korisnika.
+	if totpEnabled == 1 {
+		ch, cerr := newChallenge(userUUID, in.Username, role)
+		if cerr != nil {
+			writeErr(w, http.StatusInternalServerError, cerr.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"totp_required": true, "challenge": ch, "username": in.Username,
+		})
 		return
 	}
-	token := hex.EncodeToString(raw)
-	var expires string
-	err = s.db.QueryRow(`INSERT INTO sessions (token_hash, user_uuid, expires_at)
-		VALUES (?, ?, datetime('now', ?)) RETURNING expires_at`,
-		tokenHash(token), userUUID,
-		fmt.Sprintf("+%d days", sessionTTLDays)).Scan(&expires)
+
+	s.db.Exec(`UPDATE users SET last_login=datetime('now') WHERE uuid=?`, userUUID)
+	token, expires, err := s.startSession(userUUID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -279,6 +282,26 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		"token": token, "username": in.Username, "expires_at": expires,
 		"must_change_password": mustChange == 1, "role": role,
 	})
+}
+
+// startSession otvara sesiju i vraća token — dijele je obična prijava i drugi
+// korak dvofaktorske, pa se pravila (trajanje, čišćenje isteklih) ne
+// razilaze na dva mjesta.
+func (s *server) startSession(userUUID string) (token, expires string, err error) {
+	s.db.Exec(`DELETE FROM sessions WHERE expires_at <= datetime('now')`)
+	raw := make([]byte, 32)
+	if _, err = rand.Read(raw); err != nil {
+		return "", "", err
+	}
+	token = hex.EncodeToString(raw)
+	err = s.db.QueryRow(`INSERT INTO sessions (token_hash, user_uuid, expires_at)
+		VALUES (?, ?, datetime('now', ?)) RETURNING expires_at`,
+		tokenHash(token), userUUID,
+		fmt.Sprintf("+%d days", sessionTTLDays)).Scan(&expires)
+	if err != nil {
+		return "", "", err
+	}
+	return token, expires, nil
 }
 
 func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {

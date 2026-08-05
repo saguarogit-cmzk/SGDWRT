@@ -857,3 +857,50 @@ nepovratni zahvati.
 
 > **API token zaobilazi uloge** — on je strojni pristup s punim pravima. Zato
 > ga smije vidjeti i mijenjati samo administrator.
+
+## Dvofaktorska prijava — 2FA (Settings)
+
+Uz lozinku i šesteroznamenkasti kod s telefona. Smisao je jednostavan:
+**ukradena lozinka više nije dovoljna**. Kod se mijenja svakih 30 sekundi i
+računa se na samom telefonu — ne šalje se SMS-om i ne treba internet.
+
+Svaki korisnik uključuje 2FA **sam za sebe**, u Settings → Dvofaktorska prijava:
+
+1. Klikni **Postavi** — pojavi se QR kod.
+2. Skeniraj ga aplikacijom: Google Authenticator, Microsoft Authenticator,
+   Aegis, 1Password, Bitwarden — bilo koja radi, standard je isti.
+   Ako aplikacija ne može skenirati, prepiši tajnu ispod koda ručno.
+3. Upiši kod koji aplikacija pokazuje i klikni **Uključi**. Tek tada se 2FA
+   uključuje — dok kod nije potvrđen, ništa nije spremljeno. Time se ne može
+   dogoditi da ostaneš zaključan van zbog krivo skeniranog koda.
+4. **Zapiši 8 pričuvnih kodova** koji se pokažu. Vidjet ćeš ih samo taj put.
+
+Nakon toga prijava ide u dva koraka: ime i lozinka, pa kod.
+
+### Pričuvni kodovi
+
+Za dan kad telefon ostane doma, crkne ili se izgubi. Svaki kod vrijedi
+**jednom**, upisuje se umjesto koda s telefona i prijava njime zapisuje se u
+dnevnik kao upozorenje — da se vidi da se nešto dogodilo. Crtica i velika slova
+nisu bitni, upiši kako ti dođe.
+
+Kad ih ostane malo, u Settings ih možeš izdati **nanovo** — stari tog trena
+prestaju vrijediti.
+
+### Ako korisnik izgubi i telefon i kodove
+
+Administrator u **Users** klikne **Poništi 2FA** na tom računu. Prijava mu se
+vraća na samo lozinku i može postaviti 2FA iznova. To smije **samo
+administrator** — nitko drugi, pa ni operater.
+
+### Sitnice koje su namjerno tako
+
+- **Isti kod ne prolazi dvaput.** Tko ga uhvati preko ramena ili iz mreže, ne
+  može ga iskoristiti tijekom preostalih sekundi.
+- **Kod se prima i 30 sekundi prije i poslije** — satovi na telefonima nisu
+  točni u sekundu. Ako telefon odluta više od toga, namjesti mu automatsko
+  vrijeme.
+- **Krivo utipkan kod ne ruši prijavu** — imaš 5 pokušaja, pa se ponovno
+  upisuje ime i lozinku.
+- **API token nema 2FA** — on je strojni pristup. Tko ima token, ima sve; čuvaj
+  ga u skladu s tim.

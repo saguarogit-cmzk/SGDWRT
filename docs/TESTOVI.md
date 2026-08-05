@@ -676,3 +676,45 @@ tko se prijavi vidio sve račune, uloge i vremena zadnjih prijava. Popravljeno:
 administratorske putanje su zatvorene i za čitanje, za sve uloge osim
 administratora. Jedinični test (`TestPermitted`) pokriva 25 kombinacija uloge,
 metode i putanje.
+
+## Dvofaktorska prijava — TOTP (v0.42.0)
+
+Provjereno na uređaju **05.08.2026.**, sa stvarnim računom i stvarnim prijavama.
+
+Ključno u ovom testu: kodovi **nisu** računati Saguarovim kodom, nego zasebnom
+implementacijom TOTP-a napisanom za tu priliku (Node, `crypto`), koja prije toga
+prolazi službene RFC 6238 vrijednosti. Uređaj je prihvatio kod koji je izračunao
+drugi program — to je dokaz da će raditi i prava aplikacija (Google
+Authenticator, Microsoft Authenticator, Aegis, 1Password), a ne samo naš kod sam
+sa sobom.
+
+| Provjera | Ishod |
+|---|---|
+| Postavljanje | **radi** — tajna, QR kod (SVG, 89 KB) i `otpauth://` URI s nazivom uređaja |
+| Uključivanje krivim kodom | **odbijeno** (401) prije nego se išta spremi |
+| Uključivanje kodom iz neovisne implementacije | **radi** — vraćeno 8 pričuvnih kodova |
+| Prijava lozinkom kad je 2FA uključena | vraća `totp_required` i međukorak, **bez** sjednice |
+| Drugi korak ispravnim kodom | **radi** — dobivena sjednica odmah prolazi na `GET /system` (200) |
+| Isti kod dvaput | **odbijeno** — presretnut kod ne vrijedi do kraja svojih 30 sekundi |
+| Potrošen međukorak | **odbijeno** (401) |
+| Pričuvni kod | **radi**, jednokratan, prihvaća se i bez crtice i velikim slovima; preostalo 8 → 7 → 6 |
+| Zapis u dnevnik | prijava pričuvnim kodom zapisana kao upozorenje |
+| Operater poništava tuđu 2FA | **odbijeno** — „ovo smije samo administrator" (403) |
+| Administrator poništava 2FA | **radi** — prijava se vraća na jedan korak |
+| Stupac 2FA u popisu korisnika | prikazuje se (`"totp": true`) |
+
+### Rupa koju je test uhvatio prije objave
+
+Prvi zapis je brisao međukorak pri **svakom** pokušaju, pa je jedan krivo
+prepisan kod rušio prijavu i tjerao korisnika da ponovno upisuje ime i lozinku.
+Namjera je bila spriječiti pogađanje koda, ali cijena je bila prevelika za nešto
+što se prepisuje s ekrana telefona. Sada je dopušteno 5 pokušaja po prijavi, pa
+se međukorak briše — pogađanje šesteroznamenkastog koda i dalje nema izgleda.
+Pokriveno jediničnim testom (`TestChallengeTries`).
+
+### Što nije provjereno
+
+| Stavka | Zašto |
+|---|---|
+| Skeniranje QR koda pravom aplikacijom | nema telefona u lancu ispitivanja; `otpauth://` URI je provjeren znak po znak, a aplikacije čitaju upravo njega |
+| Ponašanje kad sat na telefonu odluta više od minute | prozor od ±30 s pokriven jediničnim testom, dulji pomak nije simuliran na uređaju |

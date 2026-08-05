@@ -255,6 +255,11 @@ CREATE TABLE IF NOT EXISTS users (
     full_name   TEXT,
     disabled    INTEGER NOT NULL DEFAULT 0,
     last_login  TEXT,
+    -- dvofaktorska prijava (TOTP): tajna postoji i prije uključivanja, dok
+    -- korisnik ne dokaže kodom da mu aplikacija radi
+    totp_secret TEXT,
+    totp_enabled INTEGER NOT NULL DEFAULT 0,
+    totp_last   INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -357,4 +362,14 @@ CREATE TABLE IF NOT EXISTS nw_routes (
     notes       TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Pričuvni kodovi za dvofaktorsku prijavu. Čuva se samo sažetak, svaki kod
+-- vrijedi jednom (briše se pri upotrebi). Bez njih bi izgubljen telefon
+-- značio zaključavanje van i oporavak preko SSH-a.
+CREATE TABLE IF NOT EXISTS totp_recovery (
+    user_uuid   TEXT NOT NULL REFERENCES users(uuid) ON DELETE CASCADE,
+    code_hash   TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_uuid, code_hash)
 );

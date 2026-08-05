@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.41.0"
+const version = "0.42.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -175,6 +175,13 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
+	mux.HandleFunc("POST /api/v1/auth/login/totp", s.handleLoginTOTP)
+	mux.Handle("GET /api/v1/auth/2fa", s.auth(s.handleTOTPStatus))
+	mux.Handle("POST /api/v1/auth/2fa/setup", s.auth(s.handleTOTPSetup))
+	mux.Handle("POST /api/v1/auth/2fa/enable", s.auth(s.handleTOTPEnable))
+	mux.Handle("POST /api/v1/auth/2fa/disable", s.auth(s.handleTOTPDisable))
+	mux.Handle("POST /api/v1/auth/2fa/recovery", s.auth(s.handleTOTPRecoveryNew))
+	mux.Handle("POST /api/v1/users/{uuid}/totp-reset", s.auth(s.handleUserTOTPReset))
 	mux.Handle("POST /api/v1/auth/logout", s.auth(s.handleLogout))
 	mux.Handle("POST /api/v1/auth/logout-others", s.auth(s.handleLogoutOthers))
 	mux.Handle("GET /api/v1/auth/session", s.auth(s.handleSessionInfo))

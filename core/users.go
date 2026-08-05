@@ -106,6 +106,7 @@ type userRow struct {
 	Disabled  bool   `json:"disabled"`
 	MustChange bool  `json:"must_change_pw"`
 	LastLogin string `json:"last_login"`
+	TOTP      bool   `json:"totp"`
 	Sessions  int    `json:"sessions"`
 	CreatedAt string `json:"created_at"`
 }
@@ -113,7 +114,7 @@ type userRow struct {
 func (s *server) userList() ([]userRow, error) {
 	rows, err := s.db.Query(`SELECT u.uuid, u.username, COALESCE(u.full_name,''),
 		u.role, u.disabled, u.must_change_pw, COALESCE(u.last_login,''),
-		u.created_at,
+		u.totp_enabled, u.created_at,
 		(SELECT COUNT(*) FROM sessions se
 		   WHERE se.user_uuid = u.uuid AND se.expires_at > datetime('now'))
 		FROM users u ORDER BY u.username`)
@@ -125,7 +126,7 @@ func (s *server) userList() ([]userRow, error) {
 	for rows.Next() {
 		var u userRow
 		if err := rows.Scan(&u.UUID, &u.Username, &u.FullName, &u.Role,
-			&u.Disabled, &u.MustChange, &u.LastLogin, &u.CreatedAt,
+			&u.Disabled, &u.MustChange, &u.LastLogin, &u.TOTP, &u.CreatedAt,
 			&u.Sessions); err != nil {
 			return nil, err
 		}

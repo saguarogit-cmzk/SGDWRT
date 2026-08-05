@@ -1779,6 +1779,109 @@ async function applyUpdate(source) {
 
 let tokVisible = false;
 
+/* ---------- dvofaktorska prijava ---------- */
+
+function showRecoveryCodes(codes) {
+  $("tf-codes-list").textContent = (codes || []).join("\n");
+  $("tf-codes").classList.remove("hidden");
+}
+
+async function loadTwoFactor() {
+  const x = await api("/auth/2fa");
+  $("tf-off").classList.toggle("hidden", x.enabled || x.pending);
+  $("tf-enroll").classList.toggle("hidden", !x.pending);
+  $("tf-on").classList.toggle("hidden", !x.enabled);
+
+  const badge = $("tf-state");
+  if (x.enabled) {
+    setPill(badge, "good", "uključena");
+    setNote("tf-note", "pričuvnih kodova: " + x.recovery_left +
+      (x.recovery_left === 0 ? " — izdaj nove!" : ""));
+  } else if (x.pending) {
+    setPill(badge, "warn", "čeka potvrdu");
+    setNote("tf-note", "upiši kod iz aplikacije da se uključi");
+  } else {
+    setPill(badge, "off", "isključena");
+    setNote("tf-note", "prijava traži samo lozinku");
+  }
+}
+
+$("tf-setup").addEventListener("click", async () => {
+  $("tf-result").textContent = "Pripremam…";
+  try {
+    const r = await api("/auth/2fa/setup", "POST", {});
+    $("tf-secret").textContent = r.secret_grouped || r.secret;
+    const qr = $("tf-qr");
+    qr.replaceChildren();
+    if (r.svg) {
+      // SVG dolazi s uređaja (qrencode) — ubacuje se kao slika, ne kao
+      // živi dokument, pa ne može ništa izvesti
+      const img = document.createElement("img");
+      img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(r.svg)));
+      img.alt = "QR kod";
+      img.style.width = "180px";
+      img.style.imageRendering = "pixelated";
+      qr.append(img);
+    } else {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = "QR kod nije dostupan (alat qrencode nije instaliran) — " +
+        "upiši tajnu ručno.";
+      qr.append(p);
+    }
+    $("tf-result").textContent = "";
+    await loadTwoFactor();
+    $("tf-code").focus();
+  } catch (e) {
+    $("tf-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("tf-cancel").addEventListener("click", async () => {
+  // tajna ostaje zapisana ali neaktivna; sljedeći Uključi je zamijeni novom
+  $("tf-enroll").classList.add("hidden");
+  $("tf-off").classList.remove("hidden");
+});
+
+$("tf-enable").addEventListener("click", async () => {
+  $("tf-result").textContent = "Provjeravam kod…";
+  try {
+    const r = await api("/auth/2fa/enable", "POST", { code: $("tf-code").value.trim() });
+    $("tf-result").textContent = "Uključeno.";
+    showRecoveryCodes(r.recovery_codes);
+    await loadTwoFactor();
+  } catch (e) {
+    $("tf-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("tf-disable").addEventListener("click", async () => {
+  if (!confirm("Isključiti dvofaktorsku prijavu? Račun će štititi samo lozinka.")) return;
+  $("tf-result").textContent = "Isključujem…";
+  try {
+    await api("/auth/2fa/disable", "POST", { password: $("tf-pass").value });
+    $("tf-pass").value = "";
+    $("tf-codes").classList.add("hidden");
+    $("tf-result").textContent = "Isključeno.";
+    await loadTwoFactor();
+  } catch (e) {
+    $("tf-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("tf-recovery").addEventListener("click", async () => {
+  $("tf-result").textContent = "Izdajem nove kodove…";
+  try {
+    const r = await api("/auth/2fa/recovery", "POST", { password: $("tf-pass").value });
+    $("tf-pass").value = "";
+    $("tf-result").textContent = "Stari kodovi više ne vrijede.";
+    showRecoveryCodes(r.recovery_codes);
+    await loadTwoFactor();
+  } catch (e) {
+    $("tf-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
 async function loadGuiCert() {
   const x = await api("/settings/guicert");
   $("gc-host").value = x.host || "";
@@ -1862,6 +1965,7 @@ $("gc-issue").addEventListener("click", async () => {
 
 async function loadSettings() {
   loadGuiCert().catch(() => setPill($("gc-state"), "off", "nedostupno"));
+  loadTwoFactor().catch(() => setPill($("tf-state"), "off", "nedostupno"));
   const [s, sys, mon] = await Promise.all([
     api("/auth/session"), api("/settings/system"), api("/monitor"),
   ]);
@@ -2538,11 +2642,22 @@ $("login-form").addEventListener("submit", async (ev) => {
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || "HTTP " + r.status);
+    const firstPass = $("pass-input").value;
+    $("pass-input").value = "";
+    // drugi faktor: sesija se još nije otvorila, samo je izdan izazov
+    if (data.totp_required) {
+      totpChallenge = data.challenge;
+      totpPendingPass = firstPass;
+      $("login-form").classList.add("hidden");
+      $("totp-error").classList.add("hidden");
+      $("totp-code").value = "";
+      $("totp-form").classList.remove("hidden");
+      $("totp-code").focus();
+      return;
+    }
     token = data.token;
     localStorage.setItem("saguaro_token", token);
     localStorage.setItem("saguaro_user", $("user-input").value.trim());
-    const firstPass = $("pass-input").value;
-    $("pass-input").value = "";
     // zadana lozinka s instalacije: uređaj do promjene ne dopušta ništa drugo
     if (data.must_change_password) {
       showFirstPasswordForm(firstPass);
@@ -2551,6 +2666,67 @@ $("login-form").addEventListener("submit", async (ev) => {
     await start();
   } catch {
     logout(true);
+  }
+});
+
+/* ---------- drugi korak: kod iz aplikacije ---------- */
+
+let totpChallenge = "";
+let totpPendingPass = "";
+
+$("totp-back").addEventListener("click", () => {
+  totpChallenge = "";
+  totpPendingPass = "";
+  $("totp-form").classList.add("hidden");
+  $("login-form").classList.remove("hidden");
+  $("pass-input").focus();
+});
+
+$("totp-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const err = $("totp-error");
+  err.classList.add("hidden");
+  try {
+    const r = await fetch(API + "/auth/login/totp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        challenge: totpChallenge,
+        code: $("totp-code").value.trim(),
+      }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      err.textContent = data.error || "Kod nije prihvaćen.";
+      err.classList.remove("hidden");
+      // izazov je jednokratan — nakon promašaja treba ponovno lozinkom
+      totpChallenge = "";
+      setTimeout(() => {
+        $("totp-form").classList.add("hidden");
+        $("login-form").classList.remove("hidden");
+      }, 2500);
+      return;
+    }
+    token = data.token;
+    localStorage.setItem("saguaro_token", token);
+    localStorage.setItem("saguaro_user", data.username);
+    $("totp-form").classList.add("hidden");
+    $("login-form").classList.remove("hidden");
+    if (data.used_recovery) {
+      alert("Prijava pričuvnim kodom. Preostalo ih je " + data.recovery_left +
+        ".\nTaj kod više ne vrijedi — kad ih ponestane, izdaj novi set u Settings.");
+    }
+    const pass = totpPendingPass;
+    totpChallenge = "";
+    totpPendingPass = "";
+    if (data.must_change_password) {
+      showFirstPasswordForm(pass);
+      return;
+    }
+    await start();
+  } catch (e) {
+    err.textContent = (e && e.message) || "Prijava nije uspjela.";
+    err.classList.remove("hidden");
   }
 });
 
@@ -4598,6 +4774,7 @@ async function loadUsers() {
       ROLE_SHORT[u.role] || u.role,
       u.last_login || "još nijednom",
       String(u.sessions),
+      u.totp ? "uključena" : "—",
     ]) {
       const td = document.createElement("td");
       td.textContent = v;
@@ -4616,15 +4793,24 @@ async function loadUsers() {
     tdA.className = "row-actions";
     const acts = [
       btnSm("Uredi", false, () => openUserRole(u)),
-      btnSm("Pristup", false, () => {
+      btnSm("Lozinka", false, () => {
         usPwUUID = u.uuid;
         $("uspw-title").textContent = "Nova lozinka za " + u.username;
         $("uspw-form").reset();
         $("uspw-dialog").showModal();
       }),
     ];
+    if (u.totp) {
+      acts.push(btnSm("Poništi 2FA", false, async () => {
+        if (!confirm(`Isključiti dvofaktorsku prijavu korisniku "${u.username}"?
+
+Radi se kad izgubi telefon i pričuvne kodove. Radnja se bilježi.`)) return;
+        await api("/users/" + u.uuid + "/totp-reset", "POST", {}).catch(alertErr);
+        loadUsers().catch(alertErr);
+      }));
+    }
     if (u.sessions > 0) {
-      acts.push(btnSm("Ukloni lozinku", false, async () => {
+      acts.push(btnSm("Odjavi", false, async () => {
         if (!confirm(`Zatvoriti sve sesije korisnika "${u.username}"?`)) return;
         await api("/users/" + u.uuid + "/sessions", "DELETE").catch(alertErr);
         loadUsers().catch(alertErr);

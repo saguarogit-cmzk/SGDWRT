@@ -192,7 +192,7 @@ paketa. Trud je procijenjen u danima rada.
 | # | Mogućnost | Što korisnik dobiva | Kako | Trud | Preporuka |
 |---|---|---|---|---|---|
 | ~~E1~~ | **NAPRAVLJENO (v0.41.0)** — više korisnika i uloge | admin / operator / viewer; ovlasti se provjeravaju u auth međusloju, zadnji administrator zaštićen | tablica users + provjera po metodi i putanji | 1–2 dana | **visoka** |
-| **E2** | **Dvofaktorska prijava (TOTP)** | ukradena lozinka nije dovoljna | u Go-u, bez novih paketa | 1–2 dana | **visoka** |
+| ~~E2~~ | **NAPRAVLJENO (v0.42.0)** — dvofaktorska prijava (TOTP) | ukradena lozinka nije dovoljna; QR kod za aplikaciju, 8 pričuvnih kodova, administrator može poništiti tuđu 2FA | TOTP po RFC 6238 u Go-u, QR preko `qrencode` | 1–2 dana | **visoka** |
 | ~~E3~~ | **NAPRAVLJENO (v0.40.0)** — pravi certifikat za sučelje | Let's Encrypt za :8443, ista infrastruktura kao za proxy; vruća zamjena bez restarta, self-signed kao pričuva | paket acme + spremište certifikata s GetCertificate | 1 dan | srednja |
 | **E4** | **Prijava kroz Active Directory / LDAP** | korisnici iz domene, bez zasebnih lozinka | LDAP klijent u Go-u | 3–4 dana | srednja |
 | ~~E5~~ | **NAPRAVLJENO (v0.26.0)** — nadogradnja OpenWrt-a iz sučelja | firmware uz automatski backup i keep listu (koja već radi) | `sysupgrade` + provjera potpisa | 2–3 dana | srednja |

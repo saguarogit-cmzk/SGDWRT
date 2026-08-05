@@ -477,3 +477,31 @@ Provjereno pod `dash`-om (najbliži busybox `ash`-u):
 | `33`, `0`, `abc`, `255.255.255.999` | odbijeno |
 | `192.168.50.224/24` | ip `192.168.50.224`, maska `255.255.255.0` |
 | `1.2.3.4/33` | odbijen prefiks |
+
+## Gotova slika na stvarnom uređaju (05.08.2026.) — **radi**
+
+Slika v0.37.0 napisana na USB 2.0 stick (14,4 GB) i uređaj IN100 dignut s nje.
+
+| Provjera | Ishod |
+|---|---|
+| Dizanje s USB-a | **radi** — root `990,7 MB` (slika), ne 220 GB s internog diska. Promjena potpisa diska po slici je odradila svoje |
+| Data particija | **`sdb3` 13,4 GB stvorena sama** pri prvom dizanju, iz slobodnog prostora |
+| `/opt/saguaro` na njoj | **radi** — `/dev/sdb3 on /opt/saguaro`, sadrži `bin`, `web`, `data`, `etc`, `log`, `backup` |
+| Zapis geometrije | `/etc/saguaro-datapart.json` upisan |
+| Keep lista | **ispravno izostavlja `/opt/saguaro`** jer je data particija montirana (D-013), a nabraja init skripte, `rc.d` poveznice i zapis o data particiji |
+| Saguaro servis | radi; `GET /api/v1/health` → **HTTP 200** |
+| Konzolni čarobnjak | `/usr/sbin/saguaro-setup` na mjestu |
+| LAN adresa postavljena s konzole | **radi** — `192.168.50.224/24`, zadana ruta preko `192.168.50.1`, uređaj dohvatljiv SSH-om i sučeljem |
+| Izrada backupa | **radi** — arhiva 43,6 KB |
+| Samoprovjera | **22 prošlo / 1 palo / 14 preskočeno** |
+
+Jedini preostali pad je istinit: kopija ne izlazi s uređaja (nije postavljen ni
+poslužitelj ni e-mail). To se rješava postavkama, nije kvar.
+
+### Greška u samoprovjeri nađena istom prilikom
+
+Provjera keep liste javljala je da bi se izgubio `/etc/sysctl.d/99-saguaro.conf`,
+a ta datoteka na svježem uređaju **još ne postoji** — nastaje tek kad se
+primijeni očvršćivanje. Provjera je tražila datoteku koje nema. Popravljeno:
+nepostojeća datoteka se preskače. Nakon popravka 21 prošlo / 2 palo, a nakon
+izrade backupa 22 / 1.

@@ -414,6 +414,9 @@ fi
 if [ -f /lib/upgrade/keep.d/saguaro ]; then
     MISS=""
     for f in $(grep -v '^#' /lib/upgrade/keep.d/saguaro); do
+        # datoteka koja još ne postoji nije propust: sysctl zapis nastaje tek
+        # kad se primijeni očvršćivanje, a na svježem uređaju ga nema
+        [ -e "$f" ] || continue
         sysupgrade -l 2>/dev/null | grep -q "^$f" || MISS="$MISS $f"
     done
     if [ -z "$MISS" ]; then

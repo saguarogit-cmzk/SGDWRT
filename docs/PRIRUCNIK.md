@@ -15,7 +15,7 @@ Moduli su složeni u sedam skupina, po načelu **jedan modul = jedan posao**:
 | **Proxy** | Reverse proxy |
 | **Filtering** | IP blocklists · DNS filter · Scan detection |
 | **VPN** | WireGuard · OpenVPN |
-| **System** | Settings · System log · Backup · Inventory · Updates · Help |
+| **System** | Settings · Users · System log · Backup · Inventory · Updates · Help |
 
 **Vodoravna traka na vrhu** bira skupinu, **lijevi stupac** bira modul unutar
 nje. Moduli nose ustaljene stručne nazive (DHCP, QoS, Port forwarding, Backup…)
@@ -823,3 +823,37 @@ poslužitelj (staging) za isprobavanje, pa **Zatraži certifikat**. Certifikat:
 
 Micanjem DNS imena sve se počisti: firewall preusmjerenje, acme zapis (da ga
 noćni cron ne pokušava obnavljati) i povratak na self-signed.
+
+## Users (System) — korisnici i uloge
+
+Svaka osoba svoj račun: promjene se u dnevniku pripisuju **osobi**, a ne svima
+pod istim imenom. Tri uloge, namjerno malo — više njih nitko ne bi ispravno
+postavio:
+
+| Uloga | Što smije |
+|---|---|
+| **Administrator** | sve, uključivo korisnike, API token i nepovratne zahvate |
+| **Operater** | svakodnevni rad: mreža, firewall, VPN, DHCP, backup, dijagnostika |
+| **Pregled** | samo gledanje (GET), ništa se ne mijenja |
+
+Operateru i pregledu zatvoreno je ovo: **upravljanje korisnicima**, **API
+token** (pročitan je jednako opasan kao promijenjen), **lozinka uređaja**,
+**upis firmwarea**, **dijeljenje diska** i **vraćanje backupa**. Popis je
+namjerno kratak i drži se dvije vrste opasnosti: preuzimanje potpune kontrole i
+nepovratni zahvati.
+
+- **Nova lozinka koju postavi administrator je privremena** — korisnik je mora
+  promijeniti pri prvoj prijavi, a sve njegove sesije se odmah zatvaraju. Inače
+  bi lozinku znalo dvoje ljudi.
+- **Isključen račun** ne može ni ući ni nastaviti raditi s otvorenom sesijom.
+  Prijava mu javlja istu poruku kao za krivu lozinku — izvana se ne razaznaje
+  postoji li račun.
+- **Zadnji administrator** se ne može obrisati, isključiti ni degradirati, a
+  **vlastitom računu** ne možeš oduzeti prava — inače bi se čovjek zaključao
+  van, i to najčešće ne primijeti dok ne bude kasno.
+- Korisničko ime se poslije **ne mijenja** — dnevnik bi izgubio trag.
+- Moduli koje uloga ne smije otvoriti **skrivaju se iz izbornika**, da se ne
+  kuca u zabranjena vrata. Uloga piše i u statusnoj traci.
+
+> **API token zaobilazi uloge** — on je strojni pristup s punim pravima. Zato
+> ga smije vidjeti i mijenjati samo administrator.

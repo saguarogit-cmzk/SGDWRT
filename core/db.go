@@ -42,6 +42,11 @@ func openDB(path string) (*sql.DB, error) {
 	db.Exec(`ALTER TABLE fw_rules ADD COLUMN stop_time TEXT`)
 	db.Exec(`ALTER TABLE fw_rules ADD COLUMN weekdays TEXT`)
 	db.Exec(`ALTER TABLE users ADD COLUMN must_change_pw INTEGER NOT NULL DEFAULT 0`)
+	// uloge (E1): postojeći jedini korisnik ostaje admin, što je i bio
+	db.Exec(`ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'`)
+	db.Exec(`ALTER TABLE users ADD COLUMN full_name TEXT`)
+	db.Exec(`ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0`)
+	db.Exec(`ALTER TABLE users ADD COLUMN last_login TEXT`)
 	db.Exec(`ALTER TABLE ovpn_clients ADD COLUMN pass_hash TEXT`)
 	db.Exec(`ALTER TABLE rp_sites ADD COLUMN tls_mode TEXT NOT NULL DEFAULT 'passthrough'`)
 	db.Exec(`ALTER TABLE rp_sites ADD COLUMN acme_staging INTEGER NOT NULL DEFAULT 0`)

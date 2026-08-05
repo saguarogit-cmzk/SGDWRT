@@ -187,16 +187,23 @@ func (s *server) sessionUser(token string) string {
 // sessionUserState uz korisničko ime vraća i mora li korisnik prvo promijeniti
 // zadanu lozinku.
 func (s *server) sessionUserState(token string) (string, bool) {
-	var username string
-	var mustChange int
-	err := s.db.QueryRow(`SELECT u.username, u.must_change_pw FROM sessions se
-		JOIN users u ON u.uuid = se.user_uuid
+	name, mustChange, _ := s.sessionUserRole(token)
+	return name, mustChange
+}
+
+// sessionUserRole vraća i ulogu — po njoj se odlučuje što korisnik smije.
+// Isključen korisnik se tretira kao neprijavljen, i kad mu sesija još traje.
+func (s *server) sessionUserRole(token string) (string, bool, string) {
+	var username, role string
+	var mustChange, disabled int
+	err := s.db.QueryRow(`SELECT u.username, u.must_change_pw, u.role, u.disabled
+		FROM sessions se JOIN users u ON u.uuid = se.user_uuid
 		WHERE se.token_hash = ? AND se.expires_at > datetime('now')`,
-		tokenHash(token)).Scan(&username, &mustChange)
-	if err != nil {
-		return "", false
+		tokenHash(token)).Scan(&username, &mustChange, &role, &disabled)
+	if err != nil || disabled == 1 {
+		return "", false, ""
 	}
-	return username, mustChange == 1
+	return username, mustChange == 1, role
 }
 
 func bearerToken(r *http.Request) string {
@@ -222,10 +229,11 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	in.Username = strings.TrimSpace(in.Username)
 
-	var userUUID, passHash string
-	var mustChange int
-	err := s.db.QueryRow(`SELECT uuid, pass_hash, must_change_pw FROM users
-		WHERE username=?`, in.Username).Scan(&userUUID, &passHash, &mustChange)
+	var userUUID, passHash, role string
+	var mustChange, disabled int
+	err := s.db.QueryRow(`SELECT uuid, pass_hash, must_change_pw, role, disabled
+		FROM users WHERE username=?`, in.Username).
+		Scan(&userUUID, &passHash, &mustChange, &role, &disabled)
 	if err == sql.ErrNoRows {
 		verifyPassword(dummyHash, in.Password) // izjednači trajanje
 		loginFailed(ip)
@@ -241,7 +249,15 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "pogrešno korisničko ime ili lozinka")
 		return
 	}
+	// isključen račun ne smije unutra ni s ispravnom lozinkom; poruka je ista
+	// kao za krivu lozinku da se izvana ne razaznaje postoji li račun
+	if disabled == 1 {
+		loginFailed(ip)
+		writeErr(w, http.StatusUnauthorized, "pogrešno korisničko ime ili lozinka")
+		return
+	}
 	loginOK(ip)
+	s.db.Exec(`UPDATE users SET last_login=datetime('now') WHERE uuid=?`, userUUID)
 
 	s.db.Exec(`DELETE FROM sessions WHERE expires_at <= datetime('now')`)
 	raw := make([]byte, 32)
@@ -261,7 +277,7 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token": token, "username": in.Username, "expires_at": expires,
-		"must_change_password": mustChange == 1,
+		"must_change_password": mustChange == 1, "role": role,
 	})
 }
 
@@ -282,15 +298,17 @@ func (s *server) handleLogoutOthers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleSessionInfo(w http.ResponseWriter, r *http.Request) {
-	username := s.sessionUser(bearerToken(r))
+	username, _, role := s.sessionUserRole(bearerToken(r))
 	if username == "" {
-		username = "api-token" // pristup strojnim tokenom, bez sesije
+		// pristup strojnim tokenom, bez sesije — token ima puna prava
+		username, role = "api-token", roleAdmin
 	}
 	var n int
 	s.db.QueryRow(`SELECT COUNT(*) FROM sessions
 		WHERE expires_at > datetime('now')`).Scan(&n)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"username": username, "active_sessions": n,
+		"role": role, "role_label": roleLabels[role],
 	})
 }
 

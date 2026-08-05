@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.40.0"
+const version = "0.41.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -181,6 +181,12 @@ func main() {
 	mux.Handle("POST /api/v1/auth/password", s.auth(s.handlePasswordChange))
 	mux.Handle("GET /api/v1/settings/token", s.auth(s.handleTokenGet))
 	mux.Handle("POST /api/v1/settings/token/regenerate", s.auth(s.handleTokenRegen))
+	mux.Handle("GET /api/v1/users", s.auth(s.handleUserList))
+	mux.Handle("POST /api/v1/users", s.auth(s.handleUserCreate))
+	mux.Handle("PUT /api/v1/users/{uuid}", s.auth(s.handleUserUpdate))
+	mux.Handle("DELETE /api/v1/users/{uuid}", s.auth(s.handleUserDelete))
+	mux.Handle("POST /api/v1/users/{uuid}/password", s.auth(s.handleUserPassword))
+	mux.Handle("DELETE /api/v1/users/{uuid}/sessions", s.auth(s.handleUserSessions))
 	mux.Handle("POST /api/v1/dhcp/server", s.auth(s.handleDHCPServerSet))
 	mux.Handle("GET /api/v1/system", s.auth(s.handleSystem))
 	mux.Handle("GET /api/v1/system/status", s.auth(s.handleStatus))
@@ -470,7 +476,7 @@ func (s *server) auth(next http.HandlerFunc) http.Handler {
 			next(w, r)
 			return
 		}
-		if user, mustChange := s.sessionUserState(got); user != "" {
+		if user, mustChange, role := s.sessionUserRole(got); user != "" {
 			// dok je na snazi zadana lozinka s instalacije, dopuštena je samo
 			// njena promjena i odjava — sve ostalo se odbija
 			if mustChange && !allowedWithDefaultPassword(r.URL.Path) {
@@ -479,6 +485,13 @@ func (s *server) auth(next http.HandlerFunc) http.Handler {
 					"detail": "Ova lozinka je privremena (zadana s instalacije ili " +
 						"postavljena sa SSH-a) i mora se promijeniti prije " +
 						"korištenja ostalih funkcija.",
+				})
+				return
+			}
+			// uloga odlučuje što korisnik smije (E1)
+			if ok, why := permitted(role, r.Method, r.URL.Path); !ok {
+				writeJSON(w, http.StatusForbidden, map[string]string{
+					"error": "forbidden", "detail": why,
 				})
 				return
 			}

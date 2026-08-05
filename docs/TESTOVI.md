@@ -651,3 +651,28 @@ Provjereno na uređaju **05.08.2026.**:
 | Cijeli lanac izdavanja (staging) | **radi do očekivanog kraja** — acme konfiguracija upisana (`sag_gui`, staging), `renew` pokrenut, certifikat pošteno javljen kao neizdan (probno ime ne pokazuje na uređaj) |
 | Micanje imena | **radi** — počišćena fw pravila i acme zapis (bez toga bi noćni cron zauvijek pokušavao izdati za staro ime — nađeno i popravljeno prije objave), sučelje i dalje radi |
 | **Stvarno izdavanje certifikata** | **nije provjerivo iz laba** — uređaj je iza NAT-a bez javnog DNS imena. Kod korisnika s javnom adresom: upiši ime, e-mail i klikni Zatraži; sve ostalo u lancu je dokazano. |
+
+## Korisnici i uloge (v0.41.0)
+
+Provjereno na uređaju **05.08.2026.**, sa stvarnim računima i prijavama:
+
+| Provjera | Ishod |
+|---|---|
+| Migracija postojeće baze | **radi** — zatečeni `admin` dobio ulogu administratora |
+| Validacije (ime, uloga, lozinka) | **odbijeno** s HTTP 400 za svaku |
+| Prva prijava novog računa | **radi** — `must_change_password: true`, sve osim promjene lozinke vraća 403 |
+| **Operater smije** | `GET /system` 200, `GET /connections` 200, `POST /backup/create` 200 |
+| **Operater ne smije** | `/users` 403, `/settings/token` 403, `/openwrt/flash` 403, `/backup/restore` 403, `/system/device-password` 403 |
+| **Pregled** | čitanje 200; `POST /backup/create` i `/firewall/apply` 403 |
+| Isključen račun | sesija odmah prestaje vrijediti (401), prijava odbijena istom porukom kao za krivu lozinku |
+| Zadnji administrator | degradacija, isključivanje i brisanje **odbijeni** s HTTP 409 |
+| Samoprovjera | 42 prošlo / 1 palo (nepromijenjeno) |
+
+### Rupa koju je test uhvatio prije objave
+
+Prvi zapis pravila propuštao je `viewer` ulozi **čitanje popisa korisnika** —
+provjeravala se samo metoda (`GET`), ne i osjetljivost putanje. Time bi svatko
+tko se prijavi vidio sve račune, uloge i vremena zadnjih prijava. Popravljeno:
+administratorske putanje su zatvorene i za čitanje, za sve uloge osim
+administratora. Jedinični test (`TestPermitted`) pokriva 25 kombinacija uloge,
+metode i putanje.

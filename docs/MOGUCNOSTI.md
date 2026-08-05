@@ -191,7 +191,7 @@ paketa. Trud je procijenjen u danima rada.
 
 | # | Mogućnost | Što korisnik dobiva | Kako | Trud | Preporuka |
 |---|---|---|---|---|---|
-| **E1** | **Više korisnika i uloge** | serviser vidi sve, korisnik samo svoje module; tko je što radio piše u tragu promjena | tablica `users` već postoji, treba uloge i sučelje | 2–3 dana | **visoka** |
+| ~~E1~~ | **NAPRAVLJENO (v0.41.0)** — više korisnika i uloge | admin / operator / viewer; ovlasti se provjeravaju u auth međusloju, zadnji administrator zaštićen | tablica users + provjera po metodi i putanji | 1–2 dana | **visoka** |
 | **E2** | **Dvofaktorska prijava (TOTP)** | ukradena lozinka nije dovoljna | u Go-u, bez novih paketa | 1–2 dana | **visoka** |
 | ~~E3~~ | **NAPRAVLJENO (v0.40.0)** — pravi certifikat za sučelje | Let's Encrypt za :8443, ista infrastruktura kao za proxy; vruća zamjena bez restarta, self-signed kao pričuva | paket acme + spremište certifikata s GetCertificate | 1 dan | srednja |
 | **E4** | **Prijava kroz Active Directory / LDAP** | korisnici iz domene, bez zasebnih lozinka | LDAP klijent u Go-u | 3–4 dana | srednja |

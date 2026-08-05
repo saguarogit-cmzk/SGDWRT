@@ -119,7 +119,8 @@ function renderStatus(x) {
   // statusna traka na dnu stranice
   $("sb-uptime").textContent = fmtUptime(x.uptime_seconds);
   $("sb-load").textContent = x.load.map((n) => n.toFixed(2)).join("  ");
-  $("sb-user").textContent = localStorage.getItem("saguaro_user") || "—";
+  $("sb-user").textContent = (localStorage.getItem("saguaro_user") || "—") +
+    (myRole && myRole !== "admin" ? " (" + (ROLE_SHORT[myRole] || myRole) + ")" : "");
 }
 
 function renderStorage(x) {
@@ -2257,6 +2258,7 @@ const MODULES = {
   backup:    ["Backup", "Sigurnosne kopije uređaja i vraćanje", () => loadBackup()],
   update:    ["Updates", "Nadogradnja Saguara i sustava uređaja (OpenWrt)", () => loadUpdate()],
   settings:  ["Settings", "Lozinke, sesije, vrijeme i API token", () => loadSettings()],
+  users:     ["Users", "Korisnici sučelja i njihove uloge", () => loadUsers()],
   logs:      ["System log", "Sustavski log, trajno spremanje i slanje na poslužitelj", () => loadLogsView()],
   help:      ["Help", "Upute za rad — kako koristiti svaki modul", () => null],
 };
@@ -2287,6 +2289,7 @@ const MODULE_KEYS = {
   backup: "sigurnosna kopija vraćanje arhiva",
   update: "ažuriranje nadogradnja verzija",
   settings: "postavke lozinka sesija vrijeme token",
+  users: "korisnici računi uloge ovlasti prava pristup admin operater",
   logs: "logovi zapisi dnevnik syslog",
   help: "pomoć upute priručnik",
 };
@@ -2299,8 +2302,20 @@ const NAV_GROUPS = [
   ["Filtering", ["protection", "dnsfilter", "scan"]],
   ["Proxy", ["rproxy"]],
   ["VPN", ["wireguard", "openvpn"]],
-  ["System", ["settings", "logs", "backup", "devices", "update", "help"]],
+  ["System", ["settings", "users", "logs", "backup", "devices", "update", "help"]],
 ];
+// uloga prijavljenog korisnika; postavlja se pri pokretanju iz /auth/session
+let myRole = "admin";
+let myRoleLabel = "";
+
+// moduli koje pojedina uloga ne smije ni otvoriti — skrivaju se iz izbornika
+// da korisnik ne kuca u zabranjena vrata
+const ROLE_HIDDEN = { operator: ["users"], viewer: ["users"] };
+const visibleModules = (ids) => {
+  const hide = ROLE_HIDDEN[myRole] || [];
+  return ids.filter((id) => !hide.includes(id));
+};
+
 const groupOf = (id) => NAV_GROUPS.findIndex((g) => g[1].includes(id));
 const lastByGroup = {};
 
@@ -2313,8 +2328,9 @@ function renderNav(active) {
     b.className = "nav-cat" + (i === gi ? " active" : "");
     b.textContent = g[0];
     b.onclick = () => {
-      const target = lastByGroup[i] && g[1].includes(lastByGroup[i])
-        ? lastByGroup[i] : g[1][0];
+      const vis = visibleModules(g[1]);
+      const target = lastByGroup[i] && vis.includes(lastByGroup[i])
+        ? lastByGroup[i] : vis[0];
       location.hash = "#/" + (target === "dashboard" ? "" : target);
     };
     nav.append(b);
@@ -2323,7 +2339,7 @@ function renderNav(active) {
   $("side-h").textContent = NAV_GROUPS[gi][0];
   const sub = $("subnav");
   sub.replaceChildren();
-  for (const id of NAV_GROUPS[gi][1]) {
+  for (const id of visibleModules(NAV_GROUPS[gi][1])) {
     const b = document.createElement("button");
     b.className = "subtab" + (id === active ? " active" : "");
     b.textContent = MODULES[id][0];
@@ -2460,6 +2476,13 @@ function stopTimers() { timers.forEach(clearInterval); timers = []; }
 
 async function start() {
   try {
+    // uloga se dohvaća prvo: po njoj se skrivaju moduli koje korisnik ionako
+    // ne smije otvoriti, da ne klika u zid
+    try {
+      const se = await api("/auth/session");
+      myRole = se.role || "admin";
+      myRoleLabel = se.role_label || "";
+    } catch { myRole = "admin"; }
     renderSystem(await api("/system"));
     await Promise.all([tickFast(), tickSlow()]);
     // safe mode: uspješan dohvat sučelja = potvrda da promjena nije zaključala
@@ -4550,6 +4573,152 @@ $("rt-apply").addEventListener("click", async () => {
     await loadRoutes();
   } catch (e) {
     $("rt-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+/* ---------- korisnici i uloge ---------- */
+
+let usPwUUID = null;
+
+const ROLE_SHORT = {
+  admin: "Administrator", operator: "Operater", viewer: "Pregled",
+};
+
+async function loadUsers() {
+  const x = await api("/users");
+  const tb = $("us-rows");
+  tb.replaceChildren();
+  const list = x.users || [];
+  for (const u of list) {
+    const tr = document.createElement("tr");
+    if (u.disabled) tr.className = "muted";
+    for (const v of [
+      u.username + (u.username === x.me ? " (ti)" : ""),
+      u.full_name || "—",
+      ROLE_SHORT[u.role] || u.role,
+      u.last_login || "još nijednom",
+      String(u.sessions),
+    ]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdS = document.createElement("td");
+    // vlastiti račun se ne smije isključiti — kvačica je tada samo prikaz
+    tdS.append(tick(!u.disabled, u.username === x.me ? null : async () => {
+      await api("/users/" + u.uuid, "PUT", { disabled: !u.disabled })
+        .catch(alertErr);
+      loadUsers().catch(alertErr);
+    }, u.username));
+    tr.append(tdS);
+
+    const tdA = document.createElement("td");
+    tdA.className = "row-actions";
+    const acts = [
+      btnSm("Uredi", false, () => openUserRole(u)),
+      btnSm("Pristup", false, () => {
+        usPwUUID = u.uuid;
+        $("uspw-title").textContent = "Nova lozinka za " + u.username;
+        $("uspw-form").reset();
+        $("uspw-dialog").showModal();
+      }),
+    ];
+    if (u.sessions > 0) {
+      acts.push(btnSm("Ukloni lozinku", false, async () => {
+        if (!confirm(`Zatvoriti sve sesije korisnika "${u.username}"?`)) return;
+        await api("/users/" + u.uuid + "/sessions", "DELETE").catch(alertErr);
+        loadUsers().catch(alertErr);
+      }));
+    }
+    if (u.username !== x.me) {
+      acts.push(btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati korisnika "${u.username}"?`)) return;
+        try {
+          await api("/users/" + u.uuid, "DELETE");
+        } catch (e) {
+          $("us-result").textContent = "Greška: " + (e.message || e);
+        }
+        loadUsers().catch(alertErr);
+      }));
+    }
+    tdA.append(...acts);
+    tr.append(tdA);
+    tb.append(tr);
+  }
+
+  const admins = list.filter((u) => u.role === "admin" && !u.disabled).length;
+  setPill($("us-state"), list.length > 1 ? "good" : "warn",
+    list.length + (list.length === 1 ? " račun" : " računa"));
+  setNote("us-note", admins + " administrator(a) · prijavljen: " + x.me);
+
+  const kv = $("us-roles");
+  kv.replaceChildren();
+  for (const r of x.roles || []) {
+    const dt = document.createElement("dt");
+    dt.textContent = ROLE_SHORT[r.id] || r.id;
+    const dd = document.createElement("dd");
+    dd.textContent = r.label.replace(/^[^—]*— /, "");
+    kv.append(dt, dd);
+  }
+}
+
+function openUserRole(u) {
+  const f = $("us-form");
+  editUserUUID = u ? u.uuid : null;
+  $("us-dialog-title").textContent = u ? "Uredi korisnika " + u.username : "Novi korisnik";
+  f.elements.username.value = u ? u.username : "";
+  f.elements.username.disabled = !!u; // ime se ne mijenja — dnevnik bi izgubio trag
+  f.elements.full_name.value = u ? u.full_name || "" : "";
+  f.elements.role.value = u ? u.role : "operator";
+  f.elements.password.value = "";
+  f.elements.password.required = !u;
+  f.elements.password.closest("label").classList.toggle("hidden", !!u);
+  $("us-dialog").showModal();
+}
+
+let editUserUUID = null;
+
+$("us-add").addEventListener("click", () => openUserRole(null));
+$("us-cancel").addEventListener("click", () => $("us-dialog").close());
+
+$("us-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  try {
+    if (editUserUUID) {
+      await api("/users/" + editUserUUID, "PUT", {
+        full_name: f.elements.full_name.value.trim(),
+        role: f.elements.role.value,
+      });
+    } else {
+      await api("/users", "POST", {
+        username: f.elements.username.value.trim(),
+        full_name: f.elements.full_name.value.trim(),
+        role: f.elements.role.value,
+        password: f.elements.password.value,
+      });
+    }
+    $("us-dialog").close();
+    $("us-result").textContent = "";
+    await loadUsers();
+  } catch (e) {
+    $("us-result").textContent = "Greška: " + (e.message || e);
+    $("us-dialog").close();
+  }
+});
+
+$("uspw-cancel").addEventListener("click", () => $("uspw-dialog").close());
+$("uspw-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    await api("/users/" + usPwUUID + "/password", "POST",
+      { password: ev.target.elements.password.value });
+    $("uspw-dialog").close();
+    $("us-result").textContent = "Lozinka postavljena; korisnik je mora promijeniti pri prijavi.";
+    await loadUsers();
+  } catch (e) {
+    $("us-result").textContent = "Greška: " + (e.message || e);
+    $("uspw-dialog").close();
   }
 });
 

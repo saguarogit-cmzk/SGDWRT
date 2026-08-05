@@ -248,6 +248,13 @@ CREATE TABLE IF NOT EXISTS users (
     -- 1 = zadana lozinka s instalacije; do promjene je dopuštena samo promjena
     -- lozinke, jer je zadana lozinka javno poznata i ista na svakom uređaju
     must_change_pw INTEGER NOT NULL DEFAULT 0,
+    -- admin: sve, uključivo korisnike, API token i nepovratne zahvate
+    -- operator: svakodnevni rad (mreža, firewall, VPN, backup)
+    -- viewer: samo gledanje
+    role        TEXT NOT NULL DEFAULT 'admin',
+    full_name   TEXT,
+    disabled    INTEGER NOT NULL DEFAULT 0,
+    last_login  TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );

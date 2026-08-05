@@ -63,16 +63,20 @@ fi
 # ne puni izgrađenim datotekama.
 FILES="$WORK/files"
 rm -rf "$FILES"
-mkdir -p "$FILES/opt/saguaro/bin" "$FILES/opt/saguaro/web" \
-         "$FILES/etc/init.d" "$FILES/etc/uci-defaults"
+mkdir -p "$FILES/opt/saguaro/bin" "$FILES/opt/saguaro/web"
 
-cp "$ROOT/dist/saguaro-core"            "$FILES/opt/saguaro/bin/"
-cp "$ROOT"/web/*                        "$FILES/opt/saguaro/web/"
-cp "$ROOT/scripts/selftest.sh"          "$FILES/opt/saguaro/selftest.sh"
-cp "$ROOT"/image/files/etc/init.d/*     "$FILES/etc/init.d/"
-cp "$ROOT"/image/files/etc/uci-defaults/* "$FILES/etc/uci-defaults/" 2>/dev/null || true
-chmod +x "$FILES/opt/saguaro/bin/saguaro-core" "$FILES/opt/saguaro/selftest.sh" \
-         "$FILES/etc/init.d/"* "$FILES/etc/uci-defaults/"* 2>/dev/null || true
+# cijelo stablo image/files ide u sliku kakvo jest — tako se nova datoteka
+# (npr. /etc/board.d/…) ne mora dodavati i ovdje da bi završila u slici
+cp -a "$ROOT/image/files/." "$FILES/"
+
+cp "$ROOT/dist/saguaro-core"   "$FILES/opt/saguaro/bin/"
+cp "$ROOT"/web/*               "$FILES/opt/saguaro/web/"
+cp "$ROOT/scripts/selftest.sh" "$FILES/opt/saguaro/selftest.sh"
+
+chmod +x "$FILES/opt/saguaro/bin/saguaro-core" "$FILES/opt/saguaro/selftest.sh"
+for d in init.d uci-defaults board.d; do
+    [ -d "$FILES/etc/$d" ] && chmod +x "$FILES/etc/$d/"* || true
+done
 
 # ------------------------------------------------------------------- paketi
 PKGS=$(grep -v '^#' "$ROOT/image/packages.txt" | tr '\n' ' ')

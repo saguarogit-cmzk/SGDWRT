@@ -348,3 +348,38 @@ tablicu s rootom od 1024 MB i time oslobađa ~222 GB — bez ijednog `resize2fs`
 Sama slika je bila ispravna u sva tri pokušaja. Da bi se ubuduće izbjeglo
 zaključivanje posredno, razlog pada se sada ispisuje kao GitHub *annotation* —
 logovi javnog repozitorija se bez prijave ne mogu čitati, a annotationi mogu.
+
+## Dizanje s USB-a na starom hardveru (05.08.2026.)
+
+Slika je napisana na USB 3.0 stick (Rufus, DD) i stavljena u IN100. **Uređaj se
+nije digao sa sticka** ni nakon što je u BIOS-u isključen HDD boot.
+
+Što je provjereno da NIJE uzrok:
+
+| Provjera | Nalaz |
+|---|---|
+| Sadržaj sticka | ispravan — `saguaro-core` (izvršan), sučelje, `selftest.sh`, obje init skripte, skripta prvog dizanja; montirano i pregledano s uređaja |
+| Tablica particija na sticku | `sdb1` 16 MB (zastavica `80`, boot), `sdb2` 1024 MB — točno kao slika |
+| Boot kod u MBR-u slike | **GRUB je tu** — prva 3 bajta `eb 63 90`, tekst `GRUB `, `Geom`, `Hard Disk`, `Read`, ` Error`, `loading`, potpis `55 aa` |
+
+Preostaje BIOS: stari uređaj ne diže s **USB 3.0** sticka. Za isporuku treba
+USB 2.0 stick odnosno USB 2.0 port, uz *Legacy USB Support* u BIOS-u.
+
+### Dva prava nalaza usput
+
+1. **Isti potpis diska i isti UUID.** Interna instalacija i naša slika potječu
+   iz iste OpenWrt slike, pa oba diska imaju potpis `e82a2d68` i root UUID
+   `ff313567-…`. Jezgra root traži preko `root=PARTUUID=682d2ae8-02`, što
+   odgovara **objema** particijama — pa uzme prvu, a to je interni disk. Dakle
+   i da se GRUB digao sa sticka, root bi došao s diska.
+   Zaobiđeno tako da je sticku promijenjen potpis (`61adf1fb`) i usklađen
+   `grub.cfg` (`PARTUUID=fbf1ad61-02`). Kopija izvornog MBR-a i `grub.cfg` je
+   na uređaju u `/root/usbfix/`.
+   Uz to: dok je stick bio u uređaju, sustav je zbog istog UUID-a montirao
+   **njegovu** boot particiju na `/boot` umjesto svoje — a kad je stick izvučen,
+   `/boot` je ostao visjeti u prazno. Vraćeno ručno.
+2. **OpenWrt na x86 zadano stavlja LAN na `eth1`, a WAN na `eth0`**
+   (`ucidef_set_interfaces_lan_wan "eth1" "eth0"`). Administrator uključi kabel
+   u prvi port i ne može do sučelja jer je to WAN, koji ne pušta upravljanje.
+   Ispravljeno: `image/files/etc/board.d/99-saguaro-ports` postavlja prvi port
+   za LAN, drugi za WAN. Provjera slike od sada traži i tu datoteku.

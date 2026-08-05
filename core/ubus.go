@@ -54,3 +54,15 @@ func serviceReload(ctx context.Context, name, action string) error {
 	}
 	return nil
 }
+
+// uciGet čita jednu uci vrijednost. Vraća prazan niz ako je nema — pozivatelj
+// tada zna da zapis ne postoji, bez razlikovanja vrste greške.
+func uciGet(ctx context.Context, path string) string {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "uci", "-q", "get", path).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}

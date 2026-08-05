@@ -596,3 +596,28 @@ a ta particija se zna i sama montirati.
 
 Popravljeno: instalacija nakon kopiranja **briše sve zapise iza root
 particije**, pa data particija nastane odmah iza roota i zauzme cijeli ostatak.
+
+## Vraćanje backupa na uređaj s data particijom (05.08.2026., v0.38.2)
+
+Stara konfiguracija (arhiva od 04.08., 82 KB) vraćena na svježe instalirani
+uređaj. Usput nađena i popravljena zamka **prije** nego je stigla naštetiti:
+
+`sysupgrade -r` pri vraćanju prepiše cijeli `/etc/config` — uključivo `fstab`.
+Arhiva nastala prije nego je data particija postojala nema taj zapis, pa bi se
+nakon restarta `/opt/saguaro` prestao montirati: sve vraćeno bi ostalo skriveno
+ispod točke montiranja, a uređaj bi se digao s praznom bazom.
+
+Popravak: Saguaro zapamti `fstab.sag_data` **prije** vraćanja i vrati ga ako ga
+arhiva nije imala.
+
+| Provjera | Ishod |
+|---|---|
+| `fstab.sag_data` preživio vraćanje | **radi** — zapis vraćen, particija se montira |
+| Restart nakon vraćanja | **radi** — data particija montirana sama, servis se digao |
+| Vraćena konfiguracija | mreže (`sag_wg0`, `sag_ovpn`, `sag_wan2`), 4 firewall zone, banIP u jezgri, OpenVPN s cijelim PKI-jem (CA, CRL, ccd, users), 1 klijent |
+| Samoprovjera | **41 prošlo / 0 palo** — isto kao stari uređaj prije reinstalacije |
+
+Čišćenje particija odrađeno i ručno na uređaju: mrtvi zapis od 13,4 GB
+(prekopiran s USB-a) obrisan, data particija sada jedna od **218 GB** do kraja
+diska. Ista logika ugrađena u instalaciju, pa kod budućih instalacija rupa ni
+ne nastaje.

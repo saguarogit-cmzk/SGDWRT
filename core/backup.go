@@ -470,6 +470,14 @@ func (s *server) handleBackupRestore(w http.ResponseWriter, r *http.Request) {
 			os.WriteFile(filepath.Join(s.etcDir, e.Name()), b, 0o600)
 		}
 	}
+	// Zapis o data particiji se pamti PRIJE vraćanja: `sysupgrade -r` prepisuje
+	// cijeli /etc/config, a arhiva napravljena prije nego je data particija
+	// postojala nema taj zapis. Bez njega se /opt/saguaro nakon restarta ne bi
+	// montirao — i sve što smo upravo vratili ostalo bi skriveno ispod točke
+	// montiranja, a uređaj bi se digao s praznom bazom.
+	dpUUID := uciGet(r.Context(), "fstab.sag_data.uuid")
+	dpOpts := uciGet(r.Context(), "fstab.sag_data.options")
+
 	// 3) OpenWrt konfiguracija — kanonski restore, vrijedi tek nakon reboota
 	etcTar := filepath.Join(tmp, "etc.tar.gz")
 	if _, err := os.Stat(etcTar); err == nil {
@@ -478,6 +486,25 @@ func (s *server) handleBackupRestore(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusInternalServerError,
 				fmt.Sprintf("sysupgrade -r: %v: %s", err, out))
 			return
+		}
+	}
+
+	// 4) zapis o data particiji se vraća ako ga arhiva nije imala
+	if dpUUID != "" && uciGet(r.Context(), "fstab.sag_data.uuid") != dpUUID {
+		if dpOpts == "" {
+			dpOpts = "rw,noatime"
+		}
+		script := fmt.Sprintf(""+
+			"set fstab.sag_data=mount\n"+
+			"set fstab.sag_data.uuid=%s\n"+
+			"set fstab.sag_data.target=%s\n"+
+			"set fstab.sag_data.options=%s\n"+
+			"set fstab.sag_data.enabled=1\n"+
+			"commit fstab\n", dpUUID, dataPartMount, uciQuote(dpOpts))
+		if err := uciBatch(r.Context(), script); err != nil {
+			log.Printf("vraćanje zapisa o data particiji: %v", err)
+		} else {
+			log.Printf("zapis o data particiji vraćen nakon restorea (%s)", dpUUID)
 		}
 	}
 

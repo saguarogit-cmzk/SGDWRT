@@ -40,12 +40,19 @@ boot() {
 	# Sigurnosna brana: ext4 superblok je 1024 B od početka particije, a njegov
 	# potpis (0xEF53, little endian) na pomaku 56. Bez tog potpisa se tablica
 	# NE dira.
-	MAGIC=$(dd if="/dev/$DISK" bs=512 skip=$((START_S + 2)) count=1 2>/dev/null |
-		dd bs=1 skip=56 count=2 2>/dev/null | hexdump -v -e '/1 "%02x"')
-	if [ "$MAGIC" != "53ef" ]; then
-		logger -t saguaro "data particija: na sektoru $START_S nema ext4 potpisa ($MAGIC) — tablica se ne dira"
+	#
+	# Usporedba ide bajt-po-bajt preko `cmp`, a ne preko `hexdump`/`od`: busybox
+	# u slici nema `od` (provjereno na uređaju), pa se ne oslanjamo ni na jedan
+	# alat za ispis heksadecimalno. Trebaju samo dd, printf i cmp.
+	printf '\123\357' > /tmp/sag-ext4magic
+	dd if="/dev/$DISK" bs=512 skip=$((START_S + 2)) count=1 2>/dev/null |
+		dd bs=1 skip=56 count=2 of=/tmp/sag-ext4got 2>/dev/null
+	if ! cmp -s /tmp/sag-ext4got /tmp/sag-ext4magic; then
+		rm -f /tmp/sag-ext4magic /tmp/sag-ext4got
+		logger -t saguaro "data particija: na sektoru $START_S nema ext4 potpisa — tablica se ne dira"
 		return 0
 	fi
+	rm -f /tmp/sag-ext4magic /tmp/sag-ext4got
 
 	END_S=$((START_S + SIZE_S - 1))
 	if parted -s "/dev/$DISK" mkpart primary ext4 "${START_S}s" "${END_S}s" 2>&1 | logger -t saguaro; then

@@ -522,3 +522,45 @@ Popravljeno u skripti prvog dizanja: prije prvog pokretanja servisa izvodi se
 
 Provjereno na uređaju: nakon postavljanja lozinke prijava vraća sesiju i
 `must_change_password: true`, dakle sučelje odmah traži promjenu.
+
+## Instalacija na interni disk — prekinuta na `od` (v0.38.1)
+
+Prva stvarna instalacija stala je nakon kopiranja:
+
+```
+/usr/sbin/saguaro-setup: line 255: od: not found
+  !! potpis nije 4 bajta — prekidam prije nego išta pokvarim
+```
+
+**Busybox u slici nema `od`**, a skripta ga je koristila za čitanje potpisa
+diska i za pretvorbu nasumičnih bajtova u hex. Kočnica je odradila svoje —
+prekinula je prije nego je upisala prazan potpis — ali je disk ostao
+napola instaliran: kopiran, bez vlastitog potpisa i bez usklađenog GRUB-a.
+
+Popravljeno tako da skripta **više uopće ne treba alat za hex**:
+
+| Prije | Sada |
+|---|---|
+| stari potpis se čitao s diska preko `od` | stari `PARTUUID` se čita **iz samog `grub.cfg`** sa `sed` |
+| novi potpis iz `/dev/urandom` preko `od` | novi iz `/proc/sys/kernel/random/uuid` — to je **već tekst** |
+| upis bajtova preko `hex2bin` (printf) | isto, ali ulaz više ne ovisi o `od` |
+
+Isto je maknuto i iz init skripte koja nakon nadogradnje vraća data particiju:
+provjera ext4 potpisa sada ide `printf` + `cmp` umjesto `hexdump`.
+
+Provjereno pod `dash`-om: UUID → 8 hex znakova → obrnut potpis → **4 bajta**,
+stari `PARTUUID` pročitan iz `grub.cfg` i zamijenjen u oba unosa, bez zaostalog
+starog zapisa.
+
+### Tri dorade uz to, sve iz stvarne upotrebe
+
+1. **Provjera alata unaprijed.** Instalacija sada odbija krenuti ako nedostaje
+   `dd`, `sed`, `cut`, `tr`, `mount`, `umount`, `parted` ili `partx`/`partprobe`
+   — umjesto da stane na pola, kad je disk već prepisan.
+2. **Napredak pri kopiranju.** Jedan veliki `dd` ne ispisuje ništa dok ne
+   završi, pa je 1041 MB s USB 2.0 sticka izgledalo kao da se zaglavilo. Sada
+   se kopira u komadima od 32 MB uz ispis postotka, a prekid usred kopiranja
+   se javlja i zaustavlja postupak.
+3. **Odmontiranje odredišta.** Sustav je sam montirao particiju s odredišnog
+   diska (`EXT4-fs (sda3): mounted filesystem`), pa se pisalo ispod montiranog
+   datotečnog sustava. Sada se sve s tog diska prvo odmontira.

@@ -207,6 +207,19 @@ set_lan() {
 install_disk() {
 	head_ "Instalacija na interni disk"
 
+	# Alati se provjere unaprijed. Ranije je postupak znao stati na pola jer
+	# `od` nije postojao — a tada je disk već bio prepisan.
+	MISSING=""
+	for t in dd sed cut tr mount umount parted; do
+		command -v "$t" >/dev/null 2>&1 || MISSING="$MISSING $t"
+	done
+	command -v partx >/dev/null 2>&1 || command -v partprobe >/dev/null 2>&1 ||
+		MISSING="$MISSING partx/partprobe"
+	if [ -n "$MISSING" ]; then
+		err "nedostaju alati:$MISSING — instalacija se ne pokreće"
+		pause; return
+	fi
+
 	SRCD=$(boot_disk) || { err "ne mogu odrediti s kojeg diska sustav radi"; pause; return; }
 	say "  Sustav sada radi s: ${BOLD}/dev/$SRCD${N} ($(disk_gb "$SRCD") GB)\n"
 
@@ -243,35 +256,83 @@ install_disk() {
 	TGT_MB=$(( $(cat "/sys/block/$TGT/size") * 512 / 1048576 ))
 	[ "$TGT_MB" -gt "$MB" ] || { err "odredišni disk je premalen ($TGT_MB MB, treba > $MB MB)"; pause; return; }
 
-	say "\n  Kopiram $MB MB na /dev/$TGT — potraje minutu-dvije…"
-	dd if="/dev/$SRCD" of="/dev/$TGT" bs=1M count="$MB" conv=fsync 2>&1 | tail -1
+	# Sve što je montirano s odredišnog diska mora se maknuti prije upisa.
+	# Sustav zna sam montirati particiju s njega (auto_mount), pa bi se pisalo
+	# ispod montiranog datotečnog sustava.
+	for m in $(awk -v d="/dev/$TGT" '$1 ~ "^"d {print $2}' /proc/mounts); do
+		say "  Odmontiravam $m"
+		umount "$m" 2>/dev/null || umount -l "$m" 2>/dev/null
+	done
+
+	# Kopira se u komadima da se vidi napredak. Jedan veliki dd ne ispisuje
+	# ništa dok ne završi, pa čovjek pred zaslonom nema pojma radi li išta —
+	# a s USB 2.0 sticka ovo traje i po nekoliko minuta.
+	say "\n  Kopiram $MB MB na /dev/$TGT"
+	CHUNK=32
+	DONE=0
+	while [ "$DONE" -lt "$MB" ]; do
+		n=$CHUNK
+		[ $((DONE + n)) -gt "$MB" ] && n=$((MB - DONE))
+		if ! dd if="/dev/$SRCD" of="/dev/$TGT" bs=1M skip="$DONE" seek="$DONE" \
+		        count="$n" conv=notrunc 2>/dev/null; then
+			printf "\n"
+			err "kopiranje je prekinuto na $DONE MB — odredišni disk NIJE ispravan"
+			pause
+			return
+		fi
+		DONE=$((DONE + n))
+		printf "\r  %s / %s MB  (%s%%)   " "$DONE" "$MB" "$((DONE * 100 / MB))"
+	done
+	printf "\n  Ispirem na disk (može potrajati)… "
 	sync
+	printf "gotovo\n"
 	partx -u "/dev/$TGT" 2>/dev/null || partprobe "/dev/$TGT" 2>/dev/null
 	sleep 2
 
 	# Odredišni disk mora dobiti VLASTITI potpis: inače bi imao isti kao ovaj s
 	# kojeg smo kopirali, pa jezgra kod root=PARTUUID=… ne bi znala koji je koji.
+	#
+	# Namjerno se NE čitaju bajtovi s diska: za to bi trebao `od` ili `hexdump`,
+	# a busybox u slici nema `od` (provjereno na uređaju — instalacija je stala
+	# baš na tome). Stara vrijednost se čita iz samog grub.cfg, a nova se uzme
+	# iz jezgrinog generatora UUID-a, koji je već tekst. Tako su potrebni samo
+	# sed, printf i dd.
 	say "  Dajem odredišnom disku vlastiti potpis…"
-	OLD_SIG=$(dd if="/dev/$TGT" bs=1 skip=440 count=4 2>/dev/null | od -An -tx1 | tr -d ' \n')
-	OLD_UUID=$(echo "$OLD_SIG" | sed 's/\(..\)\(..\)\(..\)\(..\)/\4\3\2\1/')
-	NEW_SIG=$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n')
-	NEW_UUID=$(echo "$NEW_SIG" | sed 's/\(..\)\(..\)\(..\)\(..\)/\4\3\2\1/')
+	mkdir -p /tmp/sagtgt
+	if ! mount "/dev/${TGT}1" /tmp/sagtgt 2>/dev/null; then
+		err "boot particija odredišta se ne montira — prekidam"
+		pause; return
+	fi
+	GCFG=/tmp/sagtgt/boot/grub/grub.cfg
+	if [ ! -f "$GCFG" ]; then
+		umount /tmp/sagtgt
+		err "na odredištu nema boot/grub/grub.cfg — prekidam"
+		pause; return
+	fi
+	OLD_UUID=$(sed -n 's/.*root=PARTUUID=\([0-9a-fA-F]\{8\}\)-.*/\1/p' "$GCFG" | head -1)
+	if [ -z "$OLD_UUID" ]; then
+		umount /tmp/sagtgt
+		err "u grub.cfg nema zapisa root=PARTUUID — prekidam"
+		pause; return
+	fi
+	NEW_UUID=$(tr -d '-' < /proc/sys/kernel/random/uuid | cut -c1-8)
+	# potpis na disku je isti zapis, samo obrnutim redoslijedom bajtova
+	NEW_SIG=$(echo "$NEW_UUID" | sed 's/\(..\)\(..\)\(..\)\(..\)/\4\3\2\1/')
 	hex2bin "$NEW_SIG" > /tmp/sag-sig.bin
 	if [ "$(wc -c < /tmp/sag-sig.bin)" -ne 4 ]; then
-		err "potpis nije 4 bajta — prekidam prije nego išta pokvarim"; pause; return
+		umount /tmp/sagtgt; rm -f /tmp/sag-sig.bin
+		err "potpis nije 4 bajta — prekidam prije nego išta pokvarim"
+		pause; return
 	fi
 	dd if=/tmp/sag-sig.bin of="/dev/$TGT" bs=1 seek=440 count=4 conv=notrunc 2>/dev/null
 	rm -f /tmp/sag-sig.bin
-
-	mkdir -p /tmp/sagtgt
-	if mount "/dev/${TGT}1" /tmp/sagtgt 2>/dev/null; then
-		[ -f /tmp/sagtgt/boot/grub/grub.cfg ] &&
-			sed -i "s/$OLD_UUID-0/$NEW_UUID-0/g" /tmp/sagtgt/boot/grub/grub.cfg
-		sync; umount /tmp/sagtgt
-		ok_ "GRUB usklađen s novim potpisom ($NEW_UUID)"
+	sed -i "s/$OLD_UUID-0/$NEW_UUID-0/g" "$GCFG"
+	if grep -q "PARTUUID=$NEW_UUID-0" "$GCFG"; then
+		ok_ "GRUB usklađen s novim potpisom ($OLD_UUID → $NEW_UUID)"
 	else
-		err "boot particija odredišta se ne montira — GRUB nije usklađen"
+		err "grub.cfg nije usklađen — sustav se s diska možda neće dići"
 	fi
+	sync; umount /tmp/sagtgt
 
 	# Data particija se stvara pri prvom dizanju. Skripta koja to radi već je
 	# potrošena na ovom sustavu, pa se odredištu vraća iz pričuvne kopije.

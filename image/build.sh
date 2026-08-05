@@ -112,7 +112,10 @@ DST="$OUT/saguaro-v${SAG_VER}-openwrt-${OPENWRT_VERSION}-x86-64.img.gz"
 # Zato svaka slika dobiva vlastiti potpis. Mijenjaju se 4 bajta u MBR-u i
 # jednako dugački zapis PARTUUID-a u grub.cfg — sve na razini bajtova, bez
 # montiranja, pa gradnja i dalje ne traži root ovlasti.
-RAW="$WORK/personalize.img"
+# Radna datoteka se zove kao i konačna slika: gzip u zaglavlje upisuje ime
+# izvorne datoteke, pa bi inače raspakiravanje kod korisnika dalo besmisleno
+# ime (npr. "personalize.img") umjesto naziva slike.
+RAW="$WORK/$(basename "$DST" .gz)"
 gunzip -c "$SRC" > "$RAW"
 
 OLD_SIG=$(dd if="$RAW" bs=1 skip=440 count=4 2>/dev/null | od -An -tx1 | tr -d ' \n')
@@ -152,7 +155,9 @@ done
 echo ">> PARTUUID zamijenjen na $HITS mjesta"
 [ "$HITS" -gt 0 ] || { echo "!! stari PARTUUID nije nađen u slici — grub bi ostao neusklađen"; exit 1; }
 
-gzip -c "$RAW" > "$DST"
+# -n: ne upisuj ime ni vrijeme u zaglavlje. Raspakiravanje tada uzme ime iz
+# same .gz datoteke, dakle puni naziv slike, a gradnja je uz to ponovljiva.
+gzip -n -c "$RAW" > "$DST"
 rm -f "$RAW"
 # otisak se zapisuje uz samo ime datoteke, ne uz punu putanju s build stroja —
 # inače `sha256sum -c` kod korisnika ne radi

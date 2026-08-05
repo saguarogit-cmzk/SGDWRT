@@ -437,3 +437,15 @@ kodu.
 
 > Vrijedi zapamtiti: annotation koji je dodan da se razlog pada vidi bez
 > prijave na GitHub odradio je posao iz prve — bez njega bi se pogađalo.
+
+### Naziv pri raspakiravanju
+
+Korisnik je primijetio da raspakiravanje slike daje datoteku
+`personalize.img`. Uzrok: `gzip` u zaglavlje upisuje ime izvorne datoteke, a
+radna datoteka pri davanju potpisa zvala se tako. Potvrđeno čitanjem zaglavlja
+objavljene v0.36.1 — na pomaku 10 doista piše `personalize.img`.
+
+Popravljeno dvostruko: radna datoteka se sada zove kao i konačna slika, a
+pakiranje ide sa `gzip -n` (bez imena i vremena u zaglavlju, uz to je gradnja
+ponovljiva). Provjereno: zaglavlje sa spremljenim imenom je 41 bajt, sa `-n`
+25 — razlika je točno naziv.

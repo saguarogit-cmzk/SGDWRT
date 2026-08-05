@@ -904,3 +904,77 @@ administrator** — nitko drugi, pa ni operater.
   upisuje ime i lozinku.
 - **API token nema 2FA** — on je strojni pristup. Tko ima token, ima sve; čuvaj
   ga u skladu s tim.
+
+## Site-to-site (VPN) — veza ured–ured
+
+Dvije poslovnice se ponašaju kao **jedna mreža**: računalo u Zagrebu vidi
+printer i server u Splitu izravno, po njihovim adresama, bez ijednog programa
+na računalima i bez da itko išta pokreće. Tunel drže dva uređaja međusobno.
+
+To je razlika prema modulu **WireGuard** (udaljeni pristup): ondje se spaja
+pojedini čovjek sa svog laptopa. Ovdje se spajaju **cijele mreže**, promet ide
+u oba smjera i nitko u uredu ne zna da tunel postoji.
+
+### Postavke tunela
+
+Prvo se postavlja tunel, jednom:
+
+- **UDP port** — zadano 51821 (udaljeni pristup koristi 51820; isti port ne
+  može stajati na oba i Saguaro to odbija).
+- **Naša adresa u tunelu** — npr. `10.77.0.1/24`. To je zaseban raspon **samo
+  za tunel**, koji nigdje drugdje nije u upotrebi. Saguaro odbija raspon koji
+  se preklapa s tvojom mrežom ili s nečim što uređaj već koristi (npr. mrežom
+  OpenVPN tunela) i kaže s čime se sudara.
+- **Naša javna adresa** — ime ili IP na koji druga strana zove. Ide u config
+  koji joj daš.
+- **Kvačica za upravljanje** — zadano isključena: druga poslovnica dolazi do
+  mreže, ali ne do SSH-a, LuCI-ja ni Saguara na ovom uređaju. Uključi je samo
+  ako se uređaj administrira iz druge poslovnice.
+
+### Dodavanje poslovnice
+
+- **Naziv** — kako ćeš je zvati u popisu.
+- **Njihova adresa u tunelu** — Saguaro ponudi prvu slobodnu.
+- **Njihove mreže** — što se nalazi iza njihovog uređaja, npr.
+  `192.168.60.0/24`. Ovo je jedini podatak koji ljudi obično zaborave: bez
+  njega tunel radi, a ništa se ne vidi.
+- **Njihova javna adresa** — ako je nemaju (iza operaterskog NAT-a), ostavi
+  prazno: tada **oni zovu nas**, pa bar naša strana mora imati javnu adresu.
+- **Njihov javni ključ** — ako ga nisu poslali, ostavi prazno i Saguaro složi
+  par ključeva sam, pa im daš gotov config.
+
+> **Dvije poslovnice ne smiju imati isti raspon adresa.** Ako su obje na
+> `192.168.1.0/24`, veza ne može raditi ni teoretski — uređaj ne bi znao je li
+> `192.168.1.50` kod nas ili kod njih. Saguaro takvu mrežu odbija odmah, s
+> porukom koja kaže što se s čim sudara. Rješenje je jednoj poslovnici
+> promijeniti raspon.
+
+### Config za drugu stranu
+
+Gumb **Preuzmi config** daje datoteku koja se upiše na uređaj druge
+poslovnice. U njoj je sve: njihov ključ, njihova adresa u tunelu, naš javni
+ključ, naša javna adresa i **naše mreže** koje trebaju vidjeti. Datoteka je u
+standardnom WireGuard obliku, pa je razumije i OpenWrt (LuCI → uvoz), i Linux
+(`wg-quick`), i uređaji drugih proizvođača koji podržavaju WireGuard.
+
+Na kraju klikni **Primijeni**. U stupcu **Veza** piše radi li tunel; prvi
+handshake obično dođe u nekoliko sekundi.
+
+### Što se vidi i što se javlja
+
+Stupac **Veza** pokazuje „radi" s vremenom zadnjeg javljanja, ili „ne javlja
+se" / „još nije spojena" crveno. Uređaj to provjerava svake minute; ako veza
+šuti **5 minuta**, zapisuje se u dnevnik. Ako u Nadzoru uključiš vrstu
+obavijesti „Veza s drugom poslovnicom", isto stiže i e-mailom — zadano je, kao
+i sve ostalo, isključeno.
+
+### Sitnice iz prakse
+
+- **Promjena mreže tunela nakratko prekine veze** (do pola minute, dok se
+  tuneli ponovno dogovore). Promjena kvačice za upravljanje **ne prekida
+  ništa** — dira samo firewall.
+- **Keepalive 25 s** je zadan i treba ostati: bez njega operaterski NAT zatvori
+  rupu nakon minute mira i veza stane dok netko nešto ne pošalje.
+- Za više od dvije poslovnice: svaka se doda kao svoj zapis. Sve ih drži isti
+  tunel, ali **poslovnice preko nas ne vide jedna drugu** — za to bi trebalo
+  proširiti pravila.

@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.42.0"
+const version = "0.43.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -257,6 +257,14 @@ func main() {
 	mux.Handle("DELETE /api/v1/wireguard/rules/{uuid}", s.auth(s.handleWGRuleDelete))
 	mux.Handle("POST /api/v1/wireguard/access", s.auth(s.handleWGAccessSet))
 	mux.Handle("POST /api/v1/wireguard/apply", s.auth(s.handleWGApply))
+	mux.Handle("GET /api/v1/wgsite/status", s.auth(s.handleWGSStatus))
+	mux.Handle("POST /api/v1/wgsite/local", s.auth(s.handleWGSLocalSet))
+	mux.Handle("GET /api/v1/wgsite/sites", s.auth(s.handleWGSiteList))
+	mux.Handle("POST /api/v1/wgsite/sites", s.auth(s.handleWGSiteCreate))
+	mux.Handle("PUT /api/v1/wgsite/sites/{uuid}", s.auth(s.handleWGSiteUpdate))
+	mux.Handle("DELETE /api/v1/wgsite/sites/{uuid}", s.auth(s.handleWGSiteDelete))
+	mux.Handle("GET /api/v1/wgsite/sites/{uuid}/config", s.auth(s.handleWGSiteConfig))
+	mux.Handle("POST /api/v1/wgsite/apply", s.auth(s.handleWGSApply))
 	mux.Handle("GET /api/v1/openvpn/status", s.auth(s.handleOvpnStatus))
 	mux.Handle("POST /api/v1/openvpn/server", s.auth(s.handleOvpnServerSet))
 	mux.Handle("POST /api/v1/openvpn/access", s.auth(s.handleOvpnAccessSet))

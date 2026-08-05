@@ -188,6 +188,10 @@ tbody td{padding:5px 8px;border-bottom:1px solid var(--line2);vertical-align:mid
 tbody tr:nth-child(even){background:#fafbfc}
 tbody tr:hover{background:#f4f8ee}
 tbody tr:last-child td{border-bottom:0}
+/* isključeni zapis je blijed, a ono što ne radi crveno — da se stanje vidi
+   iz retka, bez čitanja teksta */
+tbody tr.muted td{color:var(--faint)}
+tbody td.bad{color:var(--crit)}
 td.num{text-align:right}
 .row-actions{display:inline-flex;gap:4px;white-space:nowrap}
 /* radnja kao ikona — isti razmak u svakoj tablici */

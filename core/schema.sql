@@ -104,6 +104,24 @@ CREATE TABLE IF NOT EXISTS wg_peer_rules (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Veze ured-ured (site-to-site): iza svakog zapisa stoji cijela mreža druge
+-- poslovnice, a ne jedan korisnik. Zasebno sučelje i zona od udaljenog
+-- pristupa, jer promet ide u oba smjera (odluka D-017).
+CREATE TABLE IF NOT EXISTS wg_sites (
+    uuid        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    public_key  TEXT NOT NULL UNIQUE,
+    private_key TEXT,                        -- samo ako smo ključeve složili mi
+    tunnel_ip   TEXT NOT NULL UNIQUE,        -- adresa druge strane u tunelu
+    subnets     TEXT NOT NULL,               -- mreže iza druge strane, zarezom odvojene
+    endpoint    TEXT,                        -- javna adresa druge strane (NULL = ona zove nas)
+    keepalive   INTEGER,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- OpenVPN klijenti: certifikat+ključ generirani na uređaju (za .ovpn export),
 -- fiksna adresa u tunelu preko CCD datoteke (ccd-exclusive: bez CCD-a nema spajanja)
 CREATE TABLE IF NOT EXISTS ovpn_clients (

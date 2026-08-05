@@ -168,7 +168,7 @@ paketa. Trud je procijenjen u danima rada.
 
 | # | Mogućnost | Što korisnik dobiva | Kako | Trud | Preporuka |
 |---|---|---|---|---|---|
-| **C1** | **WireGuard veza ured–ured (site-to-site)** | dvije poslovnice kao jedna mreža, bez klijenata na računalima | postojeći WireGuard + rute i zone | 2–3 dana | **visoka** |
+| ~~C1~~ | **NAPRAVLJENO (v0.43.0)** — WireGuard veza ured–ured (site-to-site) | dvije poslovnice kao jedna mreža, bez klijenata na računalima; gotov config za drugu stranu, provjera preklapanja mreža, javljanje pada veze | vlastito sučelje `sag_wgs0` i zona `sagwgs` (D-017) | 2–3 dana | **visoka** |
 | **C2** | **IPsec (strongSwan)** | veza prema tuđoj opremi koja ne zna WireGuard (Fortinet, Cisco, Sophos) | `strongswan-full` | 5–7 dana | srednja (samo ako druga strana traži) |
 | **C3** | OpenConnect poslužitelj (`ocserv`) | klijent koji prolazi kroz restriktivne mreže (radi na TCP/443) | `ocserv` | 3 dana | niska — WireGuard i OpenVPN pokrivaju sve |
 | **C4** | L2TP/IPsec, PPTP | — | — | — | **ne** — PPTP je kriptografski razbijen, L2TP problematičan kroz NAT |
@@ -228,10 +228,10 @@ paketa. Trud je procijenjen u danima rada.
 
 **Drugi krug — ono što korisnik traži kad sustav uđe u ozbiljan pogon (oko 10–12 dana)**
 
-5. E1 više korisnika i uloge · E2 dvofaktorska prijava
-6. C1 WireGuard ured–ured
+5. ~~E1 više korisnika i uloge~~ · ~~E2 dvofaktorska prijava~~ — oboje napravljeno
+6. ~~C1 WireGuard ured–ured~~ — napravljeno
 7. D3 mjesečni izvještaj e-mailom
-8. E5 nadogradnja OpenWrt-a iz sučelja
+8. ~~E5 nadogradnja OpenWrt-a iz sučelja~~ — napravljeno
 
 **Treći krug — veći zahvati, po potrebi korisnika**
 

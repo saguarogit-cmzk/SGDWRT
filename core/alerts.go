@@ -41,6 +41,7 @@ var alertKinds = []alertKind{
 	{"cgnat", "Uređaj je iza operaterskog NAT-a (CGNAT)", false},
 	{"vpn_service", "VPN poslužitelj (WireGuard/OpenVPN) je prestao raditi", false},
 	{"vpn_client", "VPN korisnik se spojio ili odspojio", false},
+	{"site_tunnel", "Veza s drugom poslovnicom (ured-ured) je pala ili se vratila", false},
 	{"reboot", "Uređaj se ponovno pokrenuo", false},
 	{"config", "Promijenjena je konfiguracija (firewall, VPN, WAN)", false},
 	{"login", "Netko se prijavio (Saguaro ili SSH)", false},

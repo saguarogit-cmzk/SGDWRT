@@ -154,6 +154,9 @@ func (s *server) monitorLoop() {
 			}
 		}
 
+		// veze ured-ured: pala ili vraćena veza s drugom poslovnicom
+		s.checkSiteTunnels()
+
 		time.Sleep(60 * time.Second)
 	}
 }

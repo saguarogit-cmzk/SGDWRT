@@ -718,3 +718,58 @@ Pokriveno jediničnim testom (`TestChallengeTries`).
 |---|---|
 | Skeniranje QR koda pravom aplikacijom | nema telefona u lancu ispitivanja; `otpauth://` URI je provjeren znak po znak, a aplikacije čitaju upravo njega |
 | Ponašanje kad sat na telefonu odluta više od minute | prozor od ±30 s pokriven jediničnim testom, dulji pomak nije simuliran na uređaju |
+
+## Veza ured–ured — site-to-site (v0.43.0)
+
+Provjereno na uređaju **05.08.2026.** Druga poslovnica nije glumljena na
+papiru: u zasebnom mrežnom prostoru (`ip netns`) na samom uređaju podignut je
+**pravi WireGuard uređaj s vlastitom mrežom** (192.168.60.0/24 iza njega), i to
+**isključivo iz konfiguracije koju je Saguaro izdao** za drugu stranu — datoteka
+se nije dotjerivala rukom. Time je dokazano i da config koji korisnik preda
+drugoj poslovnici stvarno diže vezu.
+
+| Provjera | Ishod |
+|---|---|
+| Mreža tunela koja se preklapa s LAN-om | **odbijeno** (400), poruka kaže s čime se sudara |
+| Mreža tunela koju već koristi OpenVPN (`tun_sag`) | **odbijeno** — vidi rupu ispod |
+| Isti UDP port kao udaljeni pristup | **odbijeno** (400) |
+| Mreža poslovnice ista kao naša | **odbijeno**, s uputom da jednoj strani treba promijeniti raspon |
+| `0.0.0.0/0` kao mreža poslovnice | **odbijeno** — to nije veza ured-ured nego preusmjeravanje interneta |
+| Adresa izvan mreže tunela / naša vlastita adresa | **odbijeno** (400) |
+| Zapis mreže `192.168.60.5/24` | **normaliziran** u `192.168.60.0/24` |
+| Config za drugu stranu | **radi** — drugi ured podignut baš iz njega, handshake odmah |
+| **Mi → njihova mreža** (192.168.60.1) | **radi**, 0% gubitka |
+| **Oni → naša mreža** (192.168.50.222) | **radi**, 0% gubitka |
+| Rute prema njihovoj mreži | postavlja ih sam WireGuard (`route_allowed_ips`) |
+| Prosljeđivanje u oba smjera | **radi** — `lan → sagwgs` i `sagwgs → lan` u nftablesu |
+| Druga poslovnica → naše upravljanje (SSH, 8443) | **odbijeno** dok je kvačica isključena |
+| Kvačica „pristup upravljanju" | **radi** — uključena: sučelje 8443 vraća 200; isključena: veza se ne uspostavlja |
+| Ping i DNS prema uređaju | dopušteni, sve ostalo odbijeno (`input_sagwgs`) |
+| Javljanje pada veze | **radi** — nakon 5 min tišine zapis „Veza s poslovnicom … je pala", po povratku „…uspostavljena" |
+| Jedinični testovi | preklapanje mreža, popis mreža, endpoint, uci popisi — prolaze |
+
+### Dvije rupe koje je test uhvatio prije objave
+
+**1. Sudar s mrežom koju uređaj već koristi.** Provjera preklapanja gledala je
+samo mreže upisane u `network` config. Tuneli svoje mreže ondje ne drže, pa je
+predložena mreža tunela `10.7.0.0/24` uredno prošla — a na uređaju ju je **već
+koristio OpenVPN**. Veza bi radila „na pola" i to bi se tražilo danima. Sada se
+provjerava **stvarna tablica ruta jezgre**, pa poruka imenuje i sučelje s kojim
+se sudara (`tun_sag`).
+
+**2. Lažna uzbuna kod svakog spremanja postavki.** Podizanje sučelja obriše
+vrijeme zadnjeg javljanja, pa je veza deset sekundi nakon spremanja izgledala
+kao pala i uređaj je slao „veza je pala", a minutu kasnije „uspostavljena". Uz
+Goranovo pravilo da mailom ide samo ono bitno, to je točno ona vrsta poruke
+koja se prestane čitati. Sada se pad mjeri **koliko dugo veze nema**, ne
+brojem koji restart resetira; uz to se sučelje podiže **samo kad se mreža
+stvarno promijenila**, pa kvačica za pristup upravljanju više ne prekida ni
+jednu vezu (izmjereno: prije do 30 s prekida, sada bez prekida).
+
+### Što nije provjereno
+
+| Stavka | Zašto |
+|---|---|
+| Dvije **fizički odvojene** lokacije preko interneta | u labu postoji jedan uređaj; druga strana je pravi WireGuard, ali na istom računalu u odvojenom mrežnom prostoru. Sve što ovisi o putu kroz internet (NAT operatera, MTU na tuđoj vezi) ostaje za prvu stvarnu ugradnju |
+| Više od dvije poslovnice odjednom | logika je ista po zapisu, ali isprobana je jedna |
+| Promet između dvije poslovnice **preko nas** | namjerno nije dopušten (zona ne prosljeđuje samu u sebe) |

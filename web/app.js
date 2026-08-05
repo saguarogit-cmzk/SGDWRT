@@ -1284,6 +1284,142 @@ function openPeerDialog(p) {
   $("peer-dialog").showModal();
 }
 
+/* ---------- veza ured-ured (site-to-site) ---------- */
+
+let editSiteUUID = null;
+let wsNextIP = "";
+
+async function loadWgsite() {
+  const [st, ls] = await Promise.all([
+    api("/wgsite/status"), api("/wgsite/sites"),
+  ]);
+  const loc = st.local || {};
+  const f = $("ws-form");
+  if (loc.configured) {
+    f.elements.listen_port.value = loc.listen_port || "";
+    f.elements.address.value = (loc.addresses || []).join(", ");
+    f.elements.endpoint_host.value = loc.endpoint_host || "";
+  }
+  f.elements.allow_mgmt.checked = !!loc.allow_mgmt;
+  wsNextIP = loc.next_tunnel_ip || "";
+  $("ws-pubkey").textContent = loc.public_key || "—";
+  setNote("ws-nets", "Naše mreže koje druga strana vidi kroz tunel: " +
+    ((loc.local_subnets || []).join(", ") || "—"));
+
+  const sites = ls.sites || [];
+  // veza se broji kao živa ako je handshake bio u zadnjih 5 minuta — isto
+  // mjerilo koje uređaj koristi za upozorenje
+  const alive = (s) => {
+    const stat = (st.stats || {})[s.public_key];
+    return !!(stat && stat.latest_handshake &&
+      (st.now || Math.floor(Date.now() / 1000)) - stat.latest_handshake < 300);
+  };
+  const up = sites.filter((s) => s.enabled && alive(s)).length;
+  const on = sites.filter((s) => s.enabled).length;
+
+  const badge = $("ws-state");
+  if (!st.installed) setPill(badge, "crit", "paketi nedostaju");
+  else if (!loc.configured) setPill(badge, "off", "nije postavljeno");
+  else if (on === 0) setPill(badge, "off", "nema poslovnica");
+  else if (up === on) setPill(badge, "good", "sve veze rade");
+  else if (up === 0) setPill(badge, "crit", "nijedna veza ne radi");
+  else setPill(badge, "warn", up + " od " + on);
+  $("ws-sum").textContent = [
+    (loc.addresses || []).join(", ") || "bez adrese tunela",
+    loc.listen_port ? "UDP " + loc.listen_port : "",
+  ].filter(Boolean).join(" · ");
+
+  const tb = $("ws-rows");
+  tb.replaceChildren();
+  for (const s of sites) {
+    const stat = (st.stats || {})[s.public_key];
+    const tr = document.createElement("tr");
+    for (const v of [s.name, s.tunnel_ip, s.subnets,
+      s.endpoint || "zove nas"]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.append(td);
+    }
+    const tdE = document.createElement("td");
+    tdE.append(tick(!!s.enabled, async () => {
+      await api("/wgsite/sites/" + s.uuid, "PUT", {
+        name: s.name, tunnel_ip: s.tunnel_ip, subnets: s.subnets,
+        endpoint: s.endpoint, keepalive: s.keepalive,
+        enabled: !s.enabled, notes: s.notes,
+      }).catch(alertErr);
+      loadWgsite().catch(alertErr);
+    }, "poslovnica " + s.name));
+    tr.append(tdE);
+
+    const tdH = document.createElement("td");
+    if (!s.enabled) tdH.textContent = "—";
+    else if (alive(s)) tdH.textContent = "radi (" + fmtAgo(stat.latest_handshake) + ")";
+    else if (stat && stat.latest_handshake) {
+      tdH.textContent = "ne javlja se " + fmtAgo(stat.latest_handshake);
+      tdH.className = "bad";
+    } else {
+      tdH.textContent = "još nije spojena";
+      tdH.className = "bad";
+    }
+    tr.append(tdH);
+
+    const tdT = document.createElement("td");
+    tdT.textContent = stat && (stat.rx_bytes || stat.tx_bytes)
+      ? fmtBytes(stat.rx_bytes) + " / " + fmtBytes(stat.tx_bytes) : "—";
+    tr.append(tdT);
+
+    const tdAct = document.createElement("td");
+    tdAct.className = "row-actions";
+    tdAct.append(
+      btnSm("Preuzmi config", false, async () => {
+        try {
+          const c = await api("/wgsite/sites/" + s.uuid + "/config");
+          downloadText(sanitizeFileName(c.name) + ".conf", c.config);
+        } catch (e) { alertErr(e); }
+      }),
+      btnSm("Prikaži", false, async () => {
+        try {
+          const c = await api("/wgsite/sites/" + s.uuid + "/config");
+          showVpnConfig("Config za poslovnicu " + c.name,
+            sanitizeFileName(c.name) + ".conf", c.config + "\n# " + c.note + "\n");
+        } catch (e) { alertErr(e); }
+      }),
+      btnSm("Uredi", false, () => openSiteDialog(s)),
+      btnSm("Obriši", true, async () => {
+        if (!confirm(`Obrisati poslovnicu "${s.name}"?\n\nVeza prestaje raditi ` +
+          `nakon klika na Primijeni.`)) return;
+        await api("/wgsite/sites/" + s.uuid, "DELETE").catch(alertErr);
+        loadWgsite().catch(alertErr);
+      }));
+    tr.append(tdAct);
+    tb.append(tr);
+  }
+}
+
+const sanitizeFileName = (s) =>
+  (s || "poslovnica").replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "") ||
+  "poslovnica";
+
+function openSiteDialog(s) {
+  const f = $("site-form");
+  editSiteUUID = s ? s.uuid : null;
+  $("site-dialog-title").textContent = editSiteUUID ? "Uredi poslovnicu" : "Nova poslovnica";
+  f.elements.name.value = s ? s.name : "";
+  f.elements.tunnel_ip.value = s ? s.tunnel_ip : wsNextIP;
+  $("site-ip-hint").textContent = s ? ""
+    : wsNextIP ? "Ponuđena je prva slobodna adresa u tunelu — potvrdi ili upiši drugu."
+      : "Mreža tunela još nije postavljena, pa nema prijedloga adrese.";
+  f.elements.subnets.value = s ? s.subnets : "";
+  f.elements.endpoint.value = s ? s.endpoint || "" : "";
+  f.elements.public_key.value = s ? s.public_key : "";
+  // ključ je identitet druge strane — kod uređivanja se ne mijenja
+  f.elements.public_key.disabled = !!editSiteUUID;
+  f.elements.keepalive.value = s && s.keepalive ? s.keepalive : "";
+  f.elements.notes.value = s ? s.notes || "" : "";
+  f.elements.enabled.checked = s ? !!s.enabled : true;
+  $("site-dialog").showModal();
+}
+
 /* ---------- nadzor ---------- */
 
 async function loadMonitorx() {
@@ -2357,6 +2493,7 @@ const MODULES = {
   scan:      ["Scan detection", "Prepoznavanje skeniranja portova i privremena blokada izvora", () => loadProtection()],
   rproxy:    ["Reverse proxy", "Više web servisa iza jedne javne adrese, razdvojenih po imenu", () => loadProxy()],
   wireguard: ["WireGuard", "Udaljeni pristup — moderni VPN s ključevima", () => loadWireguard()],
+  wgsite:    ["Site-to-site", "Veza ured–ured — dvije poslovnice kao jedna mreža", () => loadWgsite()],
   openvpn:   ["OpenVPN", "Udaljeni pristup — klasični VPN s certifikatima", () => loadOpenvpn()],
   devices:   ["Inventory", "Inventar opreme — ovaj uređaj i susjedni", () => loadDevices()],
   backup:    ["Backup", "Sigurnosne kopije uređaja i vraćanje", () => loadBackup()],
@@ -2388,6 +2525,7 @@ const MODULE_KEYS = {
   scan: "skeniranje portova napad izviđanje detekcija",
   rproxy: "obrnuti proxy reverse haproxy objava web servisa ime domena sni",
   wireguard: "vpn udaljeni pristup ključevi",
+  wgsite: "vpn ured ured poslovnica podružnica site to site tunel dvije lokacije spajanje mreža",
   openvpn: "vpn udaljeni pristup certifikati ovpn",
   devices: "uređaji inventar oprema",
   backup: "sigurnosna kopija vraćanje arhiva",
@@ -2405,7 +2543,7 @@ const NAV_GROUPS = [
   ["Firewall", ["firewall", "publish", "hardening"]],
   ["Filtering", ["protection", "dnsfilter", "scan"]],
   ["Proxy", ["rproxy"]],
-  ["VPN", ["wireguard", "openvpn"]],
+  ["VPN", ["wireguard", "wgsite", "openvpn"]],
   ["System", ["settings", "users", "logs", "backup", "devices", "update", "help"]],
 ];
 // uloga prijavljenog korisnika; postavlja se pri pokretanju iz /auth/session
@@ -3578,6 +3716,66 @@ $("wg-apply").addEventListener("click", async () => {
     $("wg-apply-result").textContent = "Greška: " + (e.message || e);
   } finally {
     btn.disabled = false;
+  }
+});
+
+$("ws-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {
+    listen_port: parseInt(f.elements.listen_port.value, 10) || 0,
+    address: f.elements.address.value.trim(),
+    endpoint_host: f.elements.endpoint_host.value.trim(),
+    allow_mgmt: f.elements.allow_mgmt.checked,
+  };
+  $("ws-server-result").textContent = "Spremam…";
+  try {
+    const r = await api("/wgsite/local", "POST", body);
+    $("ws-server-result").textContent = `Spremljeno. Backupi: ${r.backups.join(", ")}`;
+    await loadWgsite();
+  } catch (e) {
+    $("ws-server-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("ws-apply").addEventListener("click", async () => {
+  const btn = $("ws-apply");
+  btn.disabled = true;
+  $("ws-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/wgsite/apply", "POST", {});
+    $("ws-result").textContent =
+      `Primijenjeno: ${r.applied} poslovnica (uklonjeno starih: ${r.removed}). Backup: ${r.backup}`;
+    await loadWgsite();
+  } catch (e) {
+    $("ws-result").textContent = "Greška: " + (e.message || e);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("ws-add").addEventListener("click", () => openSiteDialog(null));
+$("site-cancel").addEventListener("click", () => $("site-dialog").close());
+$("site-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {
+    name: f.elements.name.value.trim(),
+    tunnel_ip: f.elements.tunnel_ip.value.trim(),
+    subnets: f.elements.subnets.value.trim(),
+    endpoint: f.elements.endpoint.value.trim(),
+    keepalive: parseInt(f.elements.keepalive.value, 10) || 0,
+    notes: f.elements.notes.value.trim(),
+    enabled: f.elements.enabled.checked,
+  };
+  if (!editSiteUUID) body.public_key = f.elements.public_key.value.trim();
+  try {
+    if (editSiteUUID) await api("/wgsite/sites/" + editSiteUUID, "PUT", body);
+    else await api("/wgsite/sites", "POST", body);
+    $("site-dialog").close();
+    await loadWgsite();
+  } catch (e) {
+    alertErr(e);
   }
 });
 

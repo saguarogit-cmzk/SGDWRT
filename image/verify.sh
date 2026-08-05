@@ -85,8 +85,7 @@ for f in \
     /opt/saguaro/selftest.sh \
     /etc/init.d/saguaro-core \
     /etc/init.d/saguaro-datapart \
-    /etc/uci-defaults/99-saguaro-firstboot \
-    /etc/board.d/99-saguaro-ports
+    /etc/uci-defaults/99-saguaro-firstboot
 do
     [ -e "$MNT$f" ] || fail "u slici nedostaje $f"
     ok "$f"

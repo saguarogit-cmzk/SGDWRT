@@ -378,8 +378,31 @@ USB 2.0 stick odnosno USB 2.0 port, uz *Legacy USB Support* u BIOS-u.
    Uz to: dok je stick bio u uređaju, sustav je zbog istog UUID-a montirao
    **njegovu** boot particiju na `/boot` umjesto svoje — a kad je stick izvučen,
    `/boot` je ostao visjeti u prazno. Vraćeno ručno.
-2. **OpenWrt na x86 zadano stavlja LAN na `eth1`, a WAN na `eth0`**
-   (`ucidef_set_interfaces_lan_wan "eth1" "eth0"`). Administrator uključi kabel
-   u prvi port i ne može do sučelja jer je to WAN, koji ne pušta upravljanje.
-   Ispravljeno: `image/files/etc/board.d/99-saguaro-ports` postavlja prvi port
-   za LAN, drugi za WAN. Provjera slike od sada traži i tu datoteku.
+2. **Pogrešan trag: raspored portova.** U slici sam našao
+   `ucidef_set_interfaces_lan_wan "eth1" "eth0"` i zaključio da OpenWrt na x86
+   LAN stavlja na drugi port. **Netočno** — taj redak pripada nekom drugom
+   uređaju u `02_network`. Konfiguracija koju je slika stvarno stvorila na
+   uređaju ima `br-lan` s portom `eth0` i `wan` na `eth1`, dakle LAN je na
+   prvom portu, kako i treba. Dodana `board.d` datoteka je zato uklonjena —
+   rješavala je nepostojeći problem.
+
+### Što je dizanje s USB-a ipak dokazalo
+
+Nakon povratka na interni disk vidjelo se da je USB sustav **stvarno odradio
+prvo dizanje**:
+
+| Provjera | Nalaz |
+|---|---|
+| Data particija | `sdb3` **27,2 GB** stvorena iz slobodnog prostora, bez ijednog `resize2fs` |
+| Selidba `/opt/saguaro` | prošla — `bin`, `web`, `data`, `etc`, `log`, `backup`, `selftest.sh` na novoj particiji |
+| `fstab` zapis | `sag_data` → `/opt/saguaro`, uuid `a94ba422-…` |
+| Zapis geometrije | `/etc/saguaro-datapart.json` upisan (disk `sdb`, particija 3, start 2131968, 58314752 sektora) |
+| **Saguaro se pokrenuo** | baza `saguaro.db` stvorena, WAL 791 KB |
+| `uci-defaults` | prazan — sve skripte se izvršile i uredno obrisale |
+| Mrežna konfiguracija | primijenjena u cijelosti (adresa, maska, gateway, DNS) |
+
+Dakle **prvo dizanje iz gotove slike radi na stvarnom hardveru**, uključivo
+stvaranje data particije i selidbu podataka. Ono što nije radilo je sam USB 3.0
+stick na tom starom kontroleru: konzola je javljala da ne može pokrenuti
+`/usr/libexec/login.sh`, a sustav je prestao odgovarati na mreži ubrzo nakon
+pokretanja — što odgovara greškama čitanja s medija, ne s pogreškom u slici.

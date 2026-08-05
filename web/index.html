@@ -1660,12 +1660,17 @@
       </div></details>
 
       <details class="help"><summary>Upozorenja e-mailom — što uređaj javlja</summary><div>
-        Uređaj sam prati stanje i javlja kad se nešto promijeni: pad i povratak
+        Uređaj sam prati stanje i <b>sve zapisuje u dnevnik</b>: pad i povratak
         internet veze, promjena javne IP adrese, rad iza tuđeg NAT-a, pad VPN
         poslužitelja, spajanje korisnika, ponovno pokretanje, prelazak praga za
         procesor/memoriju/disk, neuspio backup, skori istek certifikata.
-        Svaka se vrsta pali zasebno (Status → Alerts), a ista se
+        <br><br><b>Slanje e-mailom je zadano isključeno za sve vrste</b> — pali
+        se zasebno, po vrsti (Status → Alerts). Namjerno: uređaj koji javlja
+        svaku promjenu brzo postane uređaj čije poruke nitko ne čita. Ista se
         poruka ne ponavlja češće od zadanog razmaka.
+        <br><br>Jedino što e-mailom odlazi bez uključivanja ovdje je
+        <b>sigurnosna kopija</b>, prema postavci u modulu Backup (zadano jednom
+        tjedno).
         <br><br><b>CGNAT</b> je upozorenje koje vrijedi shvatiti ozbiljno: ako
         uređaj nema vlastitu javnu adresu, objavljeni serveri i spajanje na VPN
         izvana neće raditi ma kako dobro bilo podešeno.
@@ -1807,10 +1812,14 @@
         <h2>Upozorenja e-mailom</h2>
         <button id="al-run" class="ghost">Provjeri sada</button>
       </div>
-      <p class="hint">Uređaj sam prati stanje i javlja kad se nešto promijeni.
-        Poruke idu na adresu iz SMTP postavki (kartica ispod). Ista se poruka ne
-        ponavlja češće od zadanog razmaka, da jedan pokvaren link ne zatrpa
-        sandučić.</p>
+      <p class="hint">Uređaj sam prati stanje i <b>svaki događaj zapisuje u
+        dnevnik</b> (Status → Monitoring). To se ne isključuje.</p>
+      <p class="hint"><b>E-mail je zadano isključen za sve vrste.</b> Uređaj
+        koji javlja svaku promjenu brzo postane uređaj čije poruke nitko ne
+        čita — pa se prespava i ona važna. Uključi samo ono što stvarno želiš
+        dobiti u sandučić. Ista se poruka ne ponavlja češće od zadanog razmaka.</p>
+      <p class="hint">Sigurnosna kopija se šalje neovisno o ovom popisu, prema
+        postavci u modulu <b>Backup</b> (zadano jednom tjedno).</p>
       <div id="al-kinds" class="check-list"></div>
       <div class="form-grid">
         <label>Oznaka uređaja u naslovu poruke

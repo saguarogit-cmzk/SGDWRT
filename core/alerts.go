@@ -27,20 +27,28 @@ type alertKind struct {
 
 // alertKinds je popis svega o čemu uređaj može javiti. Redoslijed je i
 // redoslijed prikaza u sučelju.
+//
+// **Sve je zadano isključeno.** Uređaj koji sam od sebe šalje poruku za svaku
+// promjenu vrlo brzo postane uređaj čije poruke nitko ne čita — a onda se
+// prespava i ona koja je bila važna. Svaki događaj se **uvijek** zapisuje u
+// dnevnik (Status → Monitoring), a e-mail se pali izrijekom, po vrsti.
+//
+// Jedino što e-mailom odlazi bez uključivanja ovdje je sigurnosna kopija, i to
+// onoliko često koliko je postavljeno u modulu Backup (zadano jednom tjedno).
 var alertKinds = []alertKind{
-	{"wan", "Internet veza je pala ili se vratila", true},
-	{"pubip", "Javna IP adresa se promijenila", true},
-	{"cgnat", "Uređaj je iza operaterskog NAT-a (CGNAT)", true},
-	{"vpn_service", "VPN poslužitelj (WireGuard/OpenVPN) je prestao raditi", true},
+	{"wan", "Internet veza je pala ili se vratila", false},
+	{"pubip", "Javna IP adresa se promijenila", false},
+	{"cgnat", "Uređaj je iza operaterskog NAT-a (CGNAT)", false},
+	{"vpn_service", "VPN poslužitelj (WireGuard/OpenVPN) je prestao raditi", false},
 	{"vpn_client", "VPN korisnik se spojio ili odspojio", false},
-	{"reboot", "Uređaj se ponovno pokrenuo", true},
+	{"reboot", "Uređaj se ponovno pokrenuo", false},
 	{"config", "Promijenjena je konfiguracija (firewall, VPN, WAN)", false},
 	{"login", "Netko se prijavio (Saguaro ili SSH)", false},
-	{"login_failed", "Veći broj neuspjelih prijava", true},
-	{"resources", "Zauzeće procesora, memorije ili diska je previsoko", true},
-	{"backup", "Automatski backup nije uspio", true},
-	{"cert", "VPN certifikat uskoro istječe", true},
-	{"monitor", "Nadzirani uređaj ne odgovara", true},
+	{"login_failed", "Veći broj neuspjelih prijava", false},
+	{"resources", "Zauzeće procesora, memorije ili diska je previsoko", false},
+	{"backup", "Automatski backup nije uspio", false},
+	{"cert", "VPN certifikat uskoro istječe", false},
+	{"monitor", "Nadzirani uređaj ne odgovara", false},
 	{"unknown_mac", "U mreži se pojavio nepoznat uređaj", false},
 }
 

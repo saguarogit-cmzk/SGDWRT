@@ -95,6 +95,22 @@ setup_datapart
 
 mkdir -p "$MOUNT/bin" "$MOUNT/web" "$MOUNT/etc" "$MOUNT/data" "$MOUNT/backup" "$MOUNT/log"
 
+# Zadana lozinka za prvu prijavu.
+#
+# Kod instalacije skriptom lozinku postavlja install.sh (upiše je u datoteku
+# tokena, odakle je Saguaro uzme kao početnu). Slika kroz tu skriptu ne
+# prolazi, pa bi lozinka bila nasumičan token — a upute i sučelje govore
+# 'Sgs#2026'. Zato se ovdje postavlja izrijekom, prije prvog pokretanja.
+#
+# API token pritom ostaje nasumičan, što je bolje nego kod instalacije
+# skriptom. Lozinka je javno poznata, pa sučelje do njene promjene ne dopušta
+# ništa drugo.
+if [ -x "$MOUNT/bin/saguaro-core" ]; then
+	"$MOUNT/bin/saguaro-core" -reset-admin 'Sgs#2026' >/dev/null 2>&1 &&
+		log "zadana lozinka postavljena (obavezna promjena pri prvoj prijavi)" ||
+		log "zadana lozinka NIJE postavljena — lozinka je sadržaj $MOUNT/etc/token"
+fi
+
 /etc/init.d/saguaro-datapart enable 2>/dev/null
 /etc/init.d/saguaro-core enable 2>/dev/null
 /etc/init.d/saguaro-core start 2>/dev/null

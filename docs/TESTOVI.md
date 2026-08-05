@@ -505,3 +505,20 @@ a ta datoteka na svježem uređaju **još ne postoji** — nastaje tek kad se
 primijeni očvršćivanje. Provjera je tražila datoteku koje nema. Popravljeno:
 nepostojeća datoteka se preskače. Nakon popravka 21 prošlo / 2 palo, a nakon
 izrade backupa 22 / 1.
+
+## Prijava na uređaju iz slike (v0.38.0) — **propust nađen u upotrebi**
+
+Korisnik se nije mogao prijaviti s `admin` / `Sgs#2026`, iako to piše i u
+uputama i u sučelju.
+
+Uzrok: zadanu lozinku postavlja `install.sh` — on u datoteku tokena upiše
+doslovno `Sgs#2026`, a Saguaro tu vrijednost uzme kao početnu lozinku admina.
+**Slika kroz tu skriptu ne prolazi**, pa je token nasumičan niz — i lozinka je
+bila taj niz.
+
+Popravljeno u skripti prvog dizanja: prije prvog pokretanja servisa izvodi se
+`saguaro-core -reset-admin 'Sgs#2026'`. API token pritom **ostaje nasumičan**,
+što je bolje nego kod instalacije skriptom (ondje su lozinka i token isti niz).
+
+Provjereno na uređaju: nakon postavljanja lozinke prijava vraća sesiju i
+`must_change_password: true`, dakle sučelje odmah traži promjenu.

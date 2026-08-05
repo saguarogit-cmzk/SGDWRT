@@ -462,9 +462,19 @@ klijentsku opremu dodaješ ručno.
 
 ## Alerts (Status)
 
-Uređaj sam prati stanje i javlja kad se nešto promijeni. Svaka se vrsta
-upozorenja pali zasebno, a ista se poruka ne ponavlja češće od zadanog razmaka
-(zadano 30 minuta) — da jedan pokvaren link ne zatrpa sandučić.
+Uređaj sam prati stanje i **svaki događaj zapisuje u dnevnik** (Status →
+Monitoring). To se ne isključuje i ne ovisi ni o kakvim postavkama.
+
+> **Slanje e-mailom je zadano isključeno za sve vrste.** Namjerno: uređaj koji
+> javlja svaku promjenu vrlo brzo postane uređaj čije poruke nitko ne čita — a
+> onda se prespava i ona koja je bila važna. Uključi samo ono što stvarno želiš
+> u sandučiću.
+
+Svaka se vrsta pali zasebno, a ista se poruka ne ponavlja češće od zadanog
+razmaka (zadano 30 minuta) — da jedan pokvaren link ne zatrpa sandučić.
+
+Jedino što e-mailom odlazi neovisno o ovom popisu je **sigurnosna kopija**,
+prema postavci u modulu Backup (zadano **jednom tjedno**).
 
 Što se prati: pad i povratak internet veze · promjena javne IP adrese · rad iza
 tuđeg NAT-a (CGNAT) · pad VPN poslužitelja · spajanje i odspajanje VPN

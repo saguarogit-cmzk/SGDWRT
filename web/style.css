@@ -38,11 +38,12 @@ code{background:#eef2f5;border:1px solid var(--line2);border-radius:2px;padding:
 .login-error{color:var(--crit);font-size:12px;margin:4px 0 0}
 
 .brand{display:flex;align-items:center;gap:9px}
-.brand-mark{width:28px;height:28px;border-radius:5px;background:var(--green);color:#fff;
-  display:grid;place-items:center;font-size:16px;flex:0 0 auto}
-.brand-mark::before{content:"🌵"}
-.brand-txt strong{display:block;font-size:15px;color:var(--ink);line-height:1.15;font-weight:700}
-.brand-txt span{font-size:10px;color:var(--muted);letter-spacing:.09em;text-transform:uppercase}
+/* Znak je slika u dvostrukoj razlučivosti (363x96), prikazana na 32 px visine
+   — na ekranima s gustim pikselima ostaje oštra. Visina se zadaje, širina se
+   računa sama, pa se logo ne rastegne ako se slika ikad zamijeni drugom. */
+.brand-logo{height:32px;width:auto;display:block}
+.login-card .brand{justify-content:center;margin-bottom:6px}
+.login-card .brand-logo{height:44px}
 
 /* ---------- forme ---------- */
 input,select,textarea{

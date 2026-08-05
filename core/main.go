@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.44.0"
+const version = "0.45.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -229,6 +229,9 @@ func main() {
 	mux.Handle("DELETE /api/v1/inventory/hosts/{uuid}", s.auth(s.handleHostDelete))
 	mux.Handle("GET /api/v1/dhcp/status", s.auth(s.handleDHCPStatus))
 	mux.Handle("POST /api/v1/dhcp/apply", s.auth(s.handleDHCPApply))
+	mux.Handle("POST /api/v1/dhcp/pool", s.auth(s.handleDHCPPoolSet))
+	mux.Handle("GET /api/v1/dns/upstream", s.auth(s.handleDNSUpstreamGet))
+	mux.Handle("POST /api/v1/dns/upstream", s.auth(s.handleDNSUpstreamSet))
 	mux.Handle("GET /api/v1/dns/status", s.auth(s.handleDNSStatus))
 	mux.Handle("GET /api/v1/dns/records", s.auth(s.handleDNSRecordList))
 	mux.Handle("POST /api/v1/dns/records", s.auth(s.handleDNSRecordCreate))

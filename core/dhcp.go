@@ -71,6 +71,8 @@ func (s *server) handleDHCPStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// svi DHCP poolovi (jedan po sučelju/podmreži), ne samo lan
+	ranges := dhcpRanges()
+	blocked := dhcpBlockedIfaces(r.Context())
 	servers := []map[string]any{}
 	for name, sec := range cfg {
 		if sectStr(sec, ".type") != "dhcp" {
@@ -80,13 +82,56 @@ func (s *server) handleDHCPStatus(w http.ResponseWriter, r *http.Request) {
 		if iface == "" {
 			iface = name
 		}
+		start, _ := strconv.Atoi(sectStr(sec, "start"))
+		limit, _ := strconv.Atoi(sectStr(sec, "limit"))
+		devIP, subnet := ifaceIPv4(r.Context(), iface)
+		firstIP, lastIP := "", ""
+		if f, l := poolRange(subnet, start, limit); f != nil && l != nil {
+			firstIP, lastIP = f.String(), l.String()
+		}
+		gateway, dnsOpt, domain := parseDHCPOptions(uciList(sec, "dhcp_option"))
+
+		// pool "radi" tek kad ga dnsmasq stvarno dobije u konfiguraciju;
+		// sama uci sekcija ne znači ništa
+		running := false
+		for _, rg := range ranges {
+			if firstIP != "" && strings.Contains(rg, firstIP) {
+				running = true
+				break
+			}
+		}
+		note := ""
+		ignored := sectStr(sec, "ignore") == "1"
+		switch {
+		case ignored:
+			note = "isključen"
+		case running:
+			note = "dijeli adrese"
+		case subnet == nil:
+			note = "sučelje nema statičku IPv4 adresu, pa ne može dijeliti adrese"
+		case blocked[devName(r.Context(), iface)] || blocked[iface]:
+			note = "NE RADI — na ovoj mreži već postoji drugi DHCP poslužitelj, " +
+				"pa je OpenWrt svoj namjerno ostavio ugašenim"
+		default:
+			note = "NE RADI — dnsmasq nije preuzeo ovaj raspon; pogledaj System log"
+		}
+
 		servers = append(servers, map[string]any{
 			"section":   name,
 			"interface": iface,
 			"start":     sectStr(sec, "start"),
 			"limit":     sectStr(sec, "limit"),
+			"first_ip":  firstIP,
+			"last_ip":   lastIP,
+			"subnet":    cidrOrEmpty(subnet),
+			"device_ip": ipOrEmpty(devIP),
 			"leasetime": sectStr(sec, "leasetime"),
-			"ignore":    sectStr(sec, "ignore") == "1",
+			"gateway":   gateway,
+			"dns":       dnsOpt,
+			"domain":    domain,
+			"ignore":    ignored,
+			"running":   running,
+			"note":      note,
 		})
 	}
 	sort.Slice(servers, func(i, j int) bool {

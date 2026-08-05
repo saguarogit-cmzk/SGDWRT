@@ -826,3 +826,52 @@ priručniku.
 | Stvarno slanje izvještaja e-mailom | SMTP postavke na uređaju nisu popunjene (vraćena arhiva je starija od njih). Sastavljanje poruke i isporuka kroz `smtpDeliver` isti su put kojim već ide backup e-mailom, koji radi |
 | Puni mjesec podataka | mjerenje je počelo danas; brojke za cijeli mjesec bit će prvi put u rujnu |
 | Automatsko slanje na zadani dan | traži čekanje do 1. u mjesecu; ručno slanje istog izvještaja radi kroz isti kod |
+
+## Filtriranje sadržaja, DHCP i preslagivanje izbornika (v0.45.0)
+
+Provjereno na uređaju **05.08.2026.**
+
+| Provjera | Ishod |
+|---|---|
+| Obiteljski DNS (Cloudflare Families) | **radi** — prije: `pornhub.com` → 66.254.114.41; poslije: upit ne prolazi. Obične stranice rade normalno |
+| Odgovor filtra izravno s 1.1.1.3 | vraća praznu adresu (`::`) — kroz naš DNSSEC to postaje SERVFAIL, stranica je jednako nedostupna |
+| `noresolv` uz odabir | **upisano** — uređaj više ne pita DNS od operatera, pa filtar ne radi samo ponekad |
+| Stanje vraćeno nakon testa | **da** — uređaj je vraćen na 1.1.1.1 / 8.8.8.8 kako je i bio |
+| DHCP: pravo stanje | **radi** — piše „NE RADI — na ovoj mreži već postoji drugi DHCP poslužitelj" umjesto lažne kvačice |
+| DHCP: raspon u pravim adresama | **radi** — 192.168.50.100 – 192.168.50.249 umjesto „100 +150" |
+| DHCP: WAN nije nazvan podmrežom | **radi** — „Internet (wan)", uz objašnjenje da se ondje adrese namjerno ne dijele |
+| Diagnostics: jednostrani promet | **prepoznaje se** — 102 od 164 veze bez povratnog paketa → „vidi se samo jedan smjer" uz objašnjenje |
+| Provjera sučelja u gradnji | **radi** — odmah je uhvatila dva sudara id-eva koje sam napravio (`up-*` prema modulu Updates) |
+
+### Što je test otkrio na uređaju
+
+**DHCP nikad nije ni radio, a sučelje je pokazivalo da radi.** U dnevniku stoji
+`found already running DHCP-server on interface 'br-lan' refusing to start`.
+OpenWrt je zatekao DHCP na 192.168.50.1 i svoj namjerno nije pokrenuo. Popis
+leaseova je zato bio prazan — što je bilo **točno**, ali bez ijedne riječi
+objašnjenja. IP adrese koje se vide u System logu su `udhcpc`, tj. ovaj uređaj
+**prima** adresu na drugom WAN portu, a ne dijeli je.
+
+**Uređaj vidi samo pola prometa.** Radna stanica ima .222 kao gateway, ali
+odgovori joj se vraćaju izravno preko .1 (isti mrežni segment). Zato 62 %
+veza stoji kao `[UNREPLIED]`, a stupci *Primljeno* pokazuju nulu. To ujedno
+objašnjava i zašto potrošnja po uređaju u nlbwmonu izgleda naopako i zašto se
+preuzimanje od 10 MB uopće nije pojavilo u statistici.
+
+### Provjereno kod izvora, a ne pogađano
+
+- **AdGuard obiteljske adrese**: 94.140.14.15 + **94.140.15.16**. Vrlo se često
+  prepisuje pogrešan par (94.140.15.15 je obični AdGuard **bez** filtra za
+  odrasle) — provjereno u AdGuardovoj dokumentaciji.
+- **nlbwmon `rx`/`tx`**: `rx_bytes` = `in_bytes` = ono što je uređaj u mreži
+  **primio** (provjereno u izvornom kodu `client.c` i `nfnetlink.c`).
+- **Shallalist** koji se po uputama s interneta i danas preporučuje — **ne
+  postoji**; domena je danas news-magazin.
+
+### Što nije provjereno
+
+| Stavka | Zašto |
+|---|---|
+| Preuzimanje dijeljenja adresa od postojećeg routera | traži gašenje DHCP-a na routeru 192.168.50.1, a to je Goranova mreža u pogonu |
+| Vlastita lista domena s interneta | polje i zapis su provjereni, samo preuzimanje velike liste nije pokrenuto da se uređaju ne troši memorija bez potrebe |
+| Filtriranje s klijentskog računala | radna stanica ne ide na internet kroz ovaj uređaj (vidi gore), pa se s nje ne može izmjeriti |

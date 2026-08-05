@@ -29,7 +29,13 @@ if (dup.size) {
   fail = 1;
 }
 
-const used = [...new Set([...js.matchAll(/\$\("([^"]+)"\)/g)].map((m) => m[1]))];
+// element se doseže na tri načina; setNote prima goli id i tiho ne radi ništa
+// ako ga nema, pa se takva greška u pregledniku ne vidi (nađeno 05.08.2026.)
+const used = [...new Set([
+  ...[...js.matchAll(/\$\("([^"]+)"\)/g)].map((m) => m[1]),
+  ...[...js.matchAll(/setNote\("([^"]+)"/g)].map((m) => m[1]),
+  ...[...js.matchAll(/getElementById\("([^"]+)"\)/g)].map((m) => m[1]),
+])];
 const missing = used.filter((id) => !seen.has(id));
 if (missing.length) {
   console.error("GREŠKA: app.js traži elemente kojih nema: " + missing.join(", "));

@@ -98,6 +98,10 @@ func (s *server) handleProtectionGet(w http.ResponseWriter, r *http.Request) {
 			if g, ok := cfg["config"]; ok {
 				ad["enabled"] = sectStr(g, "enabled") == "1"
 				ad["allowed_domains"] = strings.Join(sectList(g, "allowed_domain"), " ")
+				ad["blocked_domains"] = strings.Join(sectList(g, "blocked_domain"), " ")
+			}
+			if c, ok := cfg[sagPrefix+"list"]; ok {
+				ad["custom_list"] = sectStr(c, "url")
 			}
 			type entry struct {
 				Section string `json:"section"`
@@ -258,6 +262,8 @@ func (s *server) handleAdblockSet(w http.ResponseWriter, r *http.Request) {
 		Enabled        *bool    `json:"enabled"`
 		Sections       []string `json:"sections"` // uključene file_url sekcije
 		AllowedDomains string   `json:"allowed_domains"`
+		BlockedDomains string   `json:"blocked_domains"`
+		CustomList     string   `json:"custom_list"` // vlastita lista s URL-a
 	}
 	if !decodeBody(w, r, &in) {
 		return
@@ -274,6 +280,22 @@ func (s *server) handleAdblockSet(w http.ResponseWriter, r *http.Request) {
 		}
 		allowed = append(allowed, d)
 	}
+	blockedList := []string{}
+	for _, d := range strings.Fields(strings.ToLower(in.BlockedDomains)) {
+		if !validDNSName(d) {
+			writeErr(w, http.StatusBadRequest, "neispravna domena u blokadama: "+d)
+			return
+		}
+		blockedList = append(blockedList, d)
+	}
+	customURL := strings.TrimSpace(in.CustomList)
+	if customURL != "" && !strings.HasPrefix(customURL, "https://") &&
+		!strings.HasPrefix(customURL, "http://") {
+		writeErr(w, http.StatusBadRequest,
+			"vlastita lista mora biti adresa koja počinje s https:// ili http://")
+		return
+	}
+
 	cfg, err := uciGetConfig(ctx, "adblock-fast")
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
@@ -312,9 +334,34 @@ func (s *server) handleAdblockSet(w http.ResponseWriter, r *http.Request) {
 	for _, d := range allowed {
 		b.WriteString("add_list adblock-fast.config.allowed_domain=" + d + "\n")
 	}
+	// vlastite blokirane domene: ono što nijedna javna lista ne pokriva
+	if g, ok := cfg["config"]; ok {
+		if _, has := g["blocked_domain"]; has {
+			b.WriteString("delete adblock-fast.config.blocked_domain\n")
+		}
+	}
+	for _, d := range blockedList {
+		b.WriteString("add_list adblock-fast.config.blocked_domain=" + d + "\n")
+	}
+	// vlastita lista s interneta ide u zasebnu sekciju pod našim prefiksom,
+	// da se poslije zna tko ju je dodao (D-011)
+	const customSect = sagPrefix + "list"
+	if customURL == "" {
+		if _, has := cfg[customSect]; has {
+			b.WriteString("delete adblock-fast." + customSect + "\n")
+		}
+	} else {
+		b.WriteString("set adblock-fast." + customSect + "=file_url\n")
+		b.WriteString("set adblock-fast." + customSect + ".name=" +
+			uciQuote("Vlastita lista") + "\n")
+		b.WriteString("set adblock-fast." + customSect + ".url=" +
+			uciQuote(customURL) + "\n")
+		b.WriteString("set adblock-fast." + customSect + ".action=block\n")
+		b.WriteString("set adblock-fast." + customSect + ".enabled=1\n")
+	}
 	for name, sec := range cfg {
-		if sectStr(sec, ".type") != "file_url" {
-			continue
+		if sectStr(sec, ".type") != "file_url" || name == customSect {
+			continue // vlastitom listom upravlja polje iznad, ne kvačice
 		}
 		v := "0"
 		if wanted[name] {

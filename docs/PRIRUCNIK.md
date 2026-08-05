@@ -219,14 +219,91 @@ susjedi prikazuju se u modulu.
 
 ## DHCP
 
-- **Poolovi**: po jedan po mreži (lan, VLAN-ovi...); svaki se može isključiti —
-  obavezno isključi pool ako u toj mreži adrese već dijeli drugi router
-  (inače nastaje sukob, tzv. rogue DHCP).
+Sve što se tiče dodjele adresa je na **jednom ekranu**: rasponi po mrežama,
+rezervacije i popis onoga što je trenutno izdano.
+
+### Dijeljenje adresa po mrežama
+
+Jedan raspon po mreži. **Glavna mreža (LAN)** i svaka **podmreža** (VLAN ili
+mreža na portu) imaju svoj; kod veze prema internetu (WAN) adrese se namjerno
+ne dijele. Za svaki raspon se postavlja:
+
+- **Prva i zadnja adresa** — upisuju se kao prave adrese (npr.
+  192.168.50.100 – 192.168.50.249), ne kao brojevi. Adresa samog uređaja ne
+  smije biti unutar raspona i Saguaro to odbija.
+- **Trajanje leasea** — koliko dugo adresa vrijedi (npr. `12h`).
+- **Što se javlja klijentima** — gateway, DNS i domena. Prazno znači **ovaj
+  uređaj**, što je i uobičajeno. Upisuje se kad gateway ili DNS mora biti netko
+  drugi.
+
+> **Stupac Stanje govori radi li dijeljenje adresa stvarno**, a ne je li samo
+> upisano da bi trebalo. To nije isto: ako je na mreži već netko tko dijeli
+> adrese, OpenWrt svoj DHCP **namjerno ne pokrene** i to zapiše u System log.
+> Zaštita je dobra — dva poslužitelja na istoj mreži dijele adrese jedan mimo
+> drugoga i takav se kvar teško nalazi — ali se dosad u sučelju nije vidjela.
+> Ako uređaj treba preuzeti dijeljenje adresa, prvo isključi DHCP na starom
+> routeru, pa ovdje spremi raspon.
+
+### Rezervacije i leaseovi
+
 - **Rezervacije**: uređaj s upisanim MAC-om uvijek dobiva istu adresu. Dodaju
   se ručno ili gumbom *U rezervacije* kod aktivnog leasea. Primjenjuju se
   gumbom *Primijeni rezervacije*.
+- **Aktivni leaseovi**: što je uređaj stvarno izdao. Prazan popis uz uključen
+  raspon znači da dijeljenje ne radi — pogledaj stupac Stanje gore.
 
 ## DNS
+
+Sve što se tiče imena je na **jednom ekranu**: kome uređaj šalje upite,
+lokalna imena, filtriranje domena i prisilni DNS.
+
+### Vanjski DNS — kome uređaj šalje upite
+
+Vrijedi za **cijeli uređaj**, i za glavnu mrežu i za sve podmreže. Bira se iz
+popisa ili se upišu vlastite adrese. Uz to ide i **filtriranje sadržaja za
+odrasle**: posao radi vanjski poslužitelj, pa uređaj ne troši ni memoriju ni
+procesor, a lista se održava sama.
+
+| Izbor | Adrese | Filtrira sadržaj za odrasle |
+|---|---|---|
+| Cloudflare Families | 1.1.1.3 · 1.0.0.3 | da (i zloćudne stranice) |
+| AdGuard Family | 94.140.14.15 · **94.140.15.16** | da (i oglase i praćenje) |
+| CleanBrowsing Family | 185.228.168.168 · 185.228.169.168 | da |
+| OpenDNS FamilyShield | 208.67.222.123 · 208.67.220.123 | da |
+| Cloudflare / Quad9 / Google | 1.1.1.1 · 9.9.9.9 · 8.8.8.8 | ne |
+| Od operatera | — | ne |
+
+> **Pazi na AdGuardov drugi poslužitelj.** Po internetu se prepisuje par
+> 94.140.14.15 + 94.140.15.15, a **94.140.15.15 je obični AdGuard bez filtra
+> za odrasle**. S takvim parom filtar radi samo dok prvi poslužitelj odgovara,
+> a to nitko ne primijeti. Saguaro nudi ispravan par.
+
+Uz odabir se automatski upisuje i da uređaj **ne pita nikoga drugoga** (ne
+koristi DNS koji dobije od operatera) — inače bi filtar radio samo ponekad, a
+to je najgora vrsta filtra.
+
+**Filtar sam po sebi nije dovoljan.** Tko na svom računalu ili mobitelu upiše
+tuđi DNS, zaobiđe ga u minuti. Zato uz njega ide **Prisilni DNS** (niže na
+istom ekranu): vraća sav DNS promet na uređaj i blokira DNS preko TLS-a (853)
+i preko HTTPS-a (DoH) prema poznatim javnim poslužiteljima. Sučelje javi ako
+je filtar uključen, a prisilni DNS nije.
+
+Filtar radi na razini **domene**. Tko ide izravno na IP adresu ili kroz
+vlastiti VPN, ne prolazi kroz DNS i ovo ga ne dira.
+
+> Uz uključen **DNSSEC** blokirana domena vraća grešku (SERVFAIL) umjesto
+> prazne adrese — stranica je jednako nedostupna, samo poruka u pregledniku
+> izgleda kao kvar DNS-a, a ne kao blokada.
+
+### Filtriranje domena (liste)
+
+Uz gotove liste (reklame, praćenje, zloćudne domene) mogu se upisati i
+**vlastite blokirane domene** te **vlastita lista s interneta**. Nijedna od
+ponuđenih lista ne pokriva sadržaj za odrasle — za to je jednostavnije uzeti
+obiteljski DNS gore, a lista dolazi u obzir kad podaci moraju ostati na
+uređaju. Velike liste troše memoriju, pa provjeri veličinu prije upotrebe.
+
+### Lokalna imena i ostalo
 
 - **Lokalni zapisi**: imena za uređaje u mreži (npr. `nas.lan` umjesto
   192.168.1.50). Tip **A** = ime → IP adresa; **CNAME** = dodatno ime (alias)
@@ -1034,3 +1111,42 @@ odabrani mjesec odmah, bez čekanja termina.
 - **Broj upozorenja** teče od dana kad je ova verzija postavljena; popis
   najčešćih poruka dolazi iz dnevnika, koji seže dalje unatrag. Kad se to dvoje
   ne poklapa, izvještaj to kaže.
+
+## Kako je posloženo sučelje
+
+Skupine u gornjoj traci idu po tome **čemu služe**, ne po tome kojim se
+paketom izvode:
+
+| Skupina | Što je unutra |
+|---|---|
+| **Status** | pregled stanja, nadzor, dijagnostika, upozorenja, trag promjena |
+| **Network** | Mreže (glavna mreža i podmreže), Internet (WAN), Multi-WAN, DHCP, DNS, rute, OSPF, QoS |
+| **Firewall** | pravila, objava servera, očvršćivanje pristupa |
+| **Filtering** | blokade po **adresama** (IP liste, detekcija skeniranja) |
+| **Proxy** | objava više web servisa iza jedne adrese |
+| **VPN** | udaljeni pristup, veza ured–ured, OpenVPN |
+| **System** | korisnici, backup, izvještaji, nadogradnje, postavke |
+
+Dvije stvari koje se lako pomiješaju:
+
+- **Mreže vs. Internet (WAN)** — *Mreže* je ono unutra (glavna mreža i
+  podmreže), *Internet* je veza prema van. Prije su bili na istom ekranu i nije
+  se vidjelo što je što.
+- **DNS vs. Filtering** — sve što se tiče **imena** (vanjski DNS, lokalna
+  imena, blokada domena, prisilni DNS) je u **DNS** modulu. U *Filtering* su
+  ostale blokade po **adresama**.
+
+## Zašto brojke prometa katkad izgledaju upola manje
+
+Uređaj može brojati samo ono što kroz njega prođe. Ako je postavljen **uz**
+postojeći router, a ne kao izlaz mreže, promet često ide kroz njega samo u
+jednom smjeru — odgovori se vraćaju drugim putem. Tada:
+
+- u **Diagnostics** mnoge veze stoje bez ijednog paketa u povratnom smjeru, a
+  stupac *Primljeno* pokazuje nulu;
+- **potrošnja po uređaju** (Monitoring, Reports) je manja od stvarne;
+- ukupan promet na WAN-u u **Reports** je i dalje točan, jer se čita s samog
+  sučelja.
+
+Saguaro to sam prepozna i napiše na ekranu Diagnostics kad se dogodi. Kad
+uređaj postane gateway te mreže, brojke su potpune same od sebe.

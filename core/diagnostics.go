@@ -35,6 +35,11 @@ type connEntry struct {
 	InBytes  int64  `json:"in_bytes"`  // odgovor natrag
 	Timeout  int    `json:"timeout_s"` // koliko još jezgra drži zapis
 	SrcName  string `json:"src_name,omitempty"`
+	// Unreplied: jezgra nije vidjela nijedan paket u povratnom smjeru. To je
+	// normalno za tek započete veze, ali kad takvih ima puno, uređaj vidi samo
+	// pola prometa — najčešće jer nije stvarni izlaz te mreže, nego stoji uz
+	// postojeći router (nađeno na uređaju 05.08.2026.).
+	Unreplied bool `json:"unreplied"`
 }
 
 // deviceSummary zbraja veze po lokalnom uređaju — „tko troši vezu".
@@ -62,6 +67,10 @@ func parseConntrackLine(line string) (connEntry, bool) {
 			// Stanje TCP veze stoji kao goli token (ESTABLISHED, TIME_WAIT…).
 			// Mora sadržavati slovo — i timeout je goli token, ali brojčani,
 			// pa bi bez ove provjere "114" završio kao stanje (viđeno uživo).
+			if tok == "[UNREPLIED]" {
+				e.Unreplied = true
+				continue
+			}
 			if e.Proto == "tcp" && e.State == "" && len(tok) > 2 &&
 				strings.ToUpper(tok) == tok && !strings.HasPrefix(tok, "[") &&
 				strings.IndexFunc(tok, func(r rune) bool {
@@ -125,12 +134,17 @@ func (s *server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	conns := []connEntry{}
 	perDev := map[string]*deviceSummary{}
 	var totalOut, totalIn int64
+	unreplied, totalConns := 0, 0
 	for _, ln := range strings.Split(string(b), "\n") {
 		e, ok := parseConntrackLine(ln)
 		if !ok {
 			continue
 		}
 		e.SrcName = names[e.Src]
+		totalConns++
+		if e.Unreplied {
+			unreplied++
+		}
 		totalOut += e.OutBytes
 		totalIn += e.InBytes
 		d := perDev[e.Src]
@@ -169,6 +183,12 @@ func (s *server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		"truncated":   truncated,
 		"total_out":   totalOut,
 		"total_in":    totalIn,
+		"unreplied":   unreplied,
+		"conns_total": totalConns,
+		// Više od 40 % veza bez ijednog paketa natrag nije normalno stanje
+		// mreže — tada uređaj gotovo sigurno vidi samo jedan smjer prometa i
+		// sve brojke ovdje treba čitati s tim na umu.
+		"one_sided": totalConns >= 10 && unreplied*100/totalConns > 40,
 	})
 }
 

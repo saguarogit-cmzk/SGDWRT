@@ -325,24 +325,41 @@ async function loadDhcp() {
 
   const pb = $("dhcp-pool-rows");
   pb.replaceChildren();
-  let anyActive = false;
+  let anyActive = false, anyBlocked = false, running = 0;
   for (const sv of st.servers || []) {
     if (!sv.ignore) anyActive = true;
+    if (sv.running) running++;
+    if (!sv.running && !sv.ignore) anyBlocked = true;
+
     const tr = document.createElement("tr");
-    for (const v of [sv.interface,
-      sv.start ? `${sv.start} +${sv.limit}` : "—", sv.leasetime || "—"]) {
+    // "lan" je glavna mreža; sve ostalo su podmreže — piše se izrijekom da se
+    // ne mora pogađati što je što
+    // ime po ulozi: WAN nije podmreža nego veza prema internetu, a na njoj se
+    // adrese namjerno ne dijele
+    const naziv = sv.interface === "lan" ? "Glavna mreža (LAN)"
+      : /^(wan|sag_wan[0-9]*)$/.test(sv.interface) ? "Internet (" + sv.interface + ")"
+        : "Podmreža " + sv.interface;
+    const javlja = [
+      sv.gateway ? "gateway " + sv.gateway : "",
+      sv.dns ? "DNS " + sv.dns : "",
+      sv.domain ? "domena " + sv.domain : "",
+    ].filter(Boolean).join(", ") || "ovaj uređaj";
+
+    for (const v of [naziv, sv.subnet || "—",
+      sv.first_ip ? sv.first_ip + " – " + sv.last_ip : "—",
+      sv.leasetime || "—", javlja]) {
       const td = document.createElement("td");
       td.textContent = v;
       tr.append(td);
     }
-    // kvačica je i prikaz i prekidač — jedan stupac umjesto pilule i gumba
+
     const tdS = document.createElement("td");
     tdS.append(tick(!sv.ignore, async () => {
       const next = !!sv.ignore;
       const q = next
-        ? `Uključiti DHCP pool na "${sv.interface}"?\n\nAko u toj mreži već ` +
+        ? `Uključiti dijeljenje adresa u mreži "${sv.interface}"?\n\nAko u toj mreži već ` +
           "postoji router koji dijeli adrese, klijenti mogu dobivati krive adrese."
-        : `Isključiti DHCP pool na "${sv.interface}"?`;
+        : `Isključiti dijeljenje adresa u mreži "${sv.interface}"?`;
       if (!confirm(q)) return;
       try {
         const r = await api("/dhcp/server", "POST",
@@ -353,15 +370,40 @@ async function loadDhcp() {
       } catch (e) {
         $("dhcp-toggle-result").textContent = "Greška: " + (e.message || e);
       }
-    }, "DHCP pool " + sv.interface));
+    }, "DHCP u mreži " + sv.interface));
     tr.append(tdS);
+
+    const tdN = document.createElement("td");
+    const jeWan = /^(wan|sag_wan[0-9]*)$/.test(sv.interface);
+    tdN.textContent = jeWan && sv.ignore
+      ? "isključen — tako i treba, adrese se ne dijele prema internetu"
+      : sv.note || "";
+    if (!sv.running && !sv.ignore && !jeWan) tdN.className = "bad";
+    tr.append(tdN);
+
+    const tdA = document.createElement("td");
+    tdA.className = "row-actions";
+    tdA.append(btnSm("Uredi", false, () => openPoolDialog(sv)));
+    tr.append(tdA);
     pb.append(tr);
   }
-  $("dhcp-srv-hint").textContent = anyActive
-    ? "⚠ Aktivan DHCP pool na mreži s postojećim routerom može dijeliti krive " +
-      "adrese (rogue DHCP)."
-    : "Svi DHCP poolovi su isključeni — rezervacije se primjenjuju, ali se ne " +
-      "dijele dok pool ne uključiš.";
+
+  const badge = $("dhcp-state");
+  const ukupno = (st.servers || []).length;
+  if (ukupno === 0) setPill(badge, "off", "nema mreža");
+  else if (running === 0) setPill(badge, "crit", "ne dijeli adrese");
+  else if (anyBlocked) setPill(badge, "warn", running + " od " + ukupno);
+  else setPill(badge, "good", "dijeli adrese");
+  setNote("dhcp-srv-note", running + " od " + ukupno +
+    (ukupno === 1 ? " mreže dijeli adrese" : " mreža dijeli adrese"));
+
+  $("dhcp-srv-hint").textContent = anyBlocked
+    ? "⚠ Bar jedan raspon je uključen, a ne radi — najčešće zato što na toj " +
+      "mreži već postoji drugi DHCP poslužitelj. Objašnjenje je u stupcu Stanje."
+    : anyActive ? ""
+      : "Svi rasponi su isključeni — rezervacije se primjenjuju, ali se ne " +
+        "dijele dok raspon ne uključiš.";
+
 
   const managedDB = hs.hosts.filter((h) => h.managed).length;
   const sagOnDev = st.static_leases.filter((l) => l.managed_by_saguaro).length;
@@ -448,6 +490,11 @@ let dnssecOn = false;
 let editSpUUID = null;
 
 async function loadDns() {
+  // DNS modul drži sve što se tiče imena: vanjski poslužitelj, lokalne zapise,
+  // split DNS, filtriranje domena i prisilni DNS. Zato se ovdje puni i ono što
+  // je prije bilo u zasebnom modulu.
+  loadUpstream().catch(alertErr);
+  loadProtection().catch(alertErr);
   const [st, rc, sp] = await Promise.all([
     api("/dns/status"), api("/dns/records"), api("/dns/split")]);
 
@@ -1284,6 +1331,110 @@ function openPeerDialog(p) {
   $("peer-dialog").showModal();
 }
 
+
+/* ---------- vanjski DNS (kome uređaj šalje upite) ---------- */
+
+let upPresets = [];
+
+async function loadUpstream() {
+  const x = await api("/dns/upstream");
+  upPresets = x.presets || [];
+  const sel = $("dnsup-preset");
+  sel.replaceChildren();
+  for (const p of upPresets) {
+    const o = document.createElement("option");
+    o.value = p.id;
+    o.textContent = p.label;
+    sel.append(o);
+  }
+  sel.value = x.preset || "isp";
+  $("dnsup-servers").value = (x.servers || []).join(" ");
+  upShowPreset(x.preset === "custom");
+
+  const badge = $("dnsup-state");
+  if (x.family) setPill(badge, "good", "filtrira sadržaj za odrasle");
+  else if (x.preset === "isp") setPill(badge, "off", "od operatera");
+  else setPill(badge, "warn", "bez filtra sadržaja");
+  setNote("dnsup-note", (x.servers || []).join(", ") || "adrese od operatera");
+
+  // filtar bez prisilnog DNS-a se zaobiđe u minuti — to mora pisati ovdje,
+  // a ne samo u priručniku
+  if (x.family && !x.forced_dns_enabled) {
+    $("dnsup-result").textContent = "⚠ Filtar radi, ali Prisilni DNS je isključen — " +
+      "tko na svom uređaju upiše drugi DNS, zaobići će ga.";
+  }
+}
+
+function upShowPreset(custom) {
+  $("dnsup-custom-wrap").classList.toggle("hidden", !custom);
+  const p = upPresets.find((x) => x.id === $("dnsup-preset").value);
+  $("dnsup-desc").textContent = p ? p.note : "";
+}
+
+$("dnsup-preset").addEventListener("change", () => upShowPreset($("dnsup-preset").value === "custom"));
+
+$("dnsup-save").addEventListener("click", async () => {
+  $("dnsup-result").textContent = "Spremam…";
+  try {
+    const r = await api("/dns/upstream", "POST", {
+      preset: $("dnsup-preset").value,
+      servers: $("dnsup-servers").value.trim(),
+    });
+    $("dnsup-result").textContent = "Spremljeno" +
+      (r.family ? " — sadržaj za odrasle se filtrira." : ".") +
+      " Backup: " + r.backup;
+    await loadUpstream();
+  } catch (e) {
+    $("dnsup-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+/* ---------- raspon adresa (DHCP pool) ---------- */
+
+let editPoolIface = null;
+
+function openPoolDialog(sv) {
+  const f = $("pool-form");
+  editPoolIface = sv.interface;
+  $("pool-dialog-title").textContent = sv.interface === "lan"
+    ? "Raspon adresa — glavna mreža (LAN)"
+    : "Raspon adresa — podmreža " + sv.interface;
+  $("pool-net").textContent = sv.subnet
+    ? "Mreža " + sv.subnet + ", adresa uređaja " + (sv.device_ip || "—")
+    : "Sučelje nema statičku IPv4 adresu.";
+  f.elements.first_ip.value = sv.first_ip || "";
+  f.elements.last_ip.value = sv.last_ip || "";
+  f.elements.leasetime.value = sv.leasetime || "";
+  f.elements.gateway.value = sv.gateway || "";
+  f.elements.dns.value = sv.dns || "";
+  f.elements.domain.value = sv.domain || "";
+  f.elements.enabled.checked = !sv.ignore;
+  $("pool-dialog").showModal();
+}
+
+$("pool-cancel").addEventListener("click", () => $("pool-dialog").close());
+$("pool-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  try {
+    const r = await api("/dhcp/pool", "POST", {
+      interface: editPoolIface,
+      first_ip: f.elements.first_ip.value.trim(),
+      last_ip: f.elements.last_ip.value.trim(),
+      leasetime: f.elements.leasetime.value.trim(),
+      gateway: f.elements.gateway.value.trim(),
+      dns: f.elements.dns.value.trim(),
+      domain: f.elements.domain.value.trim(),
+      enabled: f.elements.enabled.checked,
+    });
+    $("pool-dialog").close();
+    $("dhcp-toggle-result").textContent = "Spremljeno. Backup: " + r.backup;
+    await loadDhcp();
+  } catch (e) {
+    alertErr(e);
+  }
+});
+
 /* ---------- mjesečni izvještaj ---------- */
 
 async function loadReports() {
@@ -1670,6 +1821,8 @@ async function loadProtection() {
   const ad = x.adblock || {};
   $("ad-enabled").checked = !!ad.enabled;
   $("ad-allow").value = ad.allowed_domains || "";
+  $("ad-block").value = ad.blocked_domains || "";
+  $("ad-custom").value = ad.custom_list || "";
   const entBox = $("ad-entries");
   entBox.replaceChildren();
   for (const e of ad.entries || []) {
@@ -2558,18 +2711,18 @@ const MODULES = {
   alerts:    ["Alerts", "Što uređaj javlja e-mailom i kome", () => loadAlertsView()],
   audit:     ["Audit log", "Tko je i što promijenio u postavkama uređaja", () => loadAudit()],
   diag:      ["Diagnostics", "Aktivne veze i snimanje prometa za analizu", () => loadDiag()],
-  network:   ["Interfaces", "LAN adresa, WAN veze i VLAN mreže", () => loadNetwork()],
+  network:   ["Mreže", "Glavna mreža (LAN) i podmreže — adrese i segmenti", () => loadNetwork()],
+  wan:       ["Internet (WAN)", "Veze prema internetu i dinamički DNS", () => loadNetwork()],
   multiwan:  ["Multi-WAN", "Više internet veza — failover, raspodjela i nadzor", () => loadMultiwan()],
   routes:    ["Static routes", "Ručno upisani putevi do mreža koje nisu izravno na uređaju", () => loadRoutes()],
   ospf:      ["OSPF", "Dinamičko usmjeravanje — automatska razmjena ruta s routerima", () => loadOspf()],
   qos:       ["QoS", "Ograničenje brzine — glatki pozivi i pravedna raspodjela veze", () => loadQos()],
-  dhcp:      ["DHCP", "Dodjela IP adresa i rezervacije za uređaje u mreži", () => loadDhcp()],
-  dns:       ["DNS", "Lokalna imena uređaja (npr. nas.lan umjesto IP adrese)", () => loadDns()],
+  dhcp:      ["DHCP", "Dijeljenje adresa po mrežama, rezervacije i leaseovi", () => loadDhcp()],
+  dns:       ["DNS", "Vanjski DNS, lokalna imena, filtriranje domena i prisilni DNS", () => loadDns()],
   firewall:  ["Firewall rules", "Zone, pravila prometa i imenovane grupe adresa", () => loadFirewall()],
   publish:   ["Port forwarding / NAT", "Što je iz mreže dostupno s interneta — forwardi, DMZ, 1:1 NAT", () => loadFirewall()],
   hardening: ["System access", "Tko smije do upravljanja i dodatne mjere zaštite", () => loadHardeningView()],
   protection: ["IP blocklists", "Blokada zloćudnih IP adresa s crnih lista (banIP)", () => loadProtection()],
-  dnsfilter: ["DNS filter", "Blokada reklamnih i zloćudnih domena (adblock)", () => loadProtection()],
   scan:      ["Scan detection", "Prepoznavanje skeniranja portova i privremena blokada izvora", () => loadProtection()],
   rproxy:    ["Reverse proxy", "Više web servisa iza jedne javne adrese, razdvojenih po imenu", () => loadProxy()],
   wireguard: ["WireGuard", "Udaljeni pristup — moderni VPN s ključevima", () => loadWireguard()],
@@ -2591,18 +2744,18 @@ const MODULE_KEYS = {
   alerts: "upozorenja obavijesti e-mail mail dojava",
   audit: "promjene tko je mijenjao dnevnik izmjena",
   diag: "dijagnostika veze conntrack tko trosi snimanje prometa pcap tcpdump wireshark",
-  network: "mreža sučelja lan wan vlan adresa",
+  network: "mreža mreže lan vlan podmreža segment adresa sučelje glavna",
+  wan: "internet wan veza pristup operater ddns dinamički dns",
   multiwan: "više veza failover pričuvna veza rezervna",
   routes: "statičke rute ruta usmjeravanje put mreža iza rutera gateway",
   ospf: "usmjeravanje rute routing dinamičko",
   qos: "brzina ograničenje prioritet promet",
-  dhcp: "dodjela adresa rezervacije zakup lease",
-  dns: "imena domene razlučivanje",
+  dhcp: "dodjela adresa rezervacije zakup lease raspon pool opseg gateway",
+  dns: "imena domene razlučivanje vanjski dns filtar odrasli obitelj blokada reklama adblock prisilni doh dot",
   firewall: "vatrozid pravila zone promet blokiraj dopusti",
   publish: "objava servera prosljeđivanje portova dmz nat",
   hardening: "očvršćivanje hardening pristup upravljanju sigurnost ssh acl",
   protection: "blokade crne liste zloćudne adrese banip zemlje",
-  dnsfilter: "blokada reklama domene adblock oglasi",
   scan: "skeniranje portova napad izviđanje detekcija",
   rproxy: "obrnuti proxy reverse haproxy objava web servisa ime domena sni",
   wireguard: "vpn udaljeni pristup ključevi",
@@ -2621,9 +2774,9 @@ const MODULE_KEYS = {
 // više nije u istoj skupini kao pravila vatrozida.
 const NAV_GROUPS = [
   ["Status", ["dashboard", "monitorx", "diag", "alerts", "audit"]],
-  ["Network", ["network", "multiwan", "routes", "ospf", "qos", "dhcp", "dns"]],
+  ["Network", ["network", "wan", "multiwan", "dhcp", "dns", "routes", "ospf", "qos"]],
   ["Firewall", ["firewall", "publish", "hardening"]],
-  ["Filtering", ["protection", "dnsfilter", "scan"]],
+  ["Filtering", ["protection", "scan"]],
   ["Proxy", ["rproxy"]],
   ["VPN", ["wireguard", "wgsite", "openvpn"]],
   ["System", ["settings", "users", "logs", "backup", "devices", "reports", "update", "help"]],
@@ -3963,6 +4116,8 @@ $("ad-save").addEventListener("click", async () => {
       enabled: $("ad-enabled").checked,
       sections,
       allowed_domains: $("ad-allow").value.trim(),
+      blocked_domains: $("ad-block").value.trim(),
+      custom_list: $("ad-custom").value.trim(),
     });
     $("ad-result").textContent = (r.enabled
       ? "Uključeno — " + r.note + "." : "Isključeno.") + " Backup: " + r.backup;
@@ -5248,9 +5403,27 @@ async function loadDiag() {
     tb.append(tr);
   }
   setPill($("cn-state"), "good", x.total + " uređaja");
-  setNote("cn-note", "otvorenih veza: " + diagConns.length +
+  setNote("cn-note", "otvorenih veza: " + (x.conns_total || diagConns.length) +
     (x.truncated ? " (prikaz ograničen)" : "") +
     " · promet: " + fmtBytes(x.total_out) + " ↑ / " + fmtBytes(x.total_in) + " ↓");
+
+  // Kad uređaj ne vidi povratni smjer, brojke su jednostrane i to treba reći
+  // ovdje, a ne prepustiti korisniku da se pita zašto "Primljeno" stoji na nuli.
+  const badge = $("cn-state");
+  if (x.one_sided) {
+    setPill(badge, "warn", "vidi se samo jedan smjer");
+    $("cn-onesided").classList.remove("hidden");
+    $("cn-onesided").textContent =
+      "⚠ Od " + x.conns_total + " veza njih " + x.unreplied + " nema nijedan paket " +
+      "u povratnom smjeru. To znači da uređaj nije stvarni izlaz ove mreže — " +
+      "promet prolazi kroz njega samo u jednom smjeru, a odgovori se vraćaju " +
+      "drugim putem. Stupci Primljeno i zbrojevi po uređaju zato pokazuju manje " +
+      "nego što stvarno prolazi. Isto vrijedi i za potrošnju po uređaju u " +
+      "Monitoringu. Kad uređaj bude gateway te mreže, brojke će biti potpune.";
+  } else {
+    setPill(badge, "good", "vidi oba smjera");
+    $("cn-onesided").classList.add("hidden");
+  }
   renderConnRows();
 }
 

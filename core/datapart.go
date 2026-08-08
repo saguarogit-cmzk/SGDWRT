@@ -49,6 +49,16 @@ type partEntry struct {
 	Bytes   int64  `json:"bytes"`
 }
 
+// partDeviceName sastavlja ime particije iz imena diska i broja. NVMe i eMMC
+// diskovi (nvme0n1, mmcblk0) završavaju znamenkom i traže 'p' prije broja
+// (nvme0n1p3), obični (sda) ne (sda3).
+func partDeviceName(disk string, num int) string {
+	if n := len(disk); n > 0 && disk[n-1] >= '0' && disk[n-1] <= '9' {
+		return fmt.Sprintf("%sp%d", disk, num)
+	}
+	return fmt.Sprintf("%s%d", disk, num)
+}
+
 // listPartitions čita tablicu iz sysfs-a (bez vanjskih alata).
 func listPartitions(disk string) []partEntry {
 	out := []partEntry{}
@@ -274,7 +284,7 @@ func (s *server) handleDataPartCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	disk := "/dev/" + st.Disk
-	dev := fmt.Sprintf("%s%d", disk, num)
+	dev := "/dev/" + partDeviceName(st.Disk, num)
 	endSector := (readDiskInfo().DiskBytes / 512) - 1
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)

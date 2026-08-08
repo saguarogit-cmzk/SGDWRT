@@ -18,6 +18,17 @@ MIN_MB=4096
 
 log() { logger -t saguaro-firstboot "$1"; echo "saguaro: $1"; }
 
+# part_name sastavlja ime particije iz imena diska i broja. NVMe i eMMC diskovi
+# (nvme0n1, mmcblk0) završavaju znamenkom i traže 'p' prije broja
+# (nvme0n1p3), obični (sda) ne (sda3). Bez ovoga se na takvom disku particija
+# stvori, ali je jezgra ne nađe pod pogrešnim imenom.
+part_name() {
+	case "$1" in
+		*[0-9]) echo "${1}p${2}" ;;
+		*)      echo "${1}${2}" ;;
+	esac
+}
+
 setup_datapart() {
 	[ -f "$REC" ] && { log "data particija je već postavljena"; return 0; }
 	command -v parted >/dev/null || { log "nema parted — preskačem"; return 1; }
@@ -30,6 +41,14 @@ setup_datapart() {
 	[ -n "$ROOT_PATH" ] || { log "ne mogu odrediti root uređaj"; return 1; }
 	DISK=$(basename "$(dirname "$ROOT_PATH")")
 	[ -b "/dev/$DISK" ] || { log "disk /dev/$DISK ne postoji"; return 1; }
+
+	# USB stick nije mjesto za data particiju: uređaj se s njega samo instalira
+	# na interni disk (saguaro-setup), pa bi data particija na sticku značila da
+	# se pri instalaciji kopira cijeli stick i da manji interni disk bude odbijen.
+	if [ "$(cat "/sys/block/$DISK/removable" 2>/dev/null)" = "1" ]; then
+		log "sustav radi s izmjenjivog medija (/dev/$DISK) — data particija se ne stvara"
+		return 1
+	fi
 
 	# zadnji zauzeti sektor i prvi slobodan broj particije
 	END=0; NUM=1
@@ -51,7 +70,17 @@ setup_datapart() {
 		return 1
 	fi
 	ENDS=$((TOTAL - 1))
-	DEV="/dev/${DISK}${NUM}"
+	PART=$(part_name "$DISK" "$NUM")
+	DEV="/dev/$PART"
+
+	# ako nešto poslije stvaranja particije pukne, particija se ukloni — da ne
+	# ostane mrtva bez datotečnog sustava (inače bi računanje slobodnog prostora
+	# poslije mislilo da mjesta nema, a ručnog popravka iz uci-defaults nema)
+	cleanup_part() {
+		umount "$TMP" 2>/dev/null
+		parted -s "/dev/$DISK" rm "$NUM" 2>/dev/null
+		partx -u "/dev/$DISK" 2>/dev/null || partx -a "/dev/$DISK" 2>/dev/null
+	}
 
 	log "stvaram data particiju $DEV (${FREE_MB} MB, sektori ${START}-${ENDS})"
 	parted -s "/dev/$DISK" mkpart primary ext4 "${START}s" "${ENDS}s" || {
@@ -60,14 +89,14 @@ setup_datapart() {
 
 	i=0
 	while [ ! -b "$DEV" ] && [ $i -lt 30 ]; do sleep 1; i=$((i + 1)); done
-	[ -b "$DEV" ] || { log "jezgra ne vidi $DEV"; return 1; }
+	[ -b "$DEV" ] || { log "jezgra ne vidi $DEV — uklanjam nedovršenu particiju"; cleanup_part; return 1; }
 
 	UUID=$(cat /proc/sys/kernel/random/uuid)
 	mkfs.ext4 -q -F -L saguaro-data -U "$UUID" -m 0 "$DEV" || {
-		log "mkfs nije uspio"; return 1; }
+		log "mkfs nije uspio — uklanjam nedovršenu particiju"; cleanup_part; return 1; }
 
 	mkdir -p "$TMP"
-	mount "$DEV" "$TMP" || { log "mount nije uspio"; return 1; }
+	mount "$DEV" "$TMP" || { log "mount nije uspio — uklanjam nedovršenu particiju"; cleanup_part; return 1; }
 	cp -a "$MOUNT/." "$TMP/" 2>/dev/null
 	sync
 	umount "$TMP"
@@ -82,8 +111,8 @@ commit fstab
 EOF
 	mount "$DEV" "$MOUNT" || { log "završni mount nije uspio"; return 1; }
 
-	SEC_START=$(cat /sys/block/"$DISK"/"${DISK}${NUM}"/start)
-	SEC_SIZE=$(cat /sys/block/"$DISK"/"${DISK}${NUM}"/size)
+	SEC_START=$(cat /sys/block/"$DISK"/"$PART"/start)
+	SEC_SIZE=$(cat /sys/block/"$DISK"/"$PART"/size)
 	cat > "$REC" <<EOF
 {"disk":"$DISK","part":$NUM,"start":$SEC_START,"sectors":$SEC_SIZE,"uuid":"$UUID"}
 EOF

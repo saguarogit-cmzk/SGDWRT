@@ -8,8 +8,12 @@
 #
 #   1. pregled stanja
 #   2. postavljanje LAN adrese
-#   3. instalacija na interni disk
-#   4. reset lozinke web sučelja
+#   3. postavljanje interneta (WAN)
+#   4. lozinka uređaja (root)
+#   5. provjera veze
+#   6. instalacija na interni disk
+#   7. reset lozinke web sučelja
+#   8. samoprovjera
 #
 # Pokreće se naredbom:  saguaro-setup
 
@@ -53,6 +57,15 @@ disks() {
 }
 
 disk_gb() { echo "$(( $(cat "/sys/block/$1/size") * 512 / 1000000000 ))"; }
+
+# part_name sastavlja ime particije: nvme0n1/mmcblk0 završavaju znamenkom i
+# traže 'p' prije broja (nvme0n1p3), obični (sda) ne (sda3).
+part_name() {
+	case "$1" in
+		*[0-9]) echo "${1}p${2}" ;;
+		*)      echo "${1}${2}" ;;
+	esac
+}
 
 hex2bin() {
 	h="$1"
@@ -303,9 +316,9 @@ install_disk() {
 	# bi mrtva particija usred diska, a nova data particija bi nastala tek iza
 	# nje i izgubila taj prostor. Zato se sve iza root particije briše.
 	for p in 4 3; do
-		if [ -e "/sys/block/$TGT/${TGT}${p}" ]; then
+		if [ -e "/sys/block/$TGT/$(part_name "$TGT" "$p")" ]; then
 			parted -s "/dev/$TGT" rm "$p" 2>/dev/null &&
-				ok_ "Uklonjen prekopiran zapis o particiji ${TGT}${p}"
+				ok_ "Uklonjen prekopiran zapis o particiji $(part_name "$TGT" "$p")"
 		fi
 	done
 	partx -u "/dev/$TGT" 2>/dev/null || partprobe "/dev/$TGT" 2>/dev/null
@@ -321,7 +334,7 @@ install_disk() {
 	# sed, printf i dd.
 	say "  Dajem odredišnom disku vlastiti potpis…"
 	mkdir -p /tmp/sagtgt
-	if ! mount "/dev/${TGT}1" /tmp/sagtgt 2>/dev/null; then
+	if ! mount "/dev/$(part_name "$TGT" 1)" /tmp/sagtgt 2>/dev/null; then
 		err "boot particija odredišta se ne montira — prekidam"
 		pause; return
 	fi
@@ -358,7 +371,7 @@ install_disk() {
 
 	# Data particija se stvara pri prvom dizanju. Skripta koja to radi već je
 	# potrošena na ovom sustavu, pa se odredištu vraća iz pričuvne kopije.
-	if mount "/dev/${TGT}2" /tmp/sagtgt 2>/dev/null; then
+	if mount "/dev/$(part_name "$TGT" 2)" /tmp/sagtgt 2>/dev/null; then
 		if [ -f /usr/share/saguaro/99-saguaro-firstboot ]; then
 			mkdir -p /tmp/sagtgt/etc/uci-defaults
 			cp /usr/share/saguaro/99-saguaro-firstboot /tmp/sagtgt/etc/uci-defaults/
@@ -427,6 +440,103 @@ reset_gui_pw() {
 	pause
 }
 
+# ---------- 5. lozinka uređaja (root) ----------
+#
+# Svježa slika NEMA root lozinku: konzola je otvorena jer tko fizički sjedi za
+# uređajem ionako može sve. Ali uređaj na mreži tada ima root SSH i LuCI bez
+# lozinke — zato je ovo prva stvar koju treba postaviti.
+set_root_pw() {
+	head_ "Lozinka uređaja (root — SSH i LuCI)"
+	if grep -q '^root::' /etc/shadow 2>/dev/null; then
+		say "  Trenutno: ${BOLD}nema lozinke${N} — postavi je odmah.\n"
+	else
+		say "  Trenutno: lozinka je postavljena. Upiši novu za promjenu.\n"
+	fi
+	say "  ${DIM}Najmanje 10 znakova. Prazno = odustani.${N}"
+	printf "  Nova lozinka: "; stty -echo 2>/dev/null; read -r P1; stty echo 2>/dev/null; printf "\n"
+	[ -n "$P1" ] || { say "  odustao"; pause; return; }
+	if [ "${#P1}" -lt 10 ]; then err "prekratko (najmanje 10 znakova)"; pause; return; fi
+	printf "  Ponovi lozinku: "; stty -echo 2>/dev/null; read -r P2; stty echo 2>/dev/null; printf "\n"
+	[ "$P1" = "$P2" ] || { err "lozinke se ne podudaraju"; pause; return; }
+	if printf '%s\n%s\n' "$P1" "$P2" | passwd root >/dev/null 2>&1; then
+		ok_ "Lozinka uređaja je postavljena."
+	else
+		err "postavljanje nije uspjelo"
+	fi
+	pause
+}
+
+# ---------- 6. internet (WAN) ----------
+set_wan() {
+	head_ "Internet (WAN)"
+	CURP=$(uci -q get network.wan.proto)
+	CURD=$(uci -q get network.wan.device)
+	say "  Sadašnje: proto ${BOLD}${CURP:-nema}${N} na uređaju ${BOLD}${CURD:-?}${N}\n"
+	say "    1) DHCP — operater dodjeljuje adresu (najčešće)"
+	say "    2) PPPoE — korisničko ime i lozinka"
+	say "    3) Statička adresa"
+	say "    0) Odustani"
+	printf "\n  Izbor: "; read -r W
+	case "$W" in
+		1) uci set network.wan.proto='dhcp'
+		   uci -q delete network.wan.username; uci -q delete network.wan.password
+		   ;;
+		2) printf "  Korisničko ime: "; read -r U
+		   [ -n "$U" ] || { say "  odustao"; pause; return; }
+		   printf "  Lozinka: "; stty -echo 2>/dev/null; read -r PW; stty echo 2>/dev/null; printf "\n"
+		   uci set network.wan.proto='pppoe'
+		   uci set network.wan.username="$U"; uci set network.wan.password="$PW"
+		   ;;
+		3) printf "  Adresa (npr. 203.0.113.2): "; read -r A
+		   valid_ip "$A" || { err "neispravna adresa"; pause; return; }
+		   printf "  Maska [255.255.255.0]: "; read -r M; [ -z "$M" ] && M=255.255.255.0
+		   MASK=$(mask_of "$M"); [ -n "$MASK" ] || { err "neispravna maska"; pause; return; }
+		   printf "  Gateway: "; read -r G
+		   valid_ip "$G" || { err "neispravan gateway"; pause; return; }
+		   printf "  DNS [1.1.1.1]: "; read -r D; [ -z "$D" ] && D=1.1.1.1
+		   uci set network.wan.proto='static'
+		   uci set network.wan.ipaddr="$A"; uci set network.wan.netmask="$MASK"
+		   uci set network.wan.gateway="$G"; uci set network.wan.dns="$D"
+		   ;;
+		*) say "  odustao"; pause; return ;;
+	esac
+	uci commit network
+	printf "\n  Primjenjujem…\n"
+	/etc/init.d/network restart >/dev/null 2>&1
+	sleep 5
+	ok_ "WAN: $(uci -q get network.wan.proto) na $(uci -q get network.wan.device)"
+	ok_ "Adresa: $(ip -4 addr show "$(uci -q get network.wan.device)" 2>/dev/null | awk '/inet /{print $2}' | head -1 || echo 'još nema')"
+	pause
+}
+
+# ---------- 7. provjera veze ----------
+check_net() {
+	head_ "Provjera veze"
+	GW=$(ip -4 route show default 2>/dev/null | awk '/default/{print $3; exit}')
+	if [ -n "$GW" ]; then
+		if ping -c1 -W2 "$GW" >/dev/null 2>&1; then ok_ "Gateway $GW odgovara"
+		else err "Gateway $GW NE odgovara"; fi
+	else
+		err "Nema zadane rute (gateway) — provjeri WAN"
+	fi
+	if ping -c1 -W2 1.1.1.1 >/dev/null 2>&1; then ok_ "Internet (1.1.1.1) dostupan"
+	else err "Internet NIJE dostupan"; fi
+	if nslookup openwrt.org >/dev/null 2>&1; then ok_ "DNS radi (openwrt.org se razlučuje)"
+	else err "DNS ne radi — imena se ne razlučuju"; fi
+	pause
+}
+
+# ---------- 8. samoprovjera ----------
+run_selftest() {
+	head_ "Samoprovjera uređaja"
+	if [ -f /opt/saguaro/selftest.sh ]; then
+		sh /opt/saguaro/selftest.sh 2>&1 | tail -n 40
+	else
+		err "nema /opt/saguaro/selftest.sh"
+	fi
+	pause
+}
+
 # ---------- izbornik ----------
 menu() {
 	while true; do
@@ -437,21 +547,30 @@ menu() {
 		printf "  LAN: %s     Root: %s\n\n" "${LAN:-nema}" "$(df -h / | awk 'NR==2{print $2}')"
 		say "    1)  Pregled stanja"
 		say "    2)  Postavi LAN adresu"
-		say "    3)  Instaliraj na interni disk"
-		say "    4)  Reset lozinke web sučelja"
-		say "    5)  Ponovno pokreni uređaj"
-		say "    6)  Ugasi uređaj"
+		say "    3)  Postavi internet (WAN)"
+		say "    4)  Lozinka uređaja (root)"
+		say "    5)  Provjeri vezu (internet, DNS)"
+		say "    6)  Instaliraj na interni disk"
+		say "    7)  Reset lozinke web sučelja"
+		say "    8)  Samoprovjera uređaja"
+		say "    9)  Ponovno pokreni uređaj"
+		say "   10)  Ugasi uređaj"
 		say "    0)  Izlaz u naredbeni redak"
 		printf "\n  Izbor: "
-		read -r C
+		# EOF (npr. kad ulaz nije terminal) izlazi umjesto vrtnje u prazno
+		read -r C || exit 0
 		case "$C" in
 			1) show_status ;;
 			2) set_lan ;;
-			3) install_disk ;;
-			4) reset_gui_pw ;;
-			5) printf "  Ponovno pokrenuti? [d/N] "; read -r y
+			3) set_wan ;;
+			4) set_root_pw ;;
+			5) check_net ;;
+			6) install_disk ;;
+			7) reset_gui_pw ;;
+			8) run_selftest ;;
+			9) printf "  Ponovno pokrenuti? [d/N] "; read -r y
 			   case "$y" in d|D|y|Y) reboot; exit 0 ;; esac ;;
-			6) printf "  Ugasiti uređaj? [d/N] "; read -r y
+			10) printf "  Ugasiti uređaj? [d/N] "; read -r y
 			   case "$y" in d|D|y|Y) poweroff; exit 0 ;; esac ;;
 			0) exit 0 ;;
 			*) ;;

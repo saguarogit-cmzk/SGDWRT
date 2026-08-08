@@ -22,6 +22,25 @@ jobs:
         with:
           go-version: "1.26"
 
+      # verzija u kodu mora odgovarati tagu — inače bi izdanje v0.48.0 nosilo
+      # binary koji se predstavlja kao v0.47.0
+      - name: Provjeri tag ↔ verzija
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          CODE=$(grep -o 'version = "[^"]*"' core/main.go | cut -d'"' -f2)
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$CODE" != "$TAG" ]; then
+            echo "::error::tag v$TAG ne odgovara core/main.go verziji $CODE"
+            exit 1
+          fi
+
+      - name: Testovi
+        run: |
+          cd core && go vet ./... && go test ./...
+
+      - name: Provjera sučelja (webcheck)
+        run: node scripts/webcheck.js
+
       - name: Build
         run: |
           cd core
@@ -38,8 +57,14 @@ jobs:
           mkdir -p "$STAGE/web"
           cp web/* "$STAGE/web/"
           cp image/files/etc/init.d/saguaro-core "$STAGE/init.d-saguaro-core"
+          cp image/files/etc/init.d/saguaro-datapart "$STAGE/init.d-saguaro-datapart"
+          cp image/files/usr/sbin/saguaro-setup "$STAGE/saguaro-setup"
+          cp image/files/etc/profile.d/99-saguaro.sh "$STAGE/profile.d-99-saguaro.sh"
           cp scripts/selftest.sh "$STAGE/selftest.sh"
-          tar -czf "saguaro-${NAME}-linux-amd64.tar.gz" -C "$STAGE" .
+          TARBALL="saguaro-${NAME}-linux-amd64.tar.gz"
+          tar -czf "$TARBALL" -C "$STAGE" .
+          # otisak paketa — install.sh i Updates modul ga mogu provjeriti
+          sha256sum "$TARBALL" | awk '{print $1}' > "$TARBALL.sha256"
 
       # Gotova slika: OpenWrt + svi paketi + Saguaro + data particija na prvom
       # dizanju. Kod korisnika je onda dovoljno napisati je na USB.
@@ -71,6 +96,7 @@ jobs:
           retention-days: 7
           path: |
             saguaro-*-linux-amd64.tar.gz
+            saguaro-*-linux-amd64.tar.gz.sha256
             dist/saguaro-*-openwrt-*-x86-64.img.gz
             dist/saguaro-*-openwrt-*-x86-64.img.gz.sha256
 
@@ -80,6 +106,7 @@ jobs:
         with:
           files: |
             saguaro-*-linux-amd64.tar.gz
+            saguaro-*-linux-amd64.tar.gz.sha256
             dist/saguaro-*-openwrt-*-x86-64.img.gz
             dist/saguaro-*-openwrt-*-x86-64.img.gz.sha256
           generate_release_notes: true

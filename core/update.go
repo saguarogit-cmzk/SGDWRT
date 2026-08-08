@@ -119,7 +119,38 @@ func (s *server) handleUpdateUpload(w http.ResponseWriter, r *http.Request) {
 
 /* ---------- primjena ---------- */
 
-// extractUpdate raspakira paket uz allowlist (saguaro-core + web/*).
+// updateToolNames su dodatne datoteke iz paketa (uz saguaro-core i web/) koje
+// se raspakiraju i ugrade na uređaj. Bez ovoga nadogradnja kroz GUI nikad nije
+// isporučivala konzolne alate — uređaj instaliran iz stare slike ne bi dobio
+// npr. "Reset lozinke web sučelja" ni popravke u saguaro-setupu.
+var updateToolNames = map[string]bool{
+	"selftest.sh":             true,
+	"saguaro-setup":           true,
+	"init.d-saguaro-core":     true,
+	"init.d-saguaro-datapart": true,
+	"profile.d-99-saguaro.sh": true,
+}
+
+// updateToolDest daje odredište i prava za alat iz paketa.
+func (s *server) updateToolDest(name string) (dst string, mode os.FileMode, ok bool) {
+	base := filepath.Dir(s.webDir) // /opt/saguaro
+	switch name {
+	case "selftest.sh":
+		return filepath.Join(base, "selftest.sh"), 0o755, true
+	case "saguaro-setup":
+		return "/usr/sbin/saguaro-setup", 0o755, true
+	case "init.d-saguaro-core":
+		return "/etc/init.d/saguaro-core", 0o755, true
+	case "init.d-saguaro-datapart":
+		return "/etc/init.d/saguaro-datapart", 0o755, true
+	case "profile.d-99-saguaro.sh":
+		return "/etc/profile.d/99-saguaro.sh", 0o644, true
+	}
+	return "", 0, false
+}
+
+// extractUpdate raspakira paket uz allowlist: saguaro-core, web/* i poznati
+// konzolni alati (updateToolNames). Ostalo se ignorira.
 func extractUpdate(archive, dst string) error {
 	f, err := os.Open(archive)
 	if err != nil {
@@ -141,7 +172,7 @@ func extractUpdate(archive, dst string) error {
 			return err
 		}
 		name := path.Clean(strings.TrimPrefix(hdr.Name, "./"))
-		ok := name == "saguaro-core" ||
+		ok := name == "saguaro-core" || updateToolNames[name] ||
 			(strings.HasPrefix(name, "web/") && !strings.Contains(name, ".."))
 		if !ok || hdr.Typeflag != tar.TypeReg {
 			continue
@@ -288,6 +319,20 @@ func (s *server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 				filepath.Join(s.webDir, e.Name()), 0o644); err != nil {
 				writeErr(w, http.StatusInternalServerError, err.Error())
 				return
+			}
+		}
+	}
+	// konzolni alati (ako ih paket sadrži) — greška se ne smatra fatalnom:
+	// jezgra nadogradnje je binary + web, alati su dodatak koji ne smije
+	// srušiti nadogradnju ako neko odredište nije zapisivo
+	for name := range updateToolNames {
+		src := filepath.Join(tmp, name)
+		if _, err := os.Stat(src); err != nil {
+			continue
+		}
+		if dst, mode, ok := s.updateToolDest(name); ok {
+			if err := copyFile(src, dst, mode); err != nil {
+				log.Printf("nadogradnja: alat %s → %s: %v", name, dst, err)
 			}
 		}
 	}

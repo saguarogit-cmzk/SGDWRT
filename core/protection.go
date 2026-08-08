@@ -412,6 +412,12 @@ func writeBanipWAN(ctx context.Context, b *strings.Builder, g uciSection) {
 			if !ok {
 				continue
 			}
+			// isključeno sučelje se banIP-u ne prijavljuje: on ga čeka,
+			// odustane s "no wan interface" i uređaj ostane bez ijednog
+			// pravila — dogodilo se s isključenim wan6
+			if sectStr(ns, "disabled") == "1" {
+				continue
+			}
 			// dhcpv6 / *6 sučelja idu u IPv6 popis
 			if strings.Contains(sectStr(ns, "proto"), "6") || strings.HasSuffix(iface, "6") {
 				ifv6 = append(ifv6, iface)

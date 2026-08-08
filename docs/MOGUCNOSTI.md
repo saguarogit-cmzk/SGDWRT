@@ -1,8 +1,15 @@
 # Saguaro Infrastructure — što sustav radi i što još može
 
-Analiza stanja na dan **03.08.2026.**, Saguaro Core **v0.24.4**, uređaj IN100
-(OpenWrt 25.12.4, x86/64, Intel Atom E3845 · 4 jezgre · 8 GB RAM · 220 GB diska,
-4 mrežna porta, bez WiFi radija).
+Analiza stanja na dan **08.08.2026.**, Saguaro Core **v0.47.0**, uređaj IN100
+(OpenWrt 25.12.5, x86/64, Intel Atom E3845 · 4 jezgre · 8 GB RAM · 240 GB diska,
+4 mrežna porta 1 GbE, bez WiFi radija).
+
+> Popis „što sustav radi" (dio 1) pisan je oko v0.24 i pokriva tada postojeće
+> module. U međuvremenu su dodani (svi NAPRAVLJENO, vidi dio 3 i
+> `docs/PRIRUCNIK.md`): Diagnostics, certifikat sučelja, korisnici i uloge, 2FA,
+> site-to-site, mjesečni izvještaj, filtriranje sadržaja i preslagan izbornik,
+> više raspona/DNS po mreži, te nadzor UPS-a. Aktualan popis modula je uvijek
+> `docs/PRIRUCNIK.md` (31 modul, 7 skupina).
 
 Dokument ima tri dijela:
 
@@ -22,8 +29,8 @@ Oznake u tablicama:
 
 ## 1. Što sustav danas radi
 
-Upravljanje ide kroz vlastito web sučelje (HTTPS, port 8443) i REST API sa
-**140 krajnjih točaka**. LuCI ostaje netaknut i radi paralelno. Saguaro dira
+Upravljanje ide kroz vlastito web sučelje (HTTPS, port 8443) i REST API s
+**preko 200 krajnjih točaka**. LuCI ostaje netaknut i radi paralelno. Saguaro dira
 **isključivo zapise koje je sam stvorio** (`sag_*`), pa ručne izmjene i
 postojeća pravila ostaju netaknuta. Prije svake primjene sam sprema backup
 konfiguracije.
@@ -82,7 +89,7 @@ konfiguracije.
 | Dashboard: CPU, RAM, disk, uptime, portovi, sučelja, grafovi zadnjeg sata | radi | |
 | Praćenje uređaja pingom | radi | |
 | Potrošnja prometa po uređaju (nlbwmon) | radi | |
-| **14 vrsta upozorenja e-mailom** | radi (logika), postavljeno (slanje) | WAN pao, javna IP promijenjena, CGNAT, VPN servis, VPN klijent, reboot, promjena konfiguracije, prijava, neuspjele prijave, resursi, backup, istek certifikata, nadzor, nepoznat MAC |
+| **17 vrsta upozorenja e-mailom** | radi | WAN pao, javna IP, CGNAT, VPN servis, VPN klijent, veza s poslovnicom, reboot, promjena konfiguracije, prijava, neuspjele prijave, resursi, backup, istek certifikata, nadzor, nepoznat MAC, UPS, skeniranje |
 | Trag promjena konfiguracije (tko je što promijenio) | radi | razlikuje izmjenu kroz Saguaro od one izvan njega |
 | Sustavski log, trajno spremanje na disk, slanje na vanjski syslog | radi (lokalno), postavljeno (vanjski) | |
 
@@ -99,7 +106,7 @@ konfiguracije.
 | Preživljavanje `sysupgrade`-a (keep lista) | radi | |
 | **Data particija — podaci preživljavaju nadogradnju bez keep liste** | radi (v0.34.0) | root 1 GB se prepisuje, data particija se ne dira; zapis u tablici se vraća uz provjeru ext4 potpisa |
 | Safe mode — rizična promjena se sama poništi ako izgubiš pristup | radi | |
-| Samoprovjera uređaja (43 provjere) | radi | `/opt/saguaro/selftest.sh` |
+| Samoprovjera uređaja (preko 40 provjera) | radi | `/opt/saguaro/selftest.sh` |
 | Inventar opreme | radi | |
 | Lozinka uređaja (root/SSH) iz sučelja, API token | radi | |
 
@@ -122,9 +129,9 @@ Uz to već postoji sve što ide s tim:
 | **NAT reflection** | radi | i korisnici iznutra dolaze do servera preko javne adrese |
 | **Split DNS** | radi | bolje rješenje od reflectiona kad se serveru pristupa imenom |
 
-**Što ovdje još nedostaje:** izbor **izlazne** javne adrese po mreži ili po
-klijentu (policy-based SNAT) — npr. „VLAN 20 na internet izlazi kao
-203.0.113.11". Vidi prijedlog **A1** ispod.
+Izbor **izlazne** javne adrese po mreži ili po izvoru (policy-based SNAT) —
+npr. „VLAN 20 na internet izlazi kao 203.0.113.11" — u međuvremenu je
+**napravljen** (modul Firewall → SNAT, s promjenom redoslijeda pravila).
 
 > Napomena za demonstraciju: ovaj testni uređaj je iza operaterskog NAT-a
 > (CGNAT), pa se objava servera prema pravoj javnoj adresi ne može isprobati
@@ -134,7 +141,7 @@ klijentu (policy-based SNAT) — npr. „VLAN 20 na internet izlazi kao
 
 ## 3. Što još možemo dodati
 
-Sve navedeno je provjereno da **postoji u OpenWrt 25.12.4 repozitoriju za ovaj
+Sve navedeno je provjereno da **postoji u OpenWrt 25.12.x repozitoriju za ovaj
 uređaj** (11 256 dostupnih paketa) ili se izvodi u samom Saguaru bez novih
 paketa. Trud je procijenjen u danima rada.
 
@@ -162,7 +169,7 @@ paketa. Trud je procijenjen u danima rada.
 | **B4** | **DNS preko TLS-a (DoT)** | upiti prema pružatelju DNS-a šifrirani, ISP ne vidi koje domene tražiš | `stubby` ili `https-dns-proxy` | 1 dan | srednja |
 | **B5** | **Blokada po uređaju** | „ovom tabletu samo web, ništa drugo" | pravila po MAC/IP-u iz inventara — dijelom već postoji kroz pravila prometa | 1–2 dana | srednja |
 | **B6** | **CrowdSec** | dijeljena reputacija napadača (zajednica šalje adrese) | `crowdsec` + `crowdsec-firewall-bouncer`, ~150 MB RAM-a | 3 dana | niska — banIP već pokriva reputacijske liste |
-| **B7** | Suricata / Snort 3 (IDS) | pregled sadržaja prometa | `suricata` nije u repozitoriju za 25.12.4; `snort3` jest | — | **ne preporučam** (dogovoreno) — troši puno, a detekcija skeniranja i banIP pokrivaju najveći dio koristi |
+| **B7** | Suricata / Snort 3 (IDS) | pregled sadržaja prometa | `suricata` nije u repozitoriju za 25.12.x; `snort3` jest | — | **ne preporučam** (dogovoreno) — troši puno, a detekcija skeniranja i banIP pokrivaju najveći dio koristi |
 
 ### C. VPN
 
@@ -235,10 +242,18 @@ paketa. Trud je procijenjen u danima rada.
 
 **Treći krug — veći zahvati, po potrebi korisnika**
 
-9. A3 IPv6
-10. F1 obrnuti proxy
-11. A5 HA par uređaja · A4 mobilna pričuvna veza
-12. G1 središnje upravljanje s više uređaja
+Ažurirano nakon revizije 08.08.2026. (vidi `docs/AUDIT-2026-08-08.md`).
+Napravljeno u međuvremenu: ~~A3 IPv6~~, ~~F1 obrnuti proxy~~, ~~D8 nadzor UPS-a~~.
+Odbijeno: A5 HA par, A4 mobilna pričuvna veza, E4 Active Directory.
+
+Sljedeći logični zahvati po redu prioriteta (iz revizije):
+
+1. **Operativna vidljivost** — nadzor svih servisa (ne samo VPN-a), dnevnik
+   firewalla s brojačima, mrežni alati (ping/traceroute/lookup) u sučelju,
+   reboot/gašenje iz sučelja.
+2. D5+D6 izvoz mjerenja (Prometheus `/metrics` + SNMP), D4 povijest prometa.
+3. C2 IPsec (za site-to-site prema tuđoj opremi), G2 predlošci postavki.
+4. G1 središnje upravljanje s više uređaja.
 
 ---
 
@@ -248,7 +263,7 @@ paketa. Trud je procijenjen u danima rada.
   portal, raspored bežične mreže, roaming) traži zasebnu pristupnu točku.
 - **Testni uređaj je iza CGNAT-a**, pa se objava servera prema pravoj javnoj
   adresi, DDNS i 1:1 NAT ne mogu do kraja demonstrirati na ovoj lokaciji.
-- **Suricata nije u repozitoriju** za OpenWrt 25.12.4 (`snort3` jest), a i
+- **Suricata nije u repozitoriju** za OpenWrt 25.12.x (`snort3` jest), a i
   dogovoreno je da se pregled sadržaja prometa ne uvodi.
-- **Resursi nisu ograničenje**: 4 jezgre, 8 GB RAM-a i 220 GB diska su daleko
+- **Resursi nisu ograničenje**: 4 jezgre, 8 GB RAM-a i 240 GB diska su daleko
   iznad onoga što traži bilo koja stavka iz ovog popisa.

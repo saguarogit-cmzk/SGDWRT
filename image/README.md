@@ -1,21 +1,45 @@
-# Golden Base — ImageBuilder
+# Gotova slika — ImageBuilder
 
-Cilj: ponovljiv OpenWrt image za IN100 (x86_64, 25.12.x) umjesto ručno
-složene kutije. Prvi uređaj smije biti ručno konfiguriran — image se
-izgradi retroaktivno iz njegovog stanja (snimke u `docs/facts/`).
+Ponovljiva OpenWrt slika za IN100 (x86_64, 25.12.x) sa svim što treba unutra:
+OpenWrt, paketi, Saguaro program i sučelje, init skripte, root particija 1 GB i
+stvaranje data particije pri prvom dizanju. Slika je **glavni put isporuke**
+(D-014) — uređaj kod korisnika ne treba internet.
 
-## Sadržaj (kad se popuni)
+## Sadržaj direktorija
 
-- `packages.txt` — popis paketa povrh defaulta (npr. `wireguard-tools`,
-  `qrencode`, `block-mount`, `kmod-fs-ext4`, `luci-ssl`, `htop`, `tree`)
-- `files/` — overlay koji ide u image:
-  - `etc/config/network` — raspored portova (docs/NETWORK-PLAN.md)
-  - `etc/config/firewall` — zone wan/lan/mgmt
-  - `etc/init.d/saguaro-core` — procd init skripta
-  - `etc/dropbear/authorized_keys` — SSH ključevi
-- `build.sh` — poziv ImageBuildera s gornjim ulazima
+- `build.sh` — preuzme službeni ImageBuilder (uz provjeru sha256 otiska),
+  ubaci `packages.txt` i `files/`, izgradi sliku s rootom 1024 MB, pa joj da
+  **vlastiti potpis diska** i uskladi `grub.cfg` (D-015). Poziv:
+  `sh image/build.sh [verzija]` (zadano OpenWrt 25.12.5); verzija Saguara se
+  čita iz `core/main.go`.
+- `verify.sh` — otvori izgrađenu sliku i provjeri particije, potpis diska i
+  prisutnost ključnih datoteka/alata; odbija sliku sa zadanim OpenWrt potpisom.
+- `packages.txt` — popis paketa povrh defaulta (~180): dnsmasq-full, wireguard,
+  openvpn, mwan3, banip, adblock-fast, bird2, sqm-scripts, ddns-scripts,
+  nlbwmon, parted/partx/e2fsprogs/block-mount (data particija), qrencode (2FA),
+  luci-ssl, i drugi.
+- `files/` — overlay koji ide u sliku:
+  - `etc/init.d/saguaro-core` — procd init skripta servisa
+  - `etc/init.d/saguaro-datapart` — vraća zapis o data particiji nakon
+    nadogradnje (uz provjeru ext4 potpisa)
+  - `etc/uci-defaults/99-saguaro-firstboot` — prvo dizanje: zadana lozinka,
+    stvaranje data particije, pokretanje servisa
+  - `etc/profile.d/99-saguaro.sh` — podsjetnik na konzoli (adresa sučelja,
+    `saguaro-setup`)
+  - `usr/sbin/saguaro-setup` — konzolni čarobnjak (LAN adresa, instalacija na
+    disk, reset lozinke sučelja)
 
-## Napomena za 25.12
+> Mrežni raspon i firewall zone se **ne** prilažu kao overlay — uređaj dolazi
+> na zadanom OpenWrt LAN-u (192.168.1.1), a adresa se postavlja konzolom ili
+> kroz čarobnjak prvog postavljanja. (Raniji `board.d` pristup je namjerno
+> uklonjen — vidi `docs/TESTOVI.md`.)
 
-ImageBuilder za 25.12 koristi apk; provjeriti točan naziv arhive na
-downloads.openwrt.org za target `x86/64`.
+## Kako se gradi
+
+GitHub Actions gradi sliku na svaki tag `vX.Y.Z` i objavljuje je uz izdanje;
+probne grane `ci/**` i ručno pokretanje grade bez objave. Lokalno:
+
+```sh
+sh image/build.sh          # slika za zadanu OpenWrt verziju
+sh image/verify.sh <slika> # provjera izgrađene slike
+```

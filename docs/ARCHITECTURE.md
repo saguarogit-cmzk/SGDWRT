@@ -1,4 +1,12 @@
-# Arhitektura — Saguaro (standalone model)
+# Arhitektura — Saguaro (POVIJESNI NACRT iz faze 1)
+
+> ⚠️ **Rani nacrt, nadiđen.** Dijagram modula, tablica ovisnosti i „API v1 —
+> faza 1: sve read-only" opisuju planiranu prvu fazu (nekoliko modula, 6
+> read-only endpointa). Isporučeni sustav ima 31 modul i preko 200 endpointa
+> (većina piše), sesijsku prijavu s ulogama i 2FA uz API token. Aktualan opis:
+> `README.md` i `docs/PRIRUCNIK.md`; odluke: `docs/DECISIONS.md`. Dokument se
+> čuva radi povijesti.
+
 
 ```
 ┌─────────────────────────────────────────────────┐

@@ -9,13 +9,19 @@ Moduli su složeni u sedam skupina, po načelu **jedan modul = jedan posao**:
 
 | Skupina | Moduli |
 |---|---|
-| **Status** | Dashboard · Monitoring · Diagnostics · Alerts · Audit log |
-| **Network** | Interfaces · Multi-WAN · Static routes · OSPF · QoS · DHCP · DNS |
+| **Status** | Dashboard · Monitoring · Diagnostics · UPS · Alerts · Audit log |
+| **Network** | Mreže · Internet (WAN) · Multi-WAN · DHCP · DNS · Static routes · OSPF · QoS |
 | **Firewall** | Firewall rules · Port forwarding / NAT · System access |
+| **Filtering** | IP blocklists · Scan detection |
 | **Proxy** | Reverse proxy |
-| **Filtering** | IP blocklists · DNS filter · Scan detection |
-| **VPN** | WireGuard · OpenVPN |
-| **System** | Settings · Users · System log · Backup · Inventory · Updates · Help |
+| **VPN** | WireGuard · Site-to-site · OpenVPN |
+| **System** | Settings · Users · System log · Backup · Inventory · Reports · Updates · Help |
+
+> **Mreže** drži glavnu mrežu (LAN) i podmreže, **Internet (WAN)** veze prema
+> van — nekadašnji zajednički modul „Interfaces" razdvojen je da se odmah vidi
+> što je unutra, a što prema van. Sve o **imenima** (lokalna imena, DNSSEC,
+> filtriranje domena, prisilni DNS) je u **DNS** modulu, sve o **dodjeli
+> adresa** u **DHCP** modulu — pa se ništa ne traži na dva mjesta (D-019).
 
 **Vodoravna traka na vrhu** bira skupinu, **lijevi stupac** bira modul unutar
 nje. Moduli nose ustaljene stručne nazive (DHCP, QoS, Port forwarding, Backup…)
@@ -39,7 +45,7 @@ razmišljaš:
 |---|---|
 | `vatrozid` | **Firewall rules** |
 | `skenir` | **Scan detection** |
-| `reklam` | **DNS filter** — blokada reklamnih domena |
+| `reklam` | **DNS** — blokada reklamnih domena |
 | `lozink` | **Settings** |
 | `promjen` | **Audit log** — trag izmjena konfiguracije |
 | `kopij` | **Backup** |
@@ -154,11 +160,31 @@ grafovima zadnjih sat vremena), stanje fizičkih portova i mrežnih sučelja.
 **Internet veza** provjerava tri koraka: izlaz prema mreži (gateway), pretvorbu
 imena u adrese (DNS — npr. `google.com` → IP) i stvaran dohvat interneta.
 
-## Interfaces — LAN, WAN i VLAN
+## Monitoring (Status)
 
-- **LAN adresa**: promjena adrese samog uređaja s validacijama; nakon primjene
-  browser se preusmjeri na novu adresu (prijava ostaje ista).
-- **WAN sučelja**: veze prema internetu. Protokoli: DHCP klijent, statička
+Praćenje da uređaj sam javi kad nešto stane, bez da netko gleda ekran.
+
+- **Praćeni uređaji (ping)**: upišeš adrese koje moraju raditi (server, pisač,
+  drugi router). Uređaj ih pinga svake minute; kad neka prestane odgovarati ili
+  se vrati, zapiše se događaj i po želji pošalje e-mail (vrsta upozorenja
+  „Nadzirani uređaj ne odgovara").
+- **Nepoznat uređaj u mreži**: kvačica koja javi kad se pojavi MAC adresa koje
+  nema u inventaru — jednostavan alarm na neovlašteno spajanje.
+- **Dnevnik događaja**: sve što uređaj sam zabilježi (padovi, prijave, blokade,
+  promjene) na jednom mjestu, i kad e-mail obavijesti nisu uključene.
+- **Potrošnja prometa po uređaju** (nlbwmon): tko koliko troši vezu. Za
+  mjesečni pogled služi modul **Reports**.
+
+## Mreže i Internet (WAN)
+
+Nekadašnji modul „Interfaces" razdvojen je u dva (D-019): **Mreže** drži sve
+lokalne mreže, **Internet (WAN)** sve veze prema van.
+
+- **Mreže — LAN adresa**: promjena adrese samog uređaja s validacijama; nakon
+  primjene browser se preusmjeri na novu adresu (prijava ostaje ista). Promjena
+  je pod safe modeom — ako se ne prijaviš na novu adresu u 5 minuta, uređaj se
+  vrati na staru.
+- **Internet (WAN)**: veze prema internetu. Protokoli: DHCP klijent, statička
   adresa (podržano **više javnih adresa** na istom WAN-u — sve u polje adresa)
   i PPPoE. Dodatni WAN-ovi (za failover) automatski ulaze u wan firewall zonu.
 - **Dodatne mreže**: čarobnjak u jednom koraku stvara sučelje, podmrežu, DHCP
@@ -169,10 +195,14 @@ imena u adrese (DNS — npr. `google.com` → IP) i stvaran dohvat interneta.
   - **Cijeli port** — slobodan fizički port postaje zasebna mreža (DMZ sa
     serverom, WiFi pristupna točka, gostinski port). Port mora biti slobodan;
     ako je član LAN bridgea, prvo ga treba osloboditi.
+- **Dinamički DNS (DDNS)**: kod veze bez stalne javne adrese uređaj sam javlja
+  svoju trenutnu adresu DDNS servisu (npr. `mojafirma.duckdns.org`), pa je
+  dostupan stalnim imenom. Upiše se servis, ime domene i token; uređaj obnavlja
+  zapis pri svakoj promjeni javne adrese. Nalazi se uz WAN, jer ovisi o njemu.
 
 ### IPv6
 
-Jedan prekidač u modulu *Interfaces* pali IPv6 **na svim razinama odjednom** —
+Jedan prekidač u modulu *Mreže* pali IPv6 **na svim razinama odjednom** —
 traženje prefiksa, raspodjelu svim mrežama, objavu adresa uređajima i prikaz
 stanja. Nove mreže iz čarobnjaka odmah dobivaju svoj `/64`.
 
@@ -233,7 +263,7 @@ Provjere koje sprječavaju tihe greške:
 Izmjene vrijede tek nakon **Primijeni**; do tada ploča stoji na „nije
 primijenjeno". Primjena ide kroz **safe mode**: ako kriva ruta presiječe
 pristup uređaju i nitko ne potvrdi promjenu, stara se konfiguracija sama vrati
-za dvije minute.
+za pet minuta.
 
 Ispod tablice je **tablica usmjeravanja iz jezgre** — stvarno stanje, ne
 postavke. Ruta koja je primijenjena mora se ondje pojaviti; ako je nema, nije
@@ -246,6 +276,17 @@ sudjeluju ("stub" za mreže s računalima — objavljuju se, ali se na njima ne
 traže susjedi), po želji router ID i area. OSPF promet (IP protokol 89)
 otvara se samo na zonama odabranih sučelja. Stanje protokola i pronađeni
 susjedi prikazuju se u modulu.
+
+## QoS
+
+Pametni red čekanja (SQM/cake) sprječava da jedan korisnik ili preuzimanje
+zaguši vezu — pozivi, videosastanci i surfanje ostaju glatki i pod punim
+opterećenjem (rješava „bufferbloat"). Postavlja se **po WAN sučelju**: upiše se
+stvarna brzina te veze prema dolje i prema gore, umanjena za ~5 % (da red čeka
+na uređaju, a ne kod operatera gdje se ne može upravljati). Traži paket
+`sqm-scripts` (u gotovoj slici je već unutra). Ograničenje brzine po
+pojedinom korisniku ili mreži zasad nije dio QoS-a — cake dijeli vezu
+pravedno među svima.
 
 ## DHCP
 
@@ -467,39 +508,18 @@ vatrozidu se uklanjaju.
 > Saguaro to pri instalaciji odmah zaustavi i zamijeni vlastitom praznom
 > konfiguracijom — servis kreće tek kad ima što posluživati.
 
-## Filtering — IP blocklists, DNS filter, Scan detection
+## Filtering — IP blocklists i Scan detection
+
+> Blokada **domena** i **prisilni DNS** više nisu ovdje — sve o imenima je u
+> modulu **DNS** (D-019). Ovdje su ostale dvije zaštite koje rade na razini
+> adresa i ponašanja, ne imena.
 
 - **banIP**: promet prema/od poznatih zloćudnih adresa odbacuje se u
   firewallu (nftables setovi — praktički bez opterećenja). Izvori su kurirani
   (FireHOL, IPsum, DShield, Feodo, URLhaus...), a moguća je i blokada cijelih
   zemalja dvoslovnim oznakama. **Iznimke**: IP adrese/CIDR koje se nikad ne
-  blokiraju.
-- **Blokada domena (adblock-fast)**: reklamne i zloćudne domene blokiraju se
-  na DNS razini za sve u mreži; liste se biraju kvačicama (s veličinama).
-  **Iznimke**: domene koje se nikad ne blokiraju (npr. vlastita domena) —
-  imaju prednost pred svim listama.
-- **Prisilni DNS**: blokada domena vrijedi **samo dok uređaji koriste DNS ovog
-  uređaja**. Dovoljno je da netko na svom računalu upiše `8.8.8.8` i filtra
-  više nema. Ovime se sav DNS promet iz odabranih mreža vraća na uređaj, bez
-  obzira što je postavljeno na računalu. Tri sloja, jer se DNS zaobilazi na
-  tri načina:
-
-  | Sloj | Što radi |
-  |---|---|
-  | obični DNS (port 53) | preusmjerava se natrag na uređaj |
-  | DoT — DNS preko TLS-a (port 853) | odbija se |
-  | DoH — DNS preko HTTPS-a (port 443) | odbija se prema poznatim javnim poslužiteljima |
-
-  - **Iznimke**: adrese koje smiju do vlastitog DNS-a (server koji mora
-    koristiti DNS svoje domene). Izvedeno imenovanim skupom adresa, pa broj
-    iznimki nije ograničen.
-  - Primjenjuje se samo na **lokalne mreže**; zone prema internetu se odbijaju,
-    jer bi uređaj tada odgovarao na tuđe upite s interneta.
-  - **Što ovo ne može**: DoH radi na istom portu kao i običan web, pa se
-    blokira samo po adresama poznatih javnih poslužitelja (Google, Cloudflare,
-    Quad9, AdGuard, OpenDNS, NextDNS, Mullvad, ControlD). Preglednik koji
-    koristi vlastiti DoH preko velike CDN mreže ovime se ne zaustavlja — za to
-    bi trebalo pregledavati sadržaj prometa.
+  blokiraju. Saguaro banIP-u izričito upisuje WAN sučelja (i preskače isključena)
+  da ne pogodi krivo i ne filtrira LAN.
 
 - **Detekcija skeniranja portova**: prije napada gotovo uvijek ide izviđanje —
   netko s interneta u nekoliko sekundi kuca na stotine portova. Uređaj takav
@@ -513,6 +533,9 @@ vatrozidu se uklanjaju.
     prečesto), dodaj ga u **iznimke** i isprazni popis blokiranih.
   - Pravila se pišu u `/etc/nftables.d/`, odakle ih firewall sam uvlači, pa
     preživljavaju restart.
+  - Kad detekcija blokira nove izvore, uređaj to zapiše u dnevnik i po želji
+    javi e-mailom (vrsta upozorenja „Detekcija skeniranja"). Blokirani se sami
+    otpuštaju istekom vremena.
 
 ## Audit log (Status)
 
@@ -591,12 +614,14 @@ razmaka (zadano 30 minuta) — da jedan pokvaren link ne zatrpa sandučić.
 Jedino što e-mailom odlazi neovisno o ovom popisu je **sigurnosna kopija**,
 prema postavci u modulu Backup (zadano **jednom tjedno**).
 
-Što se prati: pad i povratak internet veze · promjena javne IP adrese · rad iza
-tuđeg NAT-a (CGNAT) · pad VPN poslužitelja · spajanje i odspajanje VPN
-korisnika · ponovno pokretanje uređaja · promjena konfiguracije · prijave i
+Što se prati (17 vrsta): pad i povratak internet veze · promjena javne IP
+adrese · rad iza tuđeg NAT-a (CGNAT) · pad VPN poslužitelja · spajanje i
+odspajanje VPN korisnika · pad veze s drugom poslovnicom (ured-ured) ·
+ponovno pokretanje uređaja · promjena konfiguracije · prijave (uspjele) i
 veći broj neuspjelih prijava · prelazak praga za procesor, memoriju i disk ·
 neuspio backup · skori istek certifikata · nedostupnost praćenog uređaja ·
-nepoznat uređaj u mreži.
+nepoznat uređaj u mreži · UPS (nestanak struje, slaba baterija, gubitak veze) ·
+detekcija skeniranja portova blokirala nove izvore.
 
 - **Oznaka uređaja** ide u naslov poruke — korisno kad se nadzire više lokacija.
 - **Provjeri sada** pokreće sve provjere odmah, bez čekanja sljedećeg kruga
@@ -643,6 +668,18 @@ Sučelje Saguara uz to uvijek traži **TLS 1.2 ili noviji** i šalje zaglavlja k
 pregledniku zabranjuju ugrađivanje stranice u tuđi okvir i učitavanje skripti s
 drugih adresa.
 
+### ACL — tko smije do upravljanja
+
+Ispod hardening kvačica je **ograničenje pristupa upravljanju** (ACL): popis
+adresa ili podmreža koje jedine smiju do Saguaro sučelja, LuCI-ja i SSH-a. Kad
+je uključen, sve ostalo se odbija — pa uređaj s interneta (ili iz gostinske
+mreže) nije ni vidljiv na upravljačkim portovima.
+
+To je najlakši način da se zaključaš izvan uređaja, pa radi pod **safe modeom**:
+ako se nakon primjene ne prijaviš u roku (5 minuta), ograničenje se samo makne i
+pristup se vrati. Zato prije uključivanja provjeri da je adresa s koje radiš
+stvarno na popisu.
+
 ## System log (System)
 
 Uređaj zadano drži logove samo u malom spremniku u memoriji (128 kB), pa nakon
@@ -679,7 +716,7 @@ na vanjski syslog poslužitelj (kartica ispod).
   - **Lozinka nikad ne ide istom porukom.** Stoji u sučelju (Backup → lozinka
     za šifriranje); da putuje uz privitak, šifriranje ne bi značilo ništa.
   - Primatelji se mogu upisati zasebno; prazno polje znači iste kao za
-    upozorenja (Nadzor → E-mail).
+    upozorenja (Status → Alerts).
   - **Učestalost**: uz svaki backup, jednom dnevno, tjedno ili mjesečno.
     Uređaj radi arhivu svaku noć, ali ne mora svaku noć slati poruku — inače
     se gomilaju i prestanu se gledati. Zadano je **jednom tjedno**. Razmaci su
@@ -1117,7 +1154,7 @@ handshake obično dođe u nekoliko sekundi.
 
 Stupac **Veza** pokazuje „radi" s vremenom zadnjeg javljanja, ili „ne javlja
 se" / „još nije spojena" crveno. Uređaj to provjerava svake minute; ako veza
-šuti **5 minuta**, zapisuje se u dnevnik. Ako u Nadzoru uključiš vrstu
+šuti **5 minuta**, zapisuje se u dnevnik. Ako u modulu Alerts uključiš vrstu
 obavijesti „Veza s drugom poslovnicom", isto stiže i e-mailom — zadano je, kao
 i sve ostalo, isključeno.
 

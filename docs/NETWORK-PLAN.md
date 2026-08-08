@@ -1,4 +1,13 @@
-# Mrežni plan — IN100 (4× 2.5GbE)
+# Mrežni plan — IN100 (POVIJESNI NACRT)
+
+> ⚠️ **Zastarjelo / nikad izvedeno.** Ovo je rani nacrt iz faze planiranja i
+> **ne odgovara isporučenom proizvodu**: uređaj ima 4× **1 GbE** (Intel
+> e1000e, ne 2.5GbE), zasebna MGMT mreža/zona nikad nije uvedena, a slika
+> dolazi na zadanom OpenWrt LAN-u (192.168.1.1) — adresa se postavlja
+> konzolom (`saguaro-setup`) ili čarobnjakom. Aktualno stanje uređaja:
+> `docs/DEVICE-IN100.md`; aktualne upute: `docs/PRIRUCNIK.md`. Dokument se
+> čuva radi povijesti odluka.
+
 
 ## Raspored portova (fiksan — nikad se ne mijenja)
 

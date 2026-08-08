@@ -300,6 +300,11 @@
         <h2>Inventory — uređaji</h2>
         <button id="dev-add" class="primary">Dodaj uređaj</button>
       </div>
+      <p class="hint">Popis opreme: ovaj uređaj se upisuje sam (model, verzije,
+        serijski broj), a susjedne i klijentske uređaje dodaješ ručno s
+        lokacijom i napomenama. Inventar je izvor iz kojeg čarobnjak „Objavi
+        server" (Firewall) i DHCP rezervacije biraju uređaj — pa ono što ovdje
+        upišeš ne moraš ponovno tipkati drugdje.</p>
       <div class="table-wrap">
         <table>
           <thead><tr>
@@ -529,6 +534,12 @@
         <button id="rl-add" class="primary">Dodaj pravilo</button>
         <button id="fw-apply" class="primary">Primijeni firewall</button>
       </div>
+      <p class="hint">Pravila dopuštaju ili zabranjuju promet <b>između zona</b>
+        (npr. iz LAN-a prema internetu, s VPN-a prema LAN-u). Prazno odredište
+        znači „prema samom uređaju". Pravilo može vrijediti i samo u određeno
+        vrijeme (stupac „Kada"). Promjene se primjenjuju tek gumbom
+        <b>Primijeni firewall</b>. Saguaro dira samo vlastita pravila
+        (<code>sag_*</code>); ručna i LuCI pravila ostaju netaknuta.</p>
       <div class="table-wrap">
         <table>
           <thead><tr>
@@ -780,6 +791,12 @@
         <button id="wg-apply" class="primary">Primijeni peerove</button>
         <button id="wg-access" class="ghost">—</button>
       </div>
+      <p class="hint">Peer je jedan udaljeni korisnik. Dodaš mu ime i adresu u
+        tunelu (uređaj ponudi prvu slobodnu), a gumb <b>Config</b> daje gotovu
+        datoteku za njegovu WireGuard aplikaciju. Veza je split tunnel — kroz
+        tunel se vidi samo lokalna mreža, na internet korisnik ide svojom
+        vezom. Za spajanje dviju poslovnica koristi <b>Site-to-site</b>, ne
+        pojedinačne peerove.</p>
       <div class="table-wrap">
         <table>
           <thead><tr>
@@ -1007,6 +1024,10 @@
           <h2>Praćeni uređaji (ping)</h2>
           <button id="nm-add" class="primary">Dodaj</button>
         </div>
+        <p class="hint">Uređaj svake minute pingne upisane adrese; kad neka
+          prestane odgovarati (ili se vrati), zapiše se događaj i po želji
+          pošalje e-mail (vrsta „nadzirani uređaj"). Dodaj ovamo ono što mora
+          raditi — server, pisač, drugi router.</p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Naziv</th><th>IP</th><th>Stanje</th><th>Promjena</th><th></th></tr></thead>
@@ -1751,7 +1772,7 @@
 
       <details class="help"><summary>Snalaženje — skupine, moduli i tražilica</summary><div>
         Sučelje ima dvije razine: <b>vodoravna traka na vrhu</b> bira skupinu
-        (Status, Network, Firewall, Filtering, VPN, System), a <b>lijevi
+        (Status, Network, Firewall, Filtering, Proxy, VPN, System), a <b>lijevi
         stupac</b> bira modul unutar te skupine.
         <br><br>Moduli nose ustaljene stručne nazive (DHCP, QoS, Port
         forwarding, Backup…) jer se tako zovu i u svakoj drugoj mrežnoj opremi
@@ -1765,7 +1786,7 @@
           <li><code>vatrozid</code> → <b>Firewall rules</b></li>
           <li><code>skenir</code> → <b>Scan detection</b></li>
           <li><code>lozink</code> → <b>Settings</b></li>
-          <li><code>reklam</code> → <b>DNS filter</b></li>
+          <li><code>reklam</code> → <b>DNS</b></li>
           <li><code>kopij</code> → <b>Backup</b></li>
         </ul>
         Strelicama gore/dolje biraš rezultat, <b>Enter</b> otvara modul,
@@ -1819,8 +1840,11 @@
       </div></details>
 
       <details class="help"><summary>DHCP — dodjela adresa</summary><div>
-        Poolovi određuju koji raspon adresa se dijeli po mreži; svaki se može
-        uključiti/isključiti (isključi ako adrese već dijeli drugi router!).
+        Po svakoj mreži dijeli se pool adresa; unutar njega može biti i
+        <b>više raspona</b>, svaki sa svojim trajanjem zakupa. Pool se može
+        uključiti/isključiti (isključi ako adrese već dijeli drugi router!) — a
+        sučelje pokazuje <b>stvarno stanje</b>: ako OpenWrt DHCP nije pokrenuo
+        (jer je zatekao tuđi na istoj mreži), to i piše, ne laže da radi.
         <b>Rezervacije</b>: uređaj s upisanim MAC-om uvijek dobije istu
         adresu — dodaješ ručno ili gumbom "U rezervacije" kod aktivnih
         leaseova. Vrijede nakon gumba Primijeni.
@@ -1915,9 +1939,115 @@
 
       <details class="help"><summary>Safe mode — zaštita od zaključavanja</summary><div>
         Rizične promjene (LAN adresa, WAN veze, ograničenje pristupa) moraju
-        biti potvrđene u roku od 2 minute — sučelje ih potvrdi samo čim se
-        uspješno spoji nakon promjene. Ako pristup pukne, uređaj sam vrati
-        prethodno stanje i to zabilježi u događaje.
+        biti potvrđene u roku od <b>5 minuta</b> — sučelje ih potvrdi samo čim
+        se uspješno spoji nakon promjene. Ako pristup pukne, uređaj sam vrati
+        prethodno stanje i to zabilježi u događaje. Kod promjene LAN adrese to
+        znači: postavi svom računalu adresu iz nove mreže i prijavi se ponovno
+        unutar tog roka, inače se uređaj vrati na staru adresu.
+      </div></details>
+
+      <details class="help"><summary>Static routes — ručni putevi do mreža</summary><div>
+        Kad iza nekog routera u tvojoj mreži postoji još jedna mreža koju uređaj
+        ne poznaje izravno, upišeš <b>statičku rutu</b>: „za mrežu X idi preko
+        routera Y". Ruta može biti IPv4 ili IPv6. Uz upisane rute uređaj
+        prikazuje i <b>stvarnu tablicu ruta iz jezgre</b>, pa se odmah vidi
+        vodi li se promet kako je zamišljeno. Za automatsku razmjenu ruta među
+        više routera koristi radije OSPF.
+      </div></details>
+
+      <details class="help"><summary>Reverse proxy — više servisa iza jedne adrese</summary><div>
+        Ako imaš jednu javnu adresu, a više web servisa (npr.
+        <code>mail.tvrtka.hr</code> i <code>crm.tvrtka.hr</code>), obrnuti proxy
+        (haproxy) ih razdvaja <b>po imenu</b>: gleda koje je ime traženo i
+        prosljeđuje na pravi interni server. Za svaki servis (site) upišeš ime
+        i internu adresu; po želji uređaj sam izda <b>Let's Encrypt certifikat</b>
+        za to ime, pa promet prema van ide šifrirano bez upozorenja preglednika.
+        Alat (haproxy) se instalira jednim klikom.
+      </div></details>
+
+      <details class="help"><summary>Site-to-site — veza ured–ured</summary><div>
+        Spaja dvije poslovnice u jednu mrežu preko <b>WireGuard</b> tunela — kao
+        da su na istom switchu. Odvojeno je od WireGuarda za udaljeni pristup
+        (vlastito sučelje i zona), jer iza poslovnice stoji cijela mreža i
+        promet ide u oba smjera, a iza pojedinačnog korisnika samo jedna adresa.
+        Upišeš mrežu druge strane; uređaj provjeri da se ne preklapa s
+        postojećima (i s tunelima, ne samo s konfiguracijom) i da gotov config
+        za drugu stranu. Pad tunela se javlja e-mailom (vrsta upozorenja
+        „veza s drugom poslovnicom").
+      </div></details>
+
+      <details class="help"><summary>Diagnostics — tko troši vezu i snimanje prometa</summary><div>
+        <b>Tko troši vezu</b>: čita aktivne veze izravno iz jezgre
+        (conntrack) — zbroj po uređaju u mreži, najveći promet na vrhu, pa puna
+        tablica s filterom. Brojke su promet <b>trenutno otvorenih veza</b>, ne
+        mjesečna potrošnja (to je Reports). Ako uređaj nije stvarni izlaz mreže,
+        vidi samo jedan smjer i to pošteno napiše. <b>Snimanje prometa</b>:
+        snimka paketa za Wireshark (<code>.pcap</code>) bez SSH-a — samo
+        zaglavlja (prvih 96 bajtova), najviše 10 minuta / 100 MB. Alat
+        (tcpdump-mini) se instalira jednim klikom.
+      </div></details>
+
+      <details class="help"><summary>UPS — neprekidno napajanje</summary><div>
+        Uređaj spojen na UPS preko USB kabela zna kad je nestala struja i koliko
+        baterije još ima. <b>Uredno gašenje pri praznoj bateriji radi sam NUT</b>
+        (upsmon), čak i da Saguaro ne radi. NUT paketi se instaliraju jednim
+        klikom; driver <code>usbhid-ups</code> pokriva većinu novijih USB
+        UPS-eva, <code>nutdrv_qx</code> starije. Sučelje pokazuje napajanje,
+        bateriju, autonomiju i opterećenje. Nestanak struje, povratak, slabu
+        bateriju i gubitak veze s UPS-om uređaj javlja e-mailom (vrsta „UPS").
+        Ako UPS nije spojen, pošteno piše da se ne javlja.
+      </div></details>
+
+      <details class="help"><summary>Reports — mjesečni izvještaj</summary><div>
+        Uređaj <b>sam mjeri svake minute</b> i sprema dnevni sažetak, pa postoci
+        vrijede i preko ponovnih pokretanja i nadogradnji. Mjesečni izvještaj
+        (HTML) sadrži dostupnost interneta i nadziranih uređaja, promet ukupno i
+        po uređaju, upozorenja i održavanje. Šalje se e-mailom (dan slanja se
+        bira) ili se preuzme ručno.
+      </div></details>
+
+      <details class="help"><summary>Users — korisnici i uloge</summary><div>
+        Više ljudi može imati vlastiti račun s ulogom: <b>Administrator</b> (sve,
+        uključivo korisnike i nepovratne zahvate), <b>Operater</b> (svakodnevni
+        rad, bez upravljanja korisnicima) i <b>Pregled</b> (samo gledanje). Zadnji
+        administrator se ne može obrisati ni isključiti, da uređaj ne ostane bez
+        gospodara. Svaki korisnik mijenja svoju lozinku i uključuje svoju
+        dvofaktorsku prijavu.
+      </div></details>
+
+      <details class="help"><summary>Dvofaktorska prijava (2FA)</summary><div>
+        Uz lozinku se pri prijavi traži i šesteroznamenkasti kod iz aplikacije na
+        telefonu (Google Authenticator, Aegis, 1Password…), pa ukradena lozinka
+        sama ne vrijedi. Uključuje je <b>svaki korisnik za sebe</b> (Settings):
+        skenira QR kod i potvrdi kodom prije nego se išta upiše, pa kriva tajna
+        ne može zaključati račun. Dobiva 8 <b>pričuvnih kodova</b> za slučaj da
+        ostane bez telefona; administrator može poništiti tuđu 2FA. <b>API token
+        nema drugi korak</b> — namijenjen je skriptama, čuvaj ga kao lozinku.
+      </div></details>
+
+      <details class="help"><summary>Certifikat sučelja — Let's Encrypt</summary><div>
+        Sučelje zadano radi sa self-signed certifikatom (veza je šifrirana, ali
+        preglednik upozorava). S pravim <b>Let's Encrypt</b> certifikatom
+        upozorenja nestaju. Trebaš javnu adresu, DNS ime koje pokazuje na nju i
+        dostupan port 80 za provjeru. Certifikat vrijedi odmah, bez restarta, i
+        <b>obnavlja se sam</b>. Ako ga nema ili je neispravan, sučelje uvijek
+        pada natrag na self-signed — nikad ne ostaje bez šifriranja.
+      </div></details>
+
+      <details class="help"><summary>Prisilni DNS — da nitko ne zaobiđe filtar</summary><div>
+        Blokada domena i obiteljski DNS vrijede samo ako uređaji stvarno koriste
+        DNS ovog uređaja. <b>Prisilni DNS</b> (DNS modul) preusmjeri sav promet
+        na portu 53 natrag na uređaj i <b>blokira DoT</b> (port 853) te poznate
+        <b>DoH</b> resolvere — inače bi ih preglednik ili aplikacija zaobišli
+        vlastitim šifriranim DNS-om. Adrese kojima to treba dopustiti (npr.
+        vlastiti resolver) upisuju se kao iznimke.
+      </div></details>
+
+      <details class="help"><summary>Vremenska pravila firewalla</summary><div>
+        Svako firewall pravilo može vrijediti <b>samo u određeno vrijeme</b> —
+        po satima i danima u tjednu. Npr. „gostinska mreža na internet samo
+        radnim danom 8–17 h" ili „blokiraj društvene mreže navečer". Izvan
+        zadanog vremena pravilo jednostavno ne vrijedi.
       </div></details>
 
       <details class="help"><summary>Postavke — račun i sustav</summary><div>
@@ -1929,8 +2059,10 @@
             SSH i za LuCI. Mijenja se u istoj kartici; prije promjene uređaj
             sprema kopiju <code>/etc/shadow</code>.</li>
         </ul>
-        Uz to: pregled aktivnih sesija, API token za skripte i slanje logova na
-        vanjski syslog poslužitelj.
+        Uz to su ovdje: dvofaktorska prijava, certifikat sučelja
+        (Let's Encrypt), vremenska zona i NTP, pregled aktivnih sesija i API
+        token za skripte. Slanje logova na vanjski syslog poslužitelj je u
+        modulu <b>System → System log</b>.
       </div></details>
 
       <details class="help"><summary>Detekcija skeniranja portova</summary><div>
@@ -1995,8 +2127,10 @@
       <details class="help"><summary>Upozorenja e-mailom — što uređaj javlja</summary><div>
         Uređaj sam prati stanje i <b>sve zapisuje u dnevnik</b>: pad i povratak
         internet veze, promjena javne IP adrese, rad iza tuđeg NAT-a, pad VPN
-        poslužitelja, spajanje korisnika, ponovno pokretanje, prelazak praga za
-        procesor/memoriju/disk, neuspio backup, skori istek certifikata.
+        poslužitelja, spajanje korisnika, pad veze s drugom poslovnicom,
+        prijave (uspjele i neuspjele), detekcija skeniranja, stanje UPS-a,
+        ponovno pokretanje, prelazak praga za procesor/memoriju/disk, neuspio
+        backup, skori istek certifikata.
         <br><br><b>Slanje e-mailom je zadano isključeno za sve vrste</b> — pali
         se zasebno, po vrsti (Status → Alerts). Namjerno: uređaj koji javlja
         svaku promjenu brzo postane uređaj čije poruke nitko ne čita. Ista se
@@ -2045,13 +2179,17 @@
       </div></details>
 
       <details class="help"><summary>Instalacija na novi uređaj</summary><div>
-        Na svježem OpenWrt 25.x uređaju pokreni:
+        Preporučeni put je <b>gotova slika s USB-a</b> (sve unutra, bez
+        interneta): napiši sliku na stick, digni uređaj, na konzoli pokreni
+        <code>saguaro-setup</code> (adresa, po želji instalacija na disk), pa
+        otvori <code>https://IP:8443/</code>. Za uređaj na kojem OpenWrt već
+        radi postoji i skripta:
         <code>wget -O - https://raw.githubusercontent.com/saguarogit-cmzk/SGSWRT/main/scripts/install.sh | sh</code>
-        — skripta instalira pakete, preuzme zadnje izdanje i pokrene Saguaro.
         Prva prijava: korisnik <code>admin</code>, lozinka <code>Sgs#2026</code>.
         Ta je lozinka ista na svakoj instalaciji i javno je poznata, pa sučelje
         <b>odmah traži da je promijeniš</b> — do tada ostale funkcije nisu
-        dostupne. Nakon prijave regeneriraj i API token.
+        dostupne, a čarobnjak te vodi kroz ime, zonu, lozinku uređaja, internet
+        i LAN adresu. API token je nasumičan.
       </div></details>
     </section>
   </div>

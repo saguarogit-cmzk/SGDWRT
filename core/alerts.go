@@ -53,6 +53,7 @@ var alertKinds = []alertKind{
 	{"unknown_mac", "U mreži se pojavio nepoznat uređaj", false},
 	{"ups", "UPS — nestanak struje, slaba baterija, gubitak veze s UPS-om", false},
 	{"scan", "Detekcija skeniranja portova je blokirala nove izvore", false},
+	{"service", "Pozadinski servis (DNS, proxy, OSPF, UPS) je stao ili se vratio", false},
 }
 
 func alertKindValid(id string) bool {

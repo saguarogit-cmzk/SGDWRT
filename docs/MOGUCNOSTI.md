@@ -89,7 +89,7 @@ konfiguracije.
 | Dashboard: CPU, RAM, disk, uptime, portovi, sučelja, grafovi zadnjeg sata | radi | |
 | Praćenje uređaja pingom | radi | |
 | Potrošnja prometa po uređaju (nlbwmon) | radi | |
-| **17 vrsta upozorenja e-mailom** | radi | WAN pao, javna IP, CGNAT, VPN servis, VPN klijent, veza s poslovnicom, reboot, promjena konfiguracije, prijava, neuspjele prijave, resursi, backup, istek certifikata, nadzor, nepoznat MAC, UPS, skeniranje |
+| **18 vrsta upozorenja e-mailom** | radi | WAN pao, javna IP, CGNAT, VPN servis, VPN klijent, veza s poslovnicom, reboot, promjena konfiguracije, prijava, neuspjele prijave, resursi, backup, istek certifikata, nadzor, nepoznat MAC, UPS, skeniranje, pad servisa |
 | Trag promjena konfiguracije (tko je što promijenio) | radi | razlikuje izmjenu kroz Saguaro od one izvan njega |
 | Sustavski log, trajno spremanje na disk, slanje na vanjski syslog | radi (lokalno), postavljeno (vanjski) | |
 

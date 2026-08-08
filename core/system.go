@@ -776,3 +776,27 @@ func (s *server) handleLogDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	http.ServeFile(w, r, p)
 }
+
+// handleSystemPower ponovno pokreće ili uredno gasi uređaj. Radnja se određuje
+// iz putanje (.../reboot ili .../poweroff). Samo administrator (adminOnlyPath).
+// Odgovor ode PRIJE same radnje, jer reboot/poweroff prekida vezu.
+func (s *server) handleSystemPower(w http.ResponseWriter, r *http.Request) {
+	poweroff := strings.HasSuffix(r.URL.Path, "/poweroff")
+	action, cmd := "reboot", "reboot"
+	if poweroff {
+		action, cmd = "poweroff", "poweroff"
+	}
+	who := "admin"
+	if u, _, _ := s.sessionUserRole(bearerToken(r)); u != "" {
+		who = u
+	}
+	s.alert("reboot", "warning", "Uređaj je pokrenuo "+action+" iz sučelja (korisnik "+who+").")
+	log.Printf("system %s zatražen iz sučelja (korisnik %s)", action, who)
+	writeJSON(w, http.StatusOK, map[string]any{"action": action, "in_seconds": 2})
+	go func() {
+		time.Sleep(2 * time.Second)
+		if err := exec.Command(cmd).Run(); err != nil {
+			log.Printf("%s nije uspio: %v", action, err)
+		}
+	}()
+}

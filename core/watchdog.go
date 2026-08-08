@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +39,7 @@ func (s *server) watchdogLoop() {
 		ctx := context.Background()
 		s.checkWAN(ctx)
 		s.checkServices(ctx)
+		s.checkDaemons(ctx)
 		s.checkResources(ctx)
 		s.checkVPNClients(ctx)
 		s.checkFailedLogins(ctx)
@@ -290,6 +292,48 @@ func (s *server) checkServices(ctx context.Context) {
 	}
 }
 
+// checkDaemons pazi rade li pozadinski servisi koje je korisnik uključio.
+// Dosad se nadziralo samo VPN — pao li dnsmasq, cijela mreža ostane bez DNS-a
+// i DHCP-a, a uređaj ne javi ništa. Prati se samo ono što je uistinu uključeno,
+// da se izbjegnu lažne uzbune. Javlja se samo promjena stanja.
+func (s *server) checkDaemons(ctx context.Context) {
+	initEnabled := func(name string) bool {
+		return exec.CommandContext(ctx, "/etc/init.d/"+name, "enabled").Run() == nil
+	}
+	running := func(proc string) bool {
+		return exec.CommandContext(ctx, "pidof", proc).Run() == nil
+	}
+	type daemon struct {
+		id, label, proc string
+		on              bool
+	}
+	daemons := []daemon{
+		{"dnsmasq", "DNS/DHCP (dnsmasq)", "dnsmasq", initEnabled("dnsmasq")},
+		{"haproxy", "Obrnuti proxy (haproxy)", "haproxy", initEnabled("haproxy")},
+		{"bird", "OSPF (bird)", "bird", s.getSetting("ospf_enabled", "0") == "1"},
+		{"upsd", "UPS poslužitelj (upsd)", "upsd", upsInstalled() && upsEnabled(ctx)},
+		{"upsmon", "UPS monitor (upsmon)", "upsmon", upsInstalled() && upsEnabled(ctx)},
+	}
+	for _, d := range daemons {
+		if !d.on {
+			continue // servis nije uključen — nema se što nadzirati
+		}
+		val := "down"
+		if running(d.proc) {
+			val = "up"
+		}
+		changed, _ := s.alertValue("daemon:"+d.id, val)
+		if !changed {
+			continue
+		}
+		if val == "up" {
+			s.alert("service", "info", d.label+" opet radi.")
+		} else {
+			s.alert("service", "warning", d.label+" je prestao raditi.")
+		}
+	}
+}
+
 /* ---------- resursi ---------- */
 
 func (s *server) checkResources(ctx context.Context) {
@@ -512,9 +556,24 @@ func (s *server) checkCerts() {
 		days = 30
 	}
 	files := map[string]string{
-		"OpenVPN CA":               s.ovpnDir() + "/ca.crt",
-		"OpenVPN poslužitelj":      s.ovpnDir() + "/server.crt",
-		"Certifikat sučelja (TLS)": s.etcDir + "/cert.pem",
+		"OpenVPN CA":                       s.ovpnDir() + "/ca.crt",
+		"OpenVPN poslužitelj":              s.ovpnDir() + "/server.crt",
+		"Certifikat sučelja (self-signed)": s.etcDir + "/cert.pem",
+	}
+	// Let's Encrypt certifikat sučelja — obnavlja se sam, ali ako obnova tiho
+	// padne, ovo je jedino mjesto koje na to upozori prije isteka.
+	if h := s.getSetting("gui_cert_host", ""); h != "" {
+		files["Certifikat sučelja (Let's Encrypt, "+h+")"] =
+			filepath.Join(acmeCertDir, h+".crt")
+	}
+	// certifikati proxy siteova koje uređaj sam vodi (Let's Encrypt)
+	if sites, err := s.rpSites(); err == nil {
+		for _, site := range sites {
+			if site.TLSMode == "acme" && site.Hostname != "" {
+				files["Proxy site "+site.Hostname] =
+					filepath.Join(acmeCertDir, site.Hostname+".crt")
+			}
+		}
 	}
 	for label, path := range files {
 		b, err := os.ReadFile(path)

@@ -69,6 +69,8 @@ button.primary{background:linear-gradient(var(--green),var(--green-d));
   border-color:var(--green-d);color:#fff}
 button.primary:hover{filter:brightness(1.08);color:#fff;border-color:var(--green-d)}
 button.ghost{background:linear-gradient(#fff,#f5f7f9)}
+button.danger{color:var(--crit)}
+button.danger:hover{border-color:var(--crit);color:var(--crit);background:#fdf0ee}
 .btn-sm{padding:2px 8px;font-size:11.5px;font-weight:600}
 .btn-sm.danger{color:var(--crit)}
 .btn-sm.danger:hover{border-color:var(--crit);color:var(--crit);background:#fdf0ee}

@@ -52,6 +52,8 @@ func adminOnlyPath(path string) bool {
 		return true
 	case path == "/api/v1/system/device-password":
 		return true
+	case path == "/api/v1/system/reboot", path == "/api/v1/system/poweroff":
+		return true
 	case path == "/api/v1/openwrt/flash":
 		return true
 	case path == "/api/v1/openwrt/datapart":

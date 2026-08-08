@@ -2129,8 +2129,9 @@
         internet veze, promjena javne IP adrese, rad iza tuđeg NAT-a, pad VPN
         poslužitelja, spajanje korisnika, pad veze s drugom poslovnicom,
         prijave (uspjele i neuspjele), detekcija skeniranja, stanje UPS-a,
-        ponovno pokretanje, prelazak praga za procesor/memoriju/disk, neuspio
-        backup, skori istek certifikata.
+        pad pozadinskog servisa (DNS, proxy, OSPF, UPS), ponovno pokretanje,
+        prelazak praga za procesor/memoriju/disk, neuspio backup, skori istek
+        certifikata.
         <br><br><b>Slanje e-mailom je zadano isključeno za sve vrste</b> — pali
         se zasebno, po vrsti (Status → Alerts). Namjerno: uređaj koji javlja
         svaku promjenu brzo postane uređaj čije poruke nitko ne čita. Ista se
@@ -2354,6 +2355,20 @@
         <button id="tok-regen" class="primary">Regeneriraj</button>
       </div>
       <p class="hint" id="tok-result"></p>
+    </section>
+
+    <section class="card" style="max-width:760px">
+      <div class="card-head">
+        <h2>Napajanje uređaja</h2>
+      </div>
+      <p class="hint">Ponovno pokretanje ili uredno gašenje uređaja. Kod gašenja
+        pričekaj da se sve zaustavi prije nego makneš napajanje. Veza sa
+        sučeljem se pritom prekida. Samo administrator.</p>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="pwr-reboot" class="ghost">Ponovno pokreni</button>
+        <button id="pwr-poweroff" class="danger">Ugasi uređaj</button>
+      </div>
+      <p class="hint" id="pwr-result"></p>
     </section>
   </div>
 

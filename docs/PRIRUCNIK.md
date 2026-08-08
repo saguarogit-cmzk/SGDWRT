@@ -614,14 +614,16 @@ razmaka (zadano 30 minuta) — da jedan pokvaren link ne zatrpa sandučić.
 Jedino što e-mailom odlazi neovisno o ovom popisu je **sigurnosna kopija**,
 prema postavci u modulu Backup (zadano **jednom tjedno**).
 
-Što se prati (17 vrsta): pad i povratak internet veze · promjena javne IP
+Što se prati (18 vrsta): pad i povratak internet veze · promjena javne IP
 adrese · rad iza tuđeg NAT-a (CGNAT) · pad VPN poslužitelja · spajanje i
 odspajanje VPN korisnika · pad veze s drugom poslovnicom (ured-ured) ·
 ponovno pokretanje uređaja · promjena konfiguracije · prijave (uspjele) i
 veći broj neuspjelih prijava · prelazak praga za procesor, memoriju i disk ·
-neuspio backup · skori istek certifikata · nedostupnost praćenog uređaja ·
-nepoznat uređaj u mreži · UPS (nestanak struje, slaba baterija, gubitak veze) ·
-detekcija skeniranja portova blokirala nove izvore.
+neuspio backup · skori istek certifikata (uklj. Let's Encrypt sučelja i proxy
+siteova) · nedostupnost praćenog uređaja · nepoznat uređaj u mreži · UPS
+(nestanak struje, slaba baterija, gubitak veze) · detekcija skeniranja portova
+blokirala nove izvore · **pad pozadinskog servisa** (dnsmasq, haproxy, bird,
+OSPF, UPS).
 
 - **Oznaka uređaja** ide u naslov poruke — korisno kad se nadzire više lokacija.
 - **Provjeri sada** pokreće sve provjere odmah, bez čekanja sljedećeg kruga
@@ -884,7 +886,13 @@ Na uređaju postoje **dvije odvojene lozinke** i lako ih je pomiješati:
 - **Sesije**: pregled + odjava svih ostalih sesija.
 - **API token**: za skripte i integracije (`Authorization: Bearer <token>`);
   regeneracija odmah poništava stari.
-- **Syslog**: slanje kopije logova na vanjski poslužitelj (IP, port, UDP/TCP).
+- **Napajanje uređaja**: ponovno pokretanje i uredno gašenje iz sučelja (uz
+  potvrdu, samo administrator). Gašenje je posebno korisno uz UPS — uredno
+  spusti uređaj prije nego nestane baterije.
+
+Ostale postavke sučelja žive u vlastitim modulima: dvofaktorska prijava i
+certifikat sučelja u **Settings** (kartice iznad), a slanje logova na vanjski
+syslog poslužitelj u **System → System log**.
 
 ## Postavljanje s konzole — `saguaro-setup`
 

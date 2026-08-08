@@ -4894,6 +4894,30 @@ $("tok-regen").addEventListener("click", async () => {
   }
 });
 
+$("pwr-reboot").addEventListener("click", async () => {
+  if (!confirm("Ponovno pokrenuti uređaj?\n\nVeza sa sučeljem se prekida na " +
+    "minutu-dvije dok se uređaj ne digne.")) return;
+  try {
+    await api("/system/reboot", "POST", {});
+    $("pwr-result").textContent = "Uređaj se ponovno pokreće — sučelje će biti " +
+      "dostupno za koju minutu.";
+  } catch (e) {
+    $("pwr-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
+$("pwr-poweroff").addEventListener("click", async () => {
+  if (!confirm("Ugasiti uređaj?\n\nNakon gašenja se može upaliti samo fizički " +
+    "(ili preko UPS-a). Pričekaj da se sve zaustavi prije nego makneš napajanje.")) return;
+  try {
+    await api("/system/poweroff", "POST", {});
+    $("pwr-result").textContent = "Uređaj se gasi. Pričekaj da se ugasi prije " +
+      "nego makneš napajanje.";
+  } catch (e) {
+    $("pwr-result").textContent = "Greška: " + (e.message || e);
+  }
+});
+
 $("bk-create").addEventListener("click", async () => {
   const btn = $("bk-create");
   btn.disabled = true;

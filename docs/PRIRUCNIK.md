@@ -925,6 +925,32 @@ instalira jednim klikom, kao i haproxy za obrnuti proxy.
   proces ostane visjeti. Zaboravljena snimka ne može puniti disk danima.
 - Snimke leže na **data particiji** i preuzimaju se odnosno brišu iz tablice.
 
+## UPS (Status) — neprekidno napajanje
+
+Uređaj spojen na UPS preko USB kabela zna kad je nestala struja i koliko
+baterije još ima. Ispod je standardni **NUT** (Network UPS Tools): driver
+razgovara s UPS-om, `upsd` drži stanje (sluša samo na 127.0.0.1), a `upsmon`
+**uredno ugasi uređaj** kad UPS javi da je baterija pri kraju — to radi sam,
+čak i da Saguaro servis ne radi.
+
+- **Instalacija na klik** — NUT paketi se instaliraju iz sučelja (treba
+  internet na uređaju), kao i tcpdump za snimanje prometa.
+- **Driveri**: `usbhid-ups` pokriva gotovo sve novije USB UPS-e (APC, Eaton,
+  CyberPower…), `nutdrv_qx` starije i jeftinije (Megatec/Q1 protokol).
+- **Stanje u sučelju**: napajanje (mreža/baterija), napunjenost, procjena
+  autonomije, opterećenje. Saguaro čita `upsc` svakih 15 sekundi.
+- **Događaji**: nestanak struje, povratak struje, slaba baterija i gubitak
+  veze s UPS-om zapisuju se u dnevnik; e-mail za njih se uključuje u modulu
+  Alerts (vrsta „UPS"), zadano je isključen kao i sve ostale vrste.
+- **Prag gašenja** je tvornički prag samog UPS-a; postotak se upisuje samo
+  ako se gašenje želi ranije (driveru se doda
+  `override.battery.charge.low`).
+- Ako UPS nije spojen ili ga driver ne prepozna, sučelje pošteno piše
+  „UPS se ne javlja" — ništa se ne izmišlja.
+
+Konfiguracija je u `nut_server` / `nut_monitor` (sag_ zapisi); upsd traži
+prijavu (korisnik `saguaro`, nasumična lozinka) i dostupan je samo s uređaja.
+
 ## Certifikat sučelja (Settings)
 
 Sučelje zadano radi sa self-signed certifikatom — veza je šifrirana, ali

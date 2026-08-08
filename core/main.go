@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "0.46.0"
+const version = "0.47.0"
 
 type server struct {
 	tokenMu       sync.RWMutex
@@ -171,6 +171,7 @@ func main() {
 	go s.monitorLoop()
 	go s.watchdogLoop()
 	go s.auditLoop()
+	go s.upsLoop()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
@@ -248,6 +249,9 @@ func main() {
 	mux.Handle("POST /api/v1/protection/adblock", s.auth(s.handleAdblockSet))
 	mux.Handle("POST /api/v1/protection/scan", s.auth(s.handleScanSet))
 	mux.Handle("POST /api/v1/protection/scan/clear", s.auth(s.handleScanClear))
+	mux.Handle("GET /api/v1/ups", s.auth(s.handleUPSGet))
+	mux.Handle("POST /api/v1/ups/install", s.auth(s.handleUPSInstall))
+	mux.Handle("POST /api/v1/ups/set", s.auth(s.handleUPSSet))
 	mux.Handle("GET /api/v1/wireguard/status", s.auth(s.handleWGStatus))
 	mux.Handle("POST /api/v1/wireguard/server", s.auth(s.handleWGServerSet))
 	mux.Handle("GET /api/v1/wireguard/peers", s.auth(s.handleWGPeerList))

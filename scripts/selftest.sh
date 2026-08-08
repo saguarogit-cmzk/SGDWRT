@@ -357,6 +357,30 @@ else
     ok "DNS ne sluša na internet sučelju ($WANIP)"
 fi
 
+# UPS nadzor (NUT) — provjerava se samo ako je u Saguaru uključen
+if [ "$(uci -q get nut_server.sag_ups.sag_enabled)" = "1" ]; then
+    # pidof, ne pgrep -x: busybox pgrep -x uspoređuje cijeli redak naredbe
+    # pa "/usr/sbin/upsd" nikad ne prođe kao "upsd"
+    if pidof upsd >/dev/null 2>&1; then
+        ok "UPS poslužitelj (upsd) radi"
+    else
+        bad "UPS nadzor je uključen, a upsd ne radi" "/etc/init.d/nut-server restart"
+    fi
+    if pidof upsmon >/dev/null 2>&1; then
+        ok "UPS monitor (upsmon) radi — on gasi uređaj kad je baterija prazna"
+    else
+        bad "UPS nadzor je uključen, a upsmon ne radi" "/etc/init.d/nut-monitor restart"
+    fi
+    UPSSTAT=$(upsc sag_ups@127.0.0.1 ups.status 2>/dev/null)
+    if [ -n "$UPSSTAT" ]; then
+        ok "UPS se javlja (stanje: $UPSSTAT)"
+    else
+        skip "UPS se ne javlja" "driver ne vidi UPS — provjeri USB kabel i model"
+    fi
+else
+    skip "UPS nadzor nije uključen"
+fi
+
 # ------------------------------------------------------- 6. logovi i backup
 head_ "Logovi, backup i upozorenja"
 

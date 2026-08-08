@@ -930,3 +930,28 @@ stoji „Zaboravljena lozinka?" s uputom (konzola + SSH varijanta).
 | Stavka | Zašto |
 |---|---|
 | Puni „da" put stavke 4 na uređaju | Goran je isti dan tek postavio svoju novu lozinku — test bi mu je pregazio. Mehanizam je istovjetan onome što je taj dan provjereno kroz API (`resetAdminPassword`), a i skripta prvog dizanja ga koristi od v0.38.0 |
+
+---
+
+## Nadzor UPS-a — NUT (08.08.2026., v0.47.0)
+
+Novi modul UPS (skupina Status): NUT paketi na klik, `upsd` samo na
+127.0.0.1, `upsmon` kao master (on gasi uređaj), Saguaro čita `upsc` svakih
+15 s i javlja događaje kroz Alerts (vrsta „UPS", zadano isključena).
+
+| Provjera | Ishod |
+|---|---|
+| Instalacija NUT paketa | **radi** — apk na uređaju (nut-server, nut-upsmon, nut-upsc, driveri usbhid-ups i nutdrv_qx) |
+| Upis konfiguracije | **radi** — `nut_server`/`nut_monitor` sag_ zapisi; generirani `/var/etc/nut/ups.conf` sadrži driver, port i `override.battery.charge.low = 30` |
+| Pokretanje servisa | **radi** — upsd i upsmon podignuti, uključeni za boot |
+| Iskreno stanje bez UPS-a | **radi** — API i sučelje jave „UPS se ne javlja", ništa se ne izmišlja |
+| Isključivanje | **radi** — servisi stanu i maknu se iz boota, konfiguracija ostaje |
+| Samoprovjera | **radi** — upsd/upsmon provjere prolaze dok je uključen; `pgrep -x` zamijenjen s `pidof` (busybox pgrep -x uspoređuje cijeli redak naredbe) |
+
+### Što nije provjereno
+
+| Stavka | Zašto |
+|---|---|
+| Očitanje stvarnog UPS-a (status, baterija, autonomija) | na demo uređaju nema UPS-a — treba USB UPS |
+| Događaji OL→OB, povratak, LB i e-mail | traže stvarni nestanak struje na UPS-u |
+| Uredno gašenje pri praznoj bateriji | radi ga upsmon (standardni NUT mehanizam), ali dokaz traži UPS s praznom baterijom |

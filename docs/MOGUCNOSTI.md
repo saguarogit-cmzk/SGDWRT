@@ -185,7 +185,7 @@ paketa. Trud je procijenjen u danima rada.
 | **D5** | **Izvoz mjerenja u vanjski nadzor** | Zabbix/Grafana/Prometheus kod korisnika | `prometheus-node-exporter-lua` ili vlastiti `/metrics` | 1–2 dana | srednja |
 | **D6** | **SNMP** | uređaj vidljiv u postojećem korisnikovom nadzoru | `mini_snmpd` (puni `net-snmp` nije u repozitoriju) | 1–2 dana | srednja |
 | **D7** | **Mjerenje brzine veze** | dokaz da veza daje ono što pružatelj naplaćuje | `iperf3` ili speedtest skripta, raspored + graf | 1–2 dana | srednja |
-| **D8** | **Nadzor UPS-a** | uredno gašenje pri nestanku struje, upozorenje e-mailom | `nut` | 2 dana | srednja (ako ima UPS) |
+| ~~D8~~ | **NAPRAVLJENO (v0.47.0)** — nadzor UPS-a | uredno gašenje pri praznoj bateriji (upsmon), stanje u sučelju, e-mail na nestanak struje / povratak / slabu bateriju / gubitak veze | NUT paketi na klik, upsd samo na 127.0.0.1, Saguaro čita `upsc` svakih 15 s | 2 dana | srednja (ako ima UPS) |
 
 ### E. Pristup sustavu i sigurnost upravljanja
 

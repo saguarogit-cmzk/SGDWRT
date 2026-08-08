@@ -51,6 +51,7 @@ var alertKinds = []alertKind{
 	{"cert", "VPN certifikat uskoro istječe", false},
 	{"monitor", "Nadzirani uređaj ne odgovara", false},
 	{"unknown_mac", "U mreži se pojavio nepoznat uređaj", false},
+	{"ups", "UPS — nestanak struje, slaba baterija, gubitak veze s UPS-om", false},
 }
 
 func alertKindValid(id string) bool {

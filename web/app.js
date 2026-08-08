@@ -2760,6 +2760,7 @@ const MODULES = {
   alerts:    ["Alerts", "Što uređaj javlja e-mailom i kome", () => loadAlertsView()],
   audit:     ["Audit log", "Tko je i što promijenio u postavkama uređaja", () => loadAudit()],
   diag:      ["Diagnostics", "Aktivne veze i snimanje prometa za analizu", () => loadDiag()],
+  ups:       ["UPS", "Neprekidno napajanje — baterija, struja i uredno gašenje", () => loadUps()],
   network:   ["Mreže", "Glavna mreža (LAN) i podmreže — adrese i segmenti", () => loadNetwork()],
   wan:       ["Internet (WAN)", "Veze prema internetu i dinamički DNS", () => loadNetwork()],
   multiwan:  ["Multi-WAN", "Više internet veza — failover, raspodjela i nadzor", () => loadMultiwan()],
@@ -2793,6 +2794,7 @@ const MODULE_KEYS = {
   alerts: "upozorenja obavijesti e-mail mail dojava",
   audit: "promjene tko je mijenjao dnevnik izmjena",
   diag: "dijagnostika veze conntrack tko trosi snimanje prometa pcap tcpdump wireshark",
+  ups: "ups neprekidno napajanje baterija struja nestanak gašenje nut autonomija",
   network: "mreža mreže lan vlan podmreža segment adresa sučelje glavna",
   wan: "internet wan veza pristup operater ddns dinamički dns",
   multiwan: "više veza failover pričuvna veza rezervna",
@@ -2822,7 +2824,7 @@ const MODULE_KEYS = {
 // Skupine su razdvojene po poslu: filtriranje prometa po adresama i domenama
 // više nije u istoj skupini kao pravila vatrozida.
 const NAV_GROUPS = [
-  ["Status", ["dashboard", "monitorx", "diag", "alerts", "audit"]],
+  ["Status", ["dashboard", "monitorx", "diag", "ups", "alerts", "audit"]],
   ["Network", ["network", "wan", "multiwan", "dhcp", "dns", "routes", "ospf", "qos"]],
   ["Firewall", ["firewall", "publish", "hardening"]],
   ["Filtering", ["protection", "scan"]],
@@ -5581,6 +5583,89 @@ $("cp-stop").addEventListener("click", async () => {
       ? "Zaustavljeno: " + r.file : "Ništa ne snima.";
     await loadCapture();
   } catch (e) { alertErr(e); }
+});
+
+/* ---------- UPS (NUT) ---------- */
+
+async function loadUps() {
+  const x = await api("/ups");
+  $("ups-install-wrap").classList.toggle("hidden", !!x.installed);
+  $("ups-controls").classList.toggle("hidden", !x.installed);
+
+  const badge = $("ups-state");
+  if (!x.installed) {
+    setPill(badge, "off", "NUT nije instaliran");
+    setNote("ups-note", "instalira se jednim klikom, treba internet na uređaju");
+    return;
+  }
+  $("ups-enabled").checked = !!x.enabled;
+  if (x.driver) $("ups-driver").value = x.driver;
+  $("ups-low").value = x.low_pct || "";
+
+  const u = x.ups;
+  if (!x.enabled) {
+    setPill(badge, "off", "isključeno");
+    setNote("ups-note", "uključi kvačicom i primijeni");
+  } else if (!u) {
+    setPill(badge, "warn", "UPS se ne javlja");
+    setNote("ups-note", x.error || "driver ne vidi UPS — provjeri USB kabel");
+  } else {
+    const onBatt = (u.status || "").split(" ").includes("OB");
+    const lowBatt = (u.status || "").split(" ").includes("LB");
+    if (lowBatt) setPill(badge, "crit", "baterija pri kraju");
+    else if (onBatt) setPill(badge, "warn", "radi na bateriji");
+    else setPill(badge, "good", "na mreži");
+    setNote("ups-note", (u.model || "").trim() || "UPS spojen");
+  }
+
+  const dash = (v, suf = "") => (v === undefined || v === null) ? "—" : v + suf;
+  if (u) {
+    const onBatt = (u.status || "").split(" ").includes("OB");
+    $("ups-t-power").textContent = onBatt ? "Baterija" : "Mreža";
+    $("ups-t-power-sub").textContent = dash(u.input_v, " V ulaz");
+    $("ups-t-batt").textContent = dash(u.charge_pct, " %");
+    $("ups-t-batt-sub").textContent = dash(u.battery_v, " V");
+    $("ups-t-runtime").textContent = (u.runtime_s === undefined) ? "—"
+      : Math.round(u.runtime_s / 60) + " min";
+    $("ups-t-load").textContent = dash(u.load_pct, " %");
+    $("ups-t-load-sub").textContent = "potrošnja na UPS-u";
+  } else {
+    for (const id of ["ups-t-power", "ups-t-batt", "ups-t-runtime", "ups-t-load"])
+      $(id).textContent = "—";
+    $("ups-t-power-sub").textContent = "—";
+    $("ups-t-batt-sub").textContent = "napunjenost";
+    $("ups-t-load-sub").textContent = "—";
+  }
+}
+
+$("ups-refresh").addEventListener("click", () => loadUps().catch(alertErr));
+
+$("ups-install").addEventListener("click", async () => {
+  $("ups-install").disabled = true;
+  setNote("ups-note", "instaliram NUT pakete…");
+  try {
+    await api("/ups/install", "POST", {});
+    await loadUps();
+  } catch (e) {
+    setNote("ups-note", "greška: " + (e.message || e));
+  } finally {
+    $("ups-install").disabled = false;
+  }
+});
+
+$("ups-save").addEventListener("click", async () => {
+  $("ups-result").textContent = "Primjenjujem…";
+  try {
+    const r = await api("/ups/set", "POST", {
+      enabled: $("ups-enabled").checked,
+      driver: $("ups-driver").value,
+      low_pct: parseInt($("ups-low").value, 10) || 0,
+    });
+    $("ups-result").textContent = r.note || "Spremljeno.";
+    await loadUps();
+  } catch (e) {
+    $("ups-result").textContent = "Greška: " + (e.message || e);
+  }
 });
 
 /* ---------- slanje backupa e-mailom ---------- */

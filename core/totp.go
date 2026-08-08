@@ -485,6 +485,7 @@ func (s *server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !ok {
 		loginFailed(ip)
+		s.noteLoginFail(ch.username, ip)
 		writeErr(w, http.StatusUnauthorized, "kod nije točan")
 		return
 	}
@@ -495,6 +496,7 @@ func (s *server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.noteLoginOK(ch.username, ip)
 	s.db.Exec(`UPDATE users SET last_login=datetime('now') WHERE uuid=?`, ch.userUUID)
 	var left int
 	s.db.QueryRow(`SELECT COUNT(*) FROM totp_recovery WHERE user_uuid=?`,

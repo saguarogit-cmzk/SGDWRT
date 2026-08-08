@@ -41,6 +41,7 @@ func (s *server) watchdogLoop() {
 		s.checkResources(ctx)
 		s.checkVPNClients(ctx)
 		s.checkFailedLogins(ctx)
+		s.checkScanners(ctx)
 		s.reportSample(ctx)
 		if tick%5 == 0 { // svakih 5 minuta
 			s.checkPublicIP(ctx)
@@ -460,7 +461,8 @@ func (s *server) checkFailedLogins(ctx context.Context) {
 	for _, l := range strings.Split(string(out), "\n") {
 		if strings.Contains(l, "Bad password attempt") ||
 			strings.Contains(l, "Exit before auth") ||
-			strings.Contains(l, "luci: failed login") {
+			strings.Contains(l, "luci: failed login") ||
+			strings.Contains(l, "saguaro: failed login") {
 			n++
 		}
 	}
@@ -472,6 +474,33 @@ func (s *server) checkFailedLogins(ctx context.Context) {
 			"Zabilježeno je %d novih neuspjelih pokušaja prijave u zadnjoj minuti.\n\n"+
 				"banIP automatski banira takve izvore, ali provjeri je li "+
 				"upravljanje uopće dostupno s interneta.", n-prevN))
+	}
+}
+
+// checkScanners javlja kad detekcija skeniranja blokira nove izvore. Pravila
+// u nftablesu rade i bez ovoga (drop + log u jezgru), ali dok se popis nije
+// čitao, u sučelju i izvještaju nije bilo ni traga da se išta dogodilo.
+// Javlja se samo porast broja blokiranih (set se sam prazni istekom).
+func (s *server) checkScanners(ctx context.Context) {
+	if s.getSetting("scan_enabled", "0") != "1" {
+		return
+	}
+	out, err := exec.CommandContext(ctx, "nft", "list", "set", "inet", "fw4",
+		scanSetName).Output()
+	if err != nil {
+		return
+	}
+	n := 0
+	if i := strings.Index(string(out), "elements = {"); i >= 0 {
+		n = len(reScanElem.FindAllString(string(out)[i:], -1))
+	}
+	prev, _ := strconv.Atoi(s.getSetting("scan_blocked_n", "0"))
+	s.setSetting("scan_blocked_n", strconv.Itoa(n))
+	if n > prev {
+		s.alert("scan", "warning", fmt.Sprintf(
+			"Detekcija skeniranja blokirala je nove izvore — trenutno blokiranih: %d.\n\n"+
+				"Izvori se sami otpuštaju istekom vremena. Popis je u modulu "+
+				"Scan detection.", n))
 	}
 }
 

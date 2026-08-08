@@ -85,6 +85,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("token: %v", err)
 	}
+	token = healToken(filepath.Join(*etcDir, "token"), token)
 	db, err := openDB(filepath.Join(*dataDir, "saguaro.db"))
 	if err != nil {
 		log.Fatalf("baza: %v", err)
@@ -93,7 +94,7 @@ func main() {
 
 	s := &server{token: token, webDir: *webDir, etcDir: *etcDir,
 		dataDir: *dataDir, backupDir: *backupDir, started: time.Now(), db: db}
-	if err := s.ensureAdmin(token); err != nil {
+	if err := s.ensureAdmin(defaultAdminPassword); err != nil {
 		log.Fatalf("admin korisnik: %v", err)
 	}
 
@@ -456,6 +457,28 @@ func ensureToken(path string) (string, error) {
 	}
 	log.Printf("generiran novi API token u %s", path)
 	return t, nil
+}
+
+// healToken zamijeni token jednak zadanoj lozinki. Stari install.sh upisivao
+// je 'Sgs#2026' u datoteku tokena da bi admin dobio poznatu prvu lozinku —
+// ali Bearer token zaobilazi branu obavezne promjene lozinke, pa javno
+// poznata vrijednost ne smije ostati strojni ključ. Lozinka admina sada
+// dolazi iz defaultAdminPassword i token više nema veze s njom.
+func healToken(path, token string) string {
+	if token != defaultAdminPassword {
+		return token
+	}
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return token
+	}
+	t := hex.EncodeToString(raw)
+	if err := os.WriteFile(path, []byte(t+"\n"), 0o600); err != nil {
+		log.Printf("API token jednak zadanoj lozinki, a zamjena nije uspjela: %v", err)
+		return token
+	}
+	log.Printf("API token je bio jednak zadanoj lozinki — zamijenjen nasumičnim")
+	return t
 }
 
 // auth propušta strojni API token ili valjanu GUI sesiju.

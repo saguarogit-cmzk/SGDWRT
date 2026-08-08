@@ -62,8 +62,12 @@ func verifyPassword(stored, pw string) bool {
 // dummyHash služi izjednačavanju trajanja logina za nepostojećeg korisnika.
 var dummyHash, _ = hashPassword("saguaro-dummy")
 
-// ensureAdmin pri prvom startu kreira korisnika admin s lozinkom
-// jednakom tadašnjem API tokenu (kontinuitet za postojeće korisnike).
+// defaultAdminPassword je zadana lozinka prve prijave — ista na svakoj
+// instalaciji i javno poznata, pa sučelje do njene promjene ne dopušta ništa
+// drugo. API token je od nje ODVOJEN i uvijek nasumičan (vidi healToken).
+const defaultAdminPassword = "Sgs#2026"
+
+// ensureAdmin pri prvom startu kreira korisnika admin sa zadanom lozinkom.
 func (s *server) ensureAdmin(initialPassword string) error {
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
@@ -171,6 +175,28 @@ func loginOK(ip string) {
 	delete(limFails, ip)
 }
 
+// noteLoginOK javlja uspješnu prijavu u Saguaro sučelje (vrsta upozorenja
+// "login", zadano isključena; događaj se svejedno zapiše u dnevnik).
+func (s *server) noteLoginOK(username, ip string) {
+	s.alert("login", "info", "Prijava u Saguaro: korisnik '"+username+"' s adrese "+ip)
+}
+
+// noteLoginFail bilježi neuspjelu prijavu u sam Saguaro. Do sada su se brojale
+// samo dropbear/LuCI prijave iz logreada (checkFailedLogins) — napad na
+// Saguaro sučelje prolazio je nezapaženo. Zapis ide u events (vidljivo odmah
+// u Monitoringu) i u sistemski log s markerom koji watchdog prati za prag.
+func (s *server) noteLoginFail(username, ip string) {
+	who := username
+	if who == "" {
+		who = "(prazno)"
+	}
+	s.db.Exec(`INSERT INTO events (level, message) VALUES ('warning', ?)`,
+		"Neuspjela prijava u Saguaro: korisnik '"+who+"' s adrese "+ip)
+	s.reportCountEvent("warning")
+	// marker koji checkFailedLogins prepoznaje (stderr servisa ide u logread)
+	log.Printf("saguaro: failed login for '%s' from %s", who, ip)
+}
+
 /* ---------- sesije ---------- */
 
 func tokenHash(token string) string {
@@ -237,6 +263,7 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err == sql.ErrNoRows {
 		verifyPassword(dummyHash, in.Password) // izjednači trajanje
 		loginFailed(ip)
+		s.noteLoginFail(in.Username, ip)
 		writeErr(w, http.StatusUnauthorized, "pogrešno korisničko ime ili lozinka")
 		return
 	}
@@ -246,6 +273,7 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if !verifyPassword(passHash, in.Password) {
 		loginFailed(ip)
+		s.noteLoginFail(in.Username, ip)
 		writeErr(w, http.StatusUnauthorized, "pogrešno korisničko ime ili lozinka")
 		return
 	}
@@ -253,6 +281,7 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// kao za krivu lozinku da se izvana ne razaznaje postoji li račun
 	if disabled == 1 {
 		loginFailed(ip)
+		s.noteLoginFail(in.Username, ip)
 		writeErr(w, http.StatusUnauthorized, "pogrešno korisničko ime ili lozinka")
 		return
 	}
@@ -278,6 +307,7 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.noteLoginOK(in.Username, ip)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token": token, "username": in.Username, "expires_at": expires,
 		"must_change_password": mustChange == 1, "role": role,

@@ -20,7 +20,7 @@ import (
 // Dva izvora: GitHub Releases (kad postoje) ili ručno učitan paket kroz GUI.
 // Prije svake nadogradnje radi se puni backup; binary se mijenja rename-om
 // (stari inode ostaje živ procesu koji radi), pa restart servisa.
-const githubRepo = "saguarogit-cmzk/SGDWRT"
+const githubRepo = "saguarogit-cmzk/SGSWRT"
 const updateMaxBytes = 100 << 20
 
 func (s *server) stagedUpdatePath() string {

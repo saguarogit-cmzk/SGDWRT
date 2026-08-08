@@ -52,6 +52,7 @@ var alertKinds = []alertKind{
 	{"monitor", "Nadzirani uređaj ne odgovara", false},
 	{"unknown_mac", "U mreži se pojavio nepoznat uređaj", false},
 	{"ups", "UPS — nestanak struje, slaba baterija, gubitak veze s UPS-om", false},
+	{"scan", "Detekcija skeniranja portova je blokirala nove izvore", false},
 }
 
 func alertKindValid(id string) bool {

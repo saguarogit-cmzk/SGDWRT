@@ -3210,6 +3210,11 @@ async function showSetupForm() {
     sel.value = (sys.time && sys.time.zonename) || "Europe/Zagreb";
     $("setup-ip").value = lan.ipaddr || "";
     $("setup-mask").value = lan.netmask || "255.255.255.0";
+    // gateway i DNS se predpopune postojećima, pa se pri spremanju uvijek
+    // šalju natrag — inače bi ih backend na prazno polje obrisao (LAN bi
+    // ostao bez zadane rute i DNS-a)
+    $("setup-gw").value = lan.gateway || "";
+    $("setup-dns").value = lan.dns || "";
     setupLanBefore = lan.ipaddr || "";
   } catch {
     // bez podataka se ne odustaje — polja ostaju prazna, korisnik ih upiše
@@ -3218,11 +3223,26 @@ async function showSetupForm() {
     const id = await api("/identity");
     $("setup-hostname").value = id.hostname || "";
   } catch { /* nije presudno */ }
+  // uređaj s kojeg WAN kreće (za /network/wans/{name}); zadano "wan"
+  setupWanDevice = "";
+  try {
+    const wl = await api("/network/wans");
+    const w = (wl.wans || []).find((x) => x.name === "wan") || (wl.wans || [])[0];
+    if (w) setupWanDevice = w.device || "";
+  } catch { /* nije presudno — bez WAN koraka */ }
   f.classList.remove("hidden");
   $("setup-hostname").focus();
 }
 
 let setupLanBefore = "";
+let setupWanDevice = "";
+
+// WAN polja se pokazuju prema odabranoj vrsti veze
+$("setup-wan-proto").addEventListener("change", () => {
+  const p = $("setup-wan-proto").value;
+  $("setup-wan-pppoe").classList.toggle("hidden", p !== "pppoe");
+  $("setup-wan-static").classList.toggle("hidden", p !== "static");
+});
 
 $("setup-skip").addEventListener("click", async () => {
   $("setup-form").classList.add("hidden");
@@ -3234,31 +3254,74 @@ $("setup-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const err = $("setup-error");
   err.classList.add("hidden");
+  const fail = (m) => { err.textContent = m; err.classList.remove("hidden"); };
   const host = $("setup-hostname").value.trim();
   const ip = $("setup-ip").value.trim();
   const mask = $("setup-mask").value.trim();
+
+  // lozinka uređaja — provjeri podudaranje prije ijedne izmjene
+  const rootpw = $("setup-rootpw").value;
+  const rootpw2 = $("setup-rootpw2").value;
+  if (rootpw || rootpw2) {
+    if (rootpw !== rootpw2) return fail("Lozinke uređaja se ne podudaraju.");
+    if (rootpw.length < 10) return fail("Lozinka uređaja mora imati bar 10 znakova.");
+  }
+
   try {
     await api("/settings/hostname", "POST", { hostname: host });
     await api("/settings/time", "POST", { zonename: $("setup-zone").value });
   } catch (e) {
-    err.textContent = (e && e.message) || "Spremanje nije uspjelo.";
-    err.classList.remove("hidden");
-    return;
+    return fail((e && e.message) || "Spremanje imena/zone nije uspjelo.");
   }
-  // adresa ide zadnja jer prekida vezu s trenutnom
+
+  if (rootpw) {
+    try {
+      await api("/system/device-password", "POST", { new: rootpw, confirm: rootpw2 });
+    } catch (e) {
+      return fail("Ime i zona su spremljeni, ali lozinka uređaja nije: " +
+        ((e && e.message) || ""));
+    }
+  }
+
+  // WAN — samo ako je korisnik izabrao vrstu veze
+  const wanProto = $("setup-wan-proto").value;
+  if (wanProto) {
+    if (!setupWanDevice) return fail("Ne mogu odrediti WAN uređaj — postavi vezu kasnije u modulu Internet (WAN).");
+    const body = { proto: wanProto, device: setupWanDevice };
+    if (wanProto === "pppoe") {
+      body.username = $("setup-wan-user").value.trim();
+      body.password = $("setup-wan-pass").value;
+      if (!body.username || !body.password) return fail("PPPoE traži korisničko ime i lozinku.");
+    } else if (wanProto === "static") {
+      body.ipaddrs = $("setup-wan-ip").value.trim();
+      body.gateway = $("setup-wan-gw").value.trim();
+      body.dns = $("setup-wan-dns").value.trim();
+      if (!body.ipaddrs) return fail("Statička veza traži adresu (CIDR).");
+    }
+    try {
+      await api("/network/wans/wan", "POST", body);
+    } catch (e) {
+      return fail("Ostalo je spremljeno, ali internet (WAN) nije: " + ((e && e.message) || ""));
+    }
+  }
+
+  // LAN adresa ide zadnja jer prekida vezu s trenutnom; gateway i DNS se
+  // uvijek šalju (predpopunjeni), da se ne obrišu
   if (ip && ip !== setupLanBefore) {
     try {
-      const r = await api("/network/lan", "POST", { ipaddr: ip, netmask: mask });
+      const r = await api("/network/lan", "POST", {
+        ipaddr: ip, netmask: mask,
+        gateway: $("setup-gw").value.trim(), dns: $("setup-dns").value.trim(),
+      });
       $("setup-warn").textContent =
-        "Uređaj mijenja adresu na " + ip + " — otvaram novu adresu za nekoliko sekundi.";
+        "Uređaj se seli na " + ip + ". Ako ti računalo treba nova adresa iz te " +
+        "mreže, postavi je sada — imaš 5 minuta da se ponovno prijaviš, inače se " +
+        "uređaj vraća na staru adresu. Otvaram novu adresu…";
       setTimeout(() => { location.href = r.new_url || ("https://" + ip + ":8443/"); },
         (r.reload_in || 3) * 1000 + 4000);
       return;
     } catch (e) {
-      err.textContent = "Ime i zona su spremljeni, ali adresa nije: " +
-        ((e && e.message) || "");
-      err.classList.remove("hidden");
-      return;
+      return fail("Ostalo je spremljeno, ali LAN adresa nije: " + ((e && e.message) || ""));
     }
   }
   $("setup-form").classList.add("hidden");
@@ -4901,6 +4964,14 @@ $("net-form").addEventListener("submit", async (ev) => {
 
 if (token) start().catch(() => logout(true));
 else $("login").classList.remove("hidden");
+
+// Podsjetnik na zadanu lozinku (Sgs#2026) na login ekranu stoji samo dok je
+// zadana lozinka stvarno na snazi — poslije bi bio dezinformacija i curenje.
+// /health je javan (bez tokena), pa se smije zvati prije prijave.
+api("/health").then((h) => {
+  const el = $("login-defpw");
+  if (el) el.classList.toggle("hidden", !h.default_password);
+}).catch(() => {});
 
 /* ---------- upozorenja (Nadzor) ---------- */
 

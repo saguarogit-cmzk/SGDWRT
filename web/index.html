@@ -19,7 +19,7 @@
            placeholder="admin" required>
     <label for="pass-input">Lozinka</label>
     <input id="pass-input" type="password" autocomplete="current-password" required>
-    <p class="hint">Nakon svježe instalacije: korisnik <code>admin</code>,
+    <p class="hint hidden" id="login-defpw">Nakon svježe instalacije: korisnik <code>admin</code>,
       lozinka <code>Sgs#2026</code> — promijeni je odmah nakon prijave.</p>
     <p id="login-error" class="login-error hidden">Neispravna prijava ili uređaj nedostupan.</p>
     <button type="submit" class="primary">Prijava</button>
@@ -73,7 +73,7 @@
       <img class="brand-logo" src="logo.png" alt="Saguaro Infrastructure" width="363" height="96">
     </div>
     <h1>Prvo postavljanje</h1>
-    <p class="login-sub">Još dvije stvari pa je uređaj spreman. Sve se kasnije
+    <p class="login-sub">Nekoliko koraka pa je uređaj spreman. Sve se kasnije
       može promijeniti u postavkama.</p>
 
     <label for="setup-hostname">Ime uređaja</label>
@@ -82,13 +82,54 @@
     <label for="setup-zone">Vremenska zona</label>
     <select id="setup-zone"></select>
 
-    <label for="setup-ip">Adresa uređaja u lokalnoj mreži (LAN)</label>
+    <h2 style="margin-top:14px">Lozinka uređaja (root)</h2>
+    <p class="hint">Za SSH i LuCI. Svježi uređaj je <b>bez lozinke</b> — postavi
+      je odmah. Najmanje 10 znakova. Ostavi prazno samo ako je već postavljena.</p>
+    <label for="setup-rootpw">Nova lozinka uređaja</label>
+    <input id="setup-rootpw" type="password" autocomplete="new-password" minlength="10">
+    <label for="setup-rootpw2">Ponovi lozinku uređaja</label>
+    <input id="setup-rootpw2" type="password" autocomplete="new-password" minlength="10">
+
+    <h2 style="margin-top:14px">Internet (WAN)</h2>
+    <p class="hint">Kako se uređaj spaja na internet. Ako je već spojen preko
+      DHCP-a (dobiva adresu od operatera), ostavi zadano.</p>
+    <label for="setup-wan-proto">Vrsta veze</label>
+    <select id="setup-wan-proto">
+      <option value="">Ne diraj (već postavljeno / spaja se preko DHCP-a)</option>
+      <option value="dhcp">DHCP — operater dodjeljuje adresu</option>
+      <option value="pppoe">PPPoE — korisničko ime i lozinka</option>
+      <option value="static">Statička adresa</option>
+    </select>
+    <div id="setup-wan-pppoe" class="hidden">
+      <label for="setup-wan-user">PPPoE korisničko ime</label>
+      <input id="setup-wan-user" autocomplete="off">
+      <label for="setup-wan-pass">PPPoE lozinka</label>
+      <input id="setup-wan-pass" type="password" autocomplete="new-password">
+    </div>
+    <div id="setup-wan-static" class="hidden">
+      <label for="setup-wan-ip">Adresa (CIDR, npr. 203.0.113.2/29)</label>
+      <input id="setup-wan-ip" autocomplete="off">
+      <label for="setup-wan-gw">Gateway operatera</label>
+      <input id="setup-wan-gw" autocomplete="off">
+      <label for="setup-wan-dns">DNS (razmakom odvojeno)</label>
+      <input id="setup-wan-dns" placeholder="1.1.1.1 8.8.8.8" autocomplete="off">
+    </div>
+
+    <h2 style="margin-top:14px">Lokalna mreža (LAN)</h2>
+    <label for="setup-ip">Adresa uređaja u lokalnoj mreži</label>
     <input id="setup-ip" placeholder="192.168.1.1" required>
     <label for="setup-mask">Mrežna maska</label>
     <input id="setup-mask" value="255.255.255.0" required>
+    <label for="setup-gw">Gateway (neobavezno)</label>
+    <input id="setup-gw" placeholder="prazno ako je uređaj sam izlaz mreže" autocomplete="off">
+    <label for="setup-dns">DNS (neobavezno)</label>
+    <input id="setup-dns" placeholder="prazno = uređaj je DNS mreže" autocomplete="off">
 
-    <p class="login-sub" id="setup-warn">Nakon spremanja uređaj mijenja adresu i
-      preglednik se sam preusmjerava na novu. Prijava ostaje ista.</p>
+    <p class="login-sub" id="setup-warn">Ako promijeniš LAN adresu, uređaj se seli
+      na novu i preglednik te preusmjerava. <b>Tvoje računalo možda treba novu
+      adresu iz te mreže</b> prije nego dohvati uređaj. Imaš 5 minuta da se
+      ponovno prijaviš — ako ne uspiješ, uređaj se sam vraća na staru adresu
+      (safe mode).</p>
     <p id="setup-error" class="login-error hidden"></p>
     <button type="submit" class="primary">Spremi i završi</button>
     <button type="button" id="setup-skip" class="ghost">Preskoči — podesit ću kasnije</button>

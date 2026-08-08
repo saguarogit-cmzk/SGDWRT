@@ -14,7 +14,11 @@ import (
 // ako ih nitko ne potvrdi u roku — zaštita od samo-zaključavanja s udaljene
 // lokacije. GUI potvrđuje sam pri prvom uspješnom dohvatu nakon promjene;
 // ako je pristup izgubljen, potvrde nema i uređaj se vrati na staro.
-const rollbackWindow = 120 * time.Second
+//
+// Rok je 5 minuta: promjena LAN adrese znači da administrator mora prekonfi-
+// gurirati (a često i prespojiti) vlastito računalo u novu podmrežu prije nego
+// se uopće može ponovno prijaviti. 2 minute za to nisu dovoljne (D-020).
+const rollbackWindow = 300 * time.Second
 
 type pendingRollback struct {
 	reason   string

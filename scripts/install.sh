@@ -75,11 +75,11 @@ fi
 chmod 755 /etc/init.d/saguaro-core
 rm -rf "$TMP"
 
-# zadana lozinka prve prijave (admin račun nastaje iz tokena pri prvom startu)
-if [ ! -s "$BASE/etc/token" ]; then
-    printf 'Sgs#2026\n' > "$BASE/etc/token"
-    chmod 600 "$BASE/etc/token"
-fi
+# Zadanu lozinku prve prijave (Sgs#2026) postavlja sam servis pri prvom
+# startu; API token servis generira nasumičan. Ovdje se NIŠTA ne upisuje —
+# stariji install.sh je lozinku upisivao u datoteku tokena, a Bearer token
+# zaobilazi branu obavezne promjene lozinke, pa je javno poznati token bio
+# otvorena vrata na LAN-u.
 
 echo ">> pokrećem servis"
 /etc/init.d/saguaro-core enable
@@ -92,7 +92,6 @@ echo "=================================================================="
 echo " Saguaro je instaliran i radi:  https://$IP:8443/"
 echo " Prva prijava:  korisnik 'admin'   lozinka 'Sgs#2026'"
 echo ""
-echo " VAŽNO: odmah promijeni lozinku (Sustav -> Postavke) i"
-echo " regeneriraj API token (ista stranica) — zadane vrijednosti"
-echo " su iste na svakoj novoj instalaciji."
+echo " Sučelje pri prvoj prijavi samo traži novu lozinku."
+echo " API token je nasumičan (System -> Settings ako ga trebaš)."
 echo "=================================================================="

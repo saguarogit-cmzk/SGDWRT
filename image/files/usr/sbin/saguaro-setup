@@ -81,7 +81,15 @@ show_status() {
 	fi
 	printf "\n"
 	LAN=$(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | head -1)
-	[ -n "$LAN" ] && ok_ "Sučelje:       ${BOLD}https://$LAN:8443/${N}   (admin / Sgs#2026)"
+	if [ -n "$LAN" ]; then
+		# zadana lozinka samo dok je stvarno na snazi (vidi profile.d podsjetnik)
+		DEFPW=$(wget -q -O - --no-check-certificate https://127.0.0.1:8443/api/v1/health 2>/dev/null | grep -o '"default_password":true')
+		if [ -n "$DEFPW" ]; then
+			ok_ "Sučelje:       ${BOLD}https://$LAN:8443/${N}   (admin / Sgs#2026)"
+		else
+			ok_ "Sučelje:       ${BOLD}https://$LAN:8443/${N}"
+		fi
+	fi
 	pause
 }
 

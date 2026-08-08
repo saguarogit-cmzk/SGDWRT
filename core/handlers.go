@@ -328,6 +328,11 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if !gwOK || !dnsOK || !netOK {
 		status = "degraded"
 	}
+	// je li još na snazi zadana lozinka (bilo koji admin s must_change_pw) —
+	// login ekran prema tome pokazuje ili skriva podsjetnik na Sgs#2026
+	var defPw int
+	s.db.QueryRow(`SELECT COUNT(*) FROM users
+		WHERE role='admin' AND must_change_pw=1`).Scan(&defPw)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":          status,
 		"gateway":         map[string]any{"address": gw, "reachable": gwOK},
@@ -335,6 +340,7 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"internet":        map[string]any{"ok": netOK},
 		"saguaro_version": version,
 		"core_uptime_sec": int64(time.Since(s.started).Seconds()),
+		"default_password": defPw > 0,
 	})
 }
 

@@ -23,6 +23,16 @@
       lozinka <code>Sgs#2026</code> — promijeni je odmah nakon prijave.</p>
     <p id="login-error" class="login-error hidden">Neispravna prijava ili uređaj nedostupan.</p>
     <button type="submit" class="primary">Prijava</button>
+    <details class="help"><summary>Zaboravljena lozinka?</summary><div class="hint">
+      Lozinka se resetira uz fizički pristup uređaju — s mreže se ne može,
+      i to je namjerno. Na konzoli uređaja pokreni <code>saguaro-setup</code>
+      i odaberi <b>Reset lozinke web sučelja</b>, ili preko SSH-a:
+      <code>/etc/init.d/saguaro-core stop &amp;&amp;
+      /opt/saguaro/bin/saguaro-core -reset-admin 'NovaLozinka' &amp;&amp;
+      /etc/init.d/saguaro-core start</code>
+      Sve sesije se odjavljuju, a pri prvoj prijavi sučelje odmah traži novu
+      lozinku.
+    </div></details>
   </form>
 
   <form id="firstpw-form" class="login-card hidden">
@@ -1983,7 +1993,9 @@
       </div></details>
 
       <details class="help"><summary>Zaboravljena lozinka za Saguaro</summary><div>
-        Ako se više ne možeš prijaviti u sučelje, lozinka se vraća sa SSH-a:
+        Ako se više ne možeš prijaviti u sučelje, lozinka se vraća uz fizički
+        pristup uređaju: na konzoli pokreni <code>saguaro-setup</code> i
+        odaberi <b>Reset lozinke web sučelja</b>, ili sa SSH-a:
         <code>/etc/init.d/saguaro-core stop &amp;&amp;
         /opt/saguaro/bin/saguaro-core -reset-admin 'NovaLozinka' &amp;&amp;
         /etc/init.d/saguaro-core start</code>

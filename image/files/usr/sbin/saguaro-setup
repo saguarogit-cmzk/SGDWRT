@@ -9,6 +9,7 @@
 #   1. pregled stanja
 #   2. postavljanje LAN adrese
 #   3. instalacija na interni disk
+#   4. reset lozinke web sučelja
 #
 # Pokreće se naredbom:  saguaro-setup
 
@@ -374,6 +375,50 @@ install_disk() {
 	pause
 }
 
+# ---------- 4. reset lozinke sučelja ----------
+#
+# Konzola je sidro povjerenja: tko fizički sjedi za uređajem, smije mu
+# vratiti pristup. Zato reset lozinke web sučelja živi ovdje, a ne u samom
+# sučelju — tamo bi ga mogao pokrenuti bilo tko s mreže.
+reset_gui_pw() {
+	head_ "Reset lozinke web sučelja (admin)"
+	BIN=/opt/saguaro/bin/saguaro-core
+	[ -x "$BIN" ] || { err "nema $BIN — Saguaro nije instaliran"; pause; return; }
+
+	say "  Postavlja privremenu lozinku korisniku ${BOLD}admin${N} web sučelja."
+	say "  Sve prijavljene sesije se odjavljuju, a pri prvoj prijavi sučelje"
+	say "  odmah traži da se postavi nova, vlastita lozinka."
+	say "  ${DIM}Enter bez upisa koristi zadanu s instalacije: Sgs#2026${N}\n"
+
+	printf "  Privremena lozinka [Sgs#2026]: "
+	read -r PW
+	[ -z "$PW" ] && PW='Sgs#2026'
+	if [ "${#PW}" -lt 8 ]; then
+		err "lozinka mora imati bar 8 znakova"; pause; return
+	fi
+
+	printf "\n  Resetirati lozinku admina? [d/N] "
+	read -r YN
+	case "$YN" in d|D|y|Y) ;; *) say "  odustao"; pause; return ;; esac
+
+	# servis se gasi jer bazu drži jedna konekcija; reset piše izravno u nju
+	/etc/init.d/saguaro-core stop >/dev/null 2>&1
+	sleep 1
+	OUT=$("$BIN" -reset-admin "$PW" 2>&1)
+	RC=$?
+	[ -n "$OUT" ] && printf '%s\n' "$OUT" | sed 's/^/  /'
+	if [ "$RC" -eq 0 ]; then
+		ok_ "Lozinka postavljena, sve sesije su odjavljene."
+	else
+		err "reset nije uspio — provjeri poruku iznad"
+	fi
+	/etc/init.d/saguaro-core start >/dev/null 2>&1
+
+	LAN=$(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | head -1)
+	[ -n "$LAN" ] && ok_ "Prijava: ${BOLD}https://$LAN:8443/${N}  (admin / privremena lozinka)"
+	pause
+}
+
 # ---------- izbornik ----------
 menu() {
 	while true; do
@@ -385,8 +430,9 @@ menu() {
 		say "    1)  Pregled stanja"
 		say "    2)  Postavi LAN adresu"
 		say "    3)  Instaliraj na interni disk"
-		say "    4)  Ponovno pokreni uređaj"
-		say "    5)  Ugasi uređaj"
+		say "    4)  Reset lozinke web sučelja"
+		say "    5)  Ponovno pokreni uređaj"
+		say "    6)  Ugasi uređaj"
 		say "    0)  Izlaz u naredbeni redak"
 		printf "\n  Izbor: "
 		read -r C
@@ -394,9 +440,10 @@ menu() {
 			1) show_status ;;
 			2) set_lan ;;
 			3) install_disk ;;
-			4) printf "  Ponovno pokrenuti? [d/N] "; read -r y
+			4) reset_gui_pw ;;
+			5) printf "  Ponovno pokrenuti? [d/N] "; read -r y
 			   case "$y" in d|D|y|Y) reboot; exit 0 ;; esac ;;
-			5) printf "  Ugasiti uređaj? [d/N] "; read -r y
+			6) printf "  Ugasiti uređaj? [d/N] "; read -r y
 			   case "$y" in d|D|y|Y) poweroff; exit 0 ;; esac ;;
 			0) exit 0 ;;
 			*) ;;

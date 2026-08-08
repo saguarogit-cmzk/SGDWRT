@@ -908,3 +908,25 @@ Bez tog traga bi se to tražilo po backupima i pogađalo.
 |---|---|
 | Klijent koji stvarno dobije adresu iz drugog raspona | testna mreža je most bez portova, pa na njoj nema nijednog uređaja; provjereno je da dnsmasq oba raspona ima u konfiguraciji i da ih drži pod istom mrežom |
 | Preuzimanje dijeljenja adresa na glavnoj mreži | traži gašenje DHCP-a na routeru 192.168.50.1 |
+
+---
+
+## Reset lozinke sučelja s konzole (08.08.2026., v0.46.0)
+
+Nova stavka u `saguaro-setup`: **Reset lozinke web sučelja** — postavlja
+privremenu lozinku admina (zadano `Sgs#2026`), odjavljuje sve sesije, a
+sučelje pri prvoj prijavi traži novu lozinku. Uz to na ekranu za prijavu
+stoji „Zaboravljena lozinka?" s uputom (konzola + SSH varijanta).
+
+| Provjera | Ishod |
+|---|---|
+| Nova stavka u izborniku | **radi** — `saguaro-setup` na uređaju nudi „4) Reset lozinke web sučelja" |
+| Tok do potvrde i odustajanje | **radi** — Enter uzima zadanu lozinku, „N" na potvrdi uredno odustane, izbornik se vraća |
+| Mehanizam ispod (`-reset-admin` + restart servisa) | **provjeren isti dan drugim putem** — admin lozinka stvarno resetirana (kroz API), prijava vratila `must_change_password: true` |
+| Pomoć na ekranu za prijavu | **radi** — poslužena stranica sadrži „Zaboravljena lozinka?" blok |
+
+### Što nije provjereno
+
+| Stavka | Zašto |
+|---|---|
+| Puni „da" put stavke 4 na uređaju | Goran je isti dan tek postavio svoju novu lozinku — test bi mu je pregazio. Mehanizam je istovjetan onome što je taj dan provjereno kroz API (`resetAdminPassword`), a i skripta prvog dizanja ga koristi od v0.38.0 |

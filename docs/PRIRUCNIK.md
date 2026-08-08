@@ -70,30 +70,60 @@ nađeš i bez tražilice.
 
 ## Instalacija na novi uređaj
 
-### Preporučeno: gotova slika s USB-a
+### Preporučeno: gotova slika s USB-a — od gole kutije do pogona
 
 Uz svako izdanje se objavljuje **gotova slika** —
 `saguaro-vX.Y.Z-openwrt-25.12.5-x86-64.img.gz`. U njoj je sve: OpenWrt, svi
 paketi, Saguaro program i sučelje, init skripte i postavljanje data particije.
 **Uređaj ne treba internet.**
 
-1. Skini sliku sa stranice izdanja na GitHubu (uz nju je i `.sha256`).
-2. Napiši je na USB stick — Rufus, način **DD image** (ne ISO).
-3. Digni uređaj s USB-a (boot menu, obično F11 ili Del) ili sliku upiši na
-   disk uređaja.
-4. Otvori `https://192.168.1.1:8443/` i prijavi se: `admin` / `Sgs#2026`.
+Cijeli postupak, redom:
 
-Pri prvom dizanju uređaj sam napravi **data particiju** od ostatka diska i
-preseli `/opt/saguaro` na nju, pa Saguaro podaci od prve minute preživljavaju
-buduće nadogradnje OpenWrt-a.
+**1. Pripremi USB.** Skini sliku sa stranice izdanja na GitHubu (uz nju je i
+`.sha256` za provjeru) i napiši je na USB stick — Rufus, način **DD image**
+(ne ISO).
 
-Sučelje te pri prvoj prijavi vodi kroz **prvo postavljanje**: nova lozinka →
-ime uređaja, vremenska zona i LAN adresa. Nakon spremanja adrese preglednik se
-sam preusmjeri na novu. Sve se kasnije može promijeniti u postavkama.
+**2. Digni uređaj s USB-a** (boot menu, obično F11 ili Del). Na konzoli se
+prijavi kao `root` — svježa slika **nema root lozinku**, konzola je otvorena
+jer tko fizički sjedi za uređajem ionako može sve. Pri svakoj prijavi na
+konzolu ispisuje se podsjetnik s adresom sučelja i naredbom `saguaro-setup`.
+
+**3. Pokreni `saguaro-setup`** — konzolni izbornik za prvo postavljanje:
+
+- **Postavi LAN adresu** — slika dolazi na `192.168.1.1`, što gotovo nikad
+  nije adresa mreže u koju uređaj ide. Upiši adresu (može i skraćeno,
+  `192.168.50.224/24`), izbornik je primijeni i **provjeri da stvarno radi**.
+- **Instaliraj na interni disk** — prepiše sustav s USB-a na disk uređaja
+  (detalji dolje). Ako uređaj radi izravno s medija na koji je slika upisana,
+  ovaj korak preskačeš.
+
+**4. Ugasi uređaj, izvadi USB i upali ga ponovno.** Pri **prvom dizanju s
+diska** sustav sam napravi **data particiju** od ostatka diska i preseli
+`/opt/saguaro` na nju — Saguaro podaci (baza, backupi, logovi, snimke) od
+prve minute preživljavaju buduće nadogradnje OpenWrt-a. Raspored particija:
+
+| Particija | Veličina | Sadržaj |
+|---|---|---|
+| 1 — boot | ~16 MB | GRUB i jezgra |
+| 2 — root | 1024 MB | OpenWrt + Saguaro program (mijenja se nadogradnjom) |
+| data | ostatak diska | `/opt/saguaro` — baza, backupi, logovi, snimke (preživljava nadogradnje) |
+
+**5. Otvori sučelje** — `https://<LAN adresa>:8443/` i prijavi se:
+`admin` / `Sgs#2026`. Sučelje te vodi kroz **prvo postavljanje**: nova
+lozinka → ime uređaja, vremenska zona i LAN adresa. Nakon spremanja adrese
+preglednik se sam preusmjeri na novu. Sve se kasnije može promijeniti u
+postavkama.
+
+**6. Dovrši osnovnu zaštitu.** Nakon prijave: regeneriraj **API token**
+(Postavke), postavi **lozinku uređaja** (root za SSH i LuCI — svježa slika je
+nema!) i po želji uključi **dvofaktorsku prijavu**.
 
 > Zadana lozinka `Sgs#2026` ista je na svakoj slici i javno je poznata, pa
-> sučelje **ne dopušta ništa drugo** dok se ne promijeni. Nakon prijave
-> regeneriraj i API token.
+> sučelje **ne dopušta ništa drugo** dok se ne promijeni.
+
+**Ako se lozinka sučelja ikad zaboravi** — vraća se uz fizički pristup:
+na konzoli `saguaro-setup` → **Reset lozinke web sučelja**, ili preko SSH-a
+(vidi [Settings](#settings--postavke)). S mreže se ne može, i to je namjerno.
 
 ### Slika se gradi sama
 
@@ -804,14 +834,16 @@ Na uređaju postoje **dvije odvojene lozinke** i lako ih je pomiješati:
   ne promijeni.
 - **Lozinka uređaja**: najmanje 10 znakova; stara se ne traži jer si već
   prijavljen. Prije promjene sprema se kopija `/etc/shadow` u backup.
-- **Zaboravljena lozinka Saguara** — vraća se sa SSH-a:
+- **Zaboravljena lozinka Saguara** — vraća se uz fizički pristup uređaju:
+  na konzoli `saguaro-setup` → **Reset lozinke web sučelja**, ili sa SSH-a:
   ```sh
   /etc/init.d/saguaro-core stop
   /opt/saguaro/bin/saguaro-core -reset-admin 'NovaLozinka'
   /etc/init.d/saguaro-core start
   ```
   Sve sesije se odjavljuju, a pri prvoj prijavi sučelje traži novu lozinku —
-  jer ova ostaje zapisana u povijesti naredbi.
+  jer ova ostaje zapisana u povijesti naredbi. Isti podsjetnik stoji i na
+  samom ekranu za prijavu, pod „Zaboravljena lozinka?".
 - **Sesije**: pregled + odjava svih ostalih sesija.
 - **API token**: za skripte i integracije (`Authorization: Bearer <token>`);
   regeneracija odmah poništava stari.
@@ -835,7 +867,17 @@ adresom sučelja.
 | **Pregled stanja** | ime uređaja, verzije, LAN i WAN adresa, zadana ruta, root i data particija, adresa sučelja |
 | **Postavi LAN adresu** | IP, maska, gateway i DNS uz provjeru svake vrijednosti; Enter zadržava postojeće. Nakon spremanja radi `network restart` (ne `reload` — kod promjene adrese zna ostati na pola) i **provjeri je li adresa stvarno primijenjena** |
 | **Instaliraj na interni disk** | prepiše sustav s medija s kojeg se diglo na odabrani disk |
+| **Reset lozinke web sučelja** | postavi privremenu lozinku korisniku `admin` (zadano `Sgs#2026`), odjavi sve sesije; pri prvoj prijavi sučelje traži novu lozinku |
 | Ponovno pokreni / Ugasi | uredno gašenje s konzole |
+
+### Reset lozinke web sučelja
+
+Konzola je **sidro povjerenja**: tko fizički sjedi za uređajem, smije mu
+vratiti pristup. Zato reset lozinke sučelja živi na konzoli, a ne u samom
+sučelju — s mreže se ne može pokrenuti, i to je namjerno. Stavka zaustavi
+servis, upiše privremenu lozinku izravno u bazu (`-reset-admin`), pokrene
+servis i ispiše adresu za prijavu. Ista stvar se može i ručno preko SSH-a
+(vidi [Settings](#settings--postavke)).
 
 ### Instalacija na interni disk
 
